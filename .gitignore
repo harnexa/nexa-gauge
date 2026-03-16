@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Environment — never commit secrets
+.env
+.env.*
+!.env.example
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+*.xml
+
+# Editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Data / storage
+.lancedb/
+storage/
+data/
+*.db
+*.sqlite
+
+# Logs
+*.log
+logs/
+
+# Framework artifacts
+.langgraph_api
+.agent
+uv.lock
+product-doc.md
+idea.md

@@ -1,0 +1,60 @@
+[project]
+name = "lumis-eval"
+version = "0.1.0"
+description = "Agentic LLM evaluation pipeline orchestrating RAGAS, DeepEval, and Giskard"
+requires-python = ">=3.10"
+dependencies = [
+    "lumiseval-core",
+    "lumiseval-ingest",
+    "lumiseval-evidence",
+    "lumiseval-agent",
+    "lumiseval-api",
+    "lumiseval-cli",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+]
+
+[tool.uv.sources]
+lumiseval-core     = { workspace = true }
+lumiseval-ingest   = { workspace = true }
+lumiseval-evidence = { workspace = true }
+lumiseval-agent    = { workspace = true }
+lumiseval-api      = { workspace = true }
+lumiseval-cli      = { workspace = true }
+
+[tool.uv.workspace]
+members = ["packages/*", "apps/*"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = [
+    "packages/lumiseval-core/test_lumiseval_core",
+    "packages/lumiseval-ingest/test_lumiseval_ingest",
+    "packages/lumiseval-evidence/test_lumiseval_evidence",
+    "packages/lumiseval-agent/test_lumiseval_agent",
+]
