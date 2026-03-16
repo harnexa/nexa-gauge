@@ -1,0 +1,31 @@
+[project]
+name = "lumiseval-agent"
+version = "0.1.0"
+description = "LangGraph orchestration graph and metric dispatch nodes for lumis-eval"
+requires-python = ">=3.10"
+dependencies = [
+    "python-dotenv>=1.0.0",
+    "langgraph>=0.2.0",
+    "litellm>=1.82.0",
+    "instructor>=1.0.0",
+    "tokencost>=0.1.26",
+    "ragas>=0.4.0",
+    "deepeval>=1.0.0",
+    "rich>=13.0.0",
+    "taskiq>=0.11.0",
+    "lumiseval-core",
+    "lumiseval-ingest",
+    "lumiseval-evidence",
+]
+
+[tool.uv.sources]
+lumiseval-core = { workspace = true }
+lumiseval-ingest = { workspace = true }
+lumiseval-evidence = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["lumiseval_agent"]

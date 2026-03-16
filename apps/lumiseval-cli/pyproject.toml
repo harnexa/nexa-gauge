@@ -1,0 +1,24 @@
+[project]
+name = "lumiseval-cli"
+version = "0.1.0"
+description = "Typer CLI for lumis-eval — eval, estimate, and batch commands"
+requires-python = ">=3.10"
+dependencies = [
+    "python-dotenv>=1.0.0",
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+    "lumiseval-agent",
+]
+
+[tool.uv.sources]
+lumiseval-agent = { workspace = true }
+
+[project.scripts]
+lumiseval = "lumiseval_cli.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["lumiseval_cli"]
