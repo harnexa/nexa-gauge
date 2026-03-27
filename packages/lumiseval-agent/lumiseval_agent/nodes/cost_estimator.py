@@ -55,27 +55,27 @@ def estimate(
         estimated_tavily_calls = int(metadata.estimated_claim_count * _WEB_SEARCH_CLAIM_FRACTION)
 
     # Judge call cost
-    try:
-        # tokencost expects a message list; we approximate with a dummy prompt
-        sample_prompt = [{"role": "user", "content": "x" * _AVG_JUDGE_TOKENS}]
-        cost_per_call = float(calculate_prompt_cost(sample_prompt, model))
-        log.info(f"Pricing: ${cost_per_call:.6f}/call for {model}")
-    except Exception:
-        # Fall back to gpt-4o-mini pricing if model not found
-        try:
-            sample_prompt = [{"role": "user", "content": "x" * _AVG_JUDGE_TOKENS}]
-            cost_per_call = float(calculate_prompt_cost(sample_prompt, "gpt-4o-mini"))
-            approximate = True
-            approximate_warning = (
-                f"Model '{model}' not found in tokencost pricing tables. "
-                "Using gpt-4o-mini pricing as approximation."
-            )
-            log.warning(approximate_warning)
-        except Exception:
-            cost_per_call = 0.0003  # conservative fallback
-            approximate = True
-            approximate_warning = "Could not compute pricing; using $0.0003/call fallback."
-            log.warning(approximate_warning)
+    # try:
+    # tokencost expects a message list; we approximate with a dummy prompt
+    sample_prompt = [{"role": "user", "content": "x" * _AVG_JUDGE_TOKENS}]
+    cost_per_call = float(calculate_prompt_cost(sample_prompt, model))
+    log.info(f"Pricing: ${cost_per_call:.6f}/call for {model}")
+    # except Exception:
+    #     # Fall back to gpt-4o-mini pricing if model not found
+    #     try:
+    #         sample_prompt = [{"role": "user", "content": "x" * _AVG_JUDGE_TOKENS}]
+    #         cost_per_call = float(calculate_prompt_cost(sample_prompt, "gpt-4o-mini"))
+    #         approximate = True
+    #         approximate_warning = (
+    #             f"Model '{model}' not found in tokencost pricing tables. "
+    #             "Using gpt-4o-mini pricing as approximation."
+    #         )
+    #         log.warning(approximate_warning)
+    #     except Exception:
+    #         cost_per_call = 0.0003  # conservative fallback
+    #         approximate = True
+    #         approximate_warning = "Could not compute pricing; using $0.0003/call fallback."
+    #         log.warning(approximate_warning)
 
     judge_cost_usd = estimated_judge_calls * cost_per_call
 

@@ -21,39 +21,39 @@ async def _evaluate_rule(
     generation: str,
     judge_model: str,
 ) -> RubricRuleResult:
-    try:
-        from deepeval.metrics import GEval
-        from deepeval.test_case import LLMTestCase, LLMTestCaseParams
+    # try:
+    from deepeval.metrics import GEval
+    from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 
-        criteria = f"{rule.statement}\n\nPass condition: {rule.pass_condition}"
-        test_case = LLMTestCase(input="", actual_output=generation)
-        g_eval = GEval(
-            name=rule.id,
-            criteria=criteria,
-            evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT],
-            model=judge_model,
-        )
-        # GEval.measure is sync; run in thread to not block event loop
-        await asyncio.get_event_loop().run_in_executor(None, g_eval.measure, test_case)
+    criteria = f"{rule.statement}\n\nPass condition: {rule.pass_condition}"
+    test_case = LLMTestCase(input="", actual_output=generation)
+    g_eval = GEval(
+        name=rule.id,
+        criteria=criteria,
+        evaluation_params=[LLMTestCaseParams.ACTUAL_OUTPUT],
+        model=judge_model,
+    )
+    # GEval.measure is sync; run in thread to not block event loop
+    await asyncio.get_event_loop().run_in_executor(None, g_eval.measure, test_case)
 
-        score = g_eval.score or 0.0
-        compliance = RuleCompliance.PASS if score >= 0.5 else RuleCompliance.FAIL
-        log.info(f"  [{compliance.value}] {rule.id}  score={score:.3f}")
-        return RubricRuleResult(
-            rule_id=rule.id,
-            compliance=compliance,
-            reasoning=g_eval.reason or "",
-            confidence=score,
-        )
-    except Exception as exc:
-        log.error(f"Rule '{rule.id}' evaluation failed: {exc}")
-        return RubricRuleResult(
-            rule_id=rule.id,
-            compliance=RuleCompliance.UNCERTAIN,
-            reasoning="",
-            confidence=0.0,
-            error=str(exc),
-        )
+    score = g_eval.score or 0.0
+    compliance = RuleCompliance.PASS if score >= 0.5 else RuleCompliance.FAIL
+    log.info(f"  [{compliance.value}] {rule.id}  score={score:.3f}")
+    return RubricRuleResult(
+        rule_id=rule.id,
+        compliance=compliance,
+        reasoning=g_eval.reason or "",
+        confidence=score,
+    )
+    # except Exception as exc:
+    #     log.error(f"Rule '{rule.id}' evaluation failed: {exc}")
+    #     return RubricRuleResult(
+    #         rule_id=rule.id,
+    #         compliance=RuleCompliance.UNCERTAIN,
+    #         reasoning="",
+    #         confidence=0.0,
+    #         error=str(exc),
+    #     )
 
 
 def run(

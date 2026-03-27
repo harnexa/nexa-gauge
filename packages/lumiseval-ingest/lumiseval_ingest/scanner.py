@@ -59,27 +59,27 @@ def scan_file(path: str | Path) -> InputMetadata:
     path = Path(path)
     records: list[dict[str, Any]] = []
 
-    try:
-        if path.suffix == ".jsonl":
-            with path.open() as f:
-                for i, line in enumerate(f):
-                    try:
-                        records.append(json.loads(line))
-                    except json.JSONDecodeError as exc:
-                        raise InputParseError(str(exc), record_index=i) from exc
-        elif path.suffix == ".json":
-            with path.open() as f:
-                data = json.load(f)
-            records = data if isinstance(data, list) else [data]
-        elif path.suffix == ".csv":
-            with path.open(newline="") as f:
-                records = list(csv.DictReader(f))
-        else:
-            # Treat as plain text — single record
-            generation = path.read_text()
-            return scan_text(generation)
-    except (OSError, UnicodeDecodeError) as exc:
-        raise InputParseError(f"Cannot read {path}: {exc}") from exc
+    # try:
+    if path.suffix == ".jsonl":
+        with path.open() as f:
+            for i, line in enumerate(f):
+                # try:
+                records.append(json.loads(line))
+                # except json.JSONDecodeError as exc:
+                #     raise InputParseError(str(exc), record_index=i) from exc
+    elif path.suffix == ".json":
+        with path.open() as f:
+            data = json.load(f)
+        records = data if isinstance(data, list) else [data]
+    elif path.suffix == ".csv":
+        with path.open(newline="") as f:
+            records = list(csv.DictReader(f))
+    else:
+        # Treat as plain text — single record
+        generation = path.read_text()
+        return scan_text(generation)
+    # except (OSError, UnicodeDecodeError) as exc:
+    #     raise InputParseError(f"Cannot read {path}: {exc}") from exc
 
     per_record = []
     for i, rec in enumerate(records):

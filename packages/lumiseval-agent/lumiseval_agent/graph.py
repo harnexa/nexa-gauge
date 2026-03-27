@@ -106,20 +106,20 @@ def node_metadata_scanner(state: EvalState) -> dict:
 def node_cost_estimator(state: EvalState) -> dict:
     model = state["job_config"].judge_model
     _log_cost.start(f"Estimating cost  (model={model})")
-    try:
-        estimate = cost_estimator.estimate(state["metadata"], state["job_config"])
-        if estimate.approximate_warning:
-            _log_cost.warning(estimate.approximate_warning)
-        _log_cost.success(
-            f"total=${estimate.total_estimated_usd:.6f}"
-            f"  (low=${estimate.low_usd:.6f}  /  high=${estimate.high_usd:.6f})"
-            f"  ·  judge calls={estimate.estimated_judge_calls}"
-            f"  ·  tavily calls={estimate.estimated_tavily_calls}"
-        )
-        return {"cost_estimate": estimate}
-    except Exception as exc:
-        _log_cost.error(str(exc))
-        return {"error": str(exc)}
+    # try:
+    estimate = cost_estimator.estimate(state["metadata"], state["job_config"])
+    if estimate.approximate_warning:
+        _log_cost.warning(estimate.approximate_warning)
+    _log_cost.success(
+        f"total=${estimate.total_estimated_usd:.6f}"
+        f"  (low=${estimate.low_usd:.6f}  /  high=${estimate.high_usd:.6f})"
+        f"  ·  judge calls={estimate.estimated_judge_calls}"
+        f"  ·  tavily calls={estimate.estimated_tavily_calls}"
+    )
+    return {"cost_estimate": estimate}
+    # except Exception as exc:
+    #     _log_cost.error(str(exc))
+    #     return {"error": str(exc)}
 
 
 def node_confirm_gate(state: EvalState) -> dict:
@@ -386,11 +386,11 @@ def run_graph(
         _log_scanner.info(f"Indexing {len(reference_files)} reference file(s) into LanceDB")
 
         for fpath in reference_files:
-            try:
-                count = index_file(fpath)
-                _log_scanner.success(f"Indexed {count} passages from {fpath}")
-            except Exception as exc:
-                _log_scanner.warning(f"Failed to index {fpath}: {exc}")
+            # try:
+            count = index_file(fpath)
+            _log_scanner.success(f"Indexed {count} passages from {fpath}")
+            # except Exception as exc:
+            #     _log_scanner.warning(f"Failed to index {fpath}: {exc}")
 
     initial_state = EvalState(
         generation=generation,

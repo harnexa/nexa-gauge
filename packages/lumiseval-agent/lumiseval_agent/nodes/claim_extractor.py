@@ -64,39 +64,39 @@ def extract_claims(
 
     for chunk in chunks:
         log.info(f"chunk {chunk.index + 1}/{len(chunks)}  ({len(chunk.text)} chars)")
-        try:
-            result = client.chat.completions.create(
-                model=model,
-                response_model=_ClaimList,
-                max_retries=max_retries,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": _EXTRACTION_PROMPT.format(chunk_text=chunk.text),
-                    }
-                ],
-            )
-            n = len(result.claims)
-            log.info(f"  → {n} claim(s) extracted from chunk {chunk.index}")
-            for claim_text, confidence in zip(result.claims, result.confidences):
-                all_claims.append(
-                    Claim(
-                        text=claim_text,
-                        source_chunk_index=chunk.index,
-                        confidence=confidence,
-                    )
-                )
-        except Exception as exc:
-            log.warning(
-                f"Extraction failed for chunk {chunk.index} after {max_retries} retries: {exc}"
-            )
+        # try:
+        result = client.chat.completions.create(
+            model=model,
+            response_model=_ClaimList,
+            max_retries=max_retries,
+            messages=[
+                {
+                    "role": "user",
+                    "content": _EXTRACTION_PROMPT.format(chunk_text=chunk.text),
+                }
+            ],
+        )
+        n = len(result.claims)
+        log.info(f"  → {n} claim(s) extracted from chunk {chunk.index}")
+        for claim_text, confidence in zip(result.claims, result.confidences):
             all_claims.append(
                 Claim(
-                    text="",
+                    text=claim_text,
                     source_chunk_index=chunk.index,
-                    extraction_failed=True,
+                    confidence=confidence,
                 )
             )
+        # except Exception as exc:
+        #     log.warning(
+        #         f"Extraction failed for chunk {chunk.index} after {max_retries} retries: {exc}"
+        #     )
+        #     all_claims.append(
+        #         Claim(
+        #             text="",
+        #             source_chunk_index=chunk.index,
+        #             extraction_failed=True,
+        #         )
+        #     )
 
     valid = [c for c in all_claims if not c.extraction_failed or c.text]
     log.success(f"{len(valid)} total claim(s) across all chunks")

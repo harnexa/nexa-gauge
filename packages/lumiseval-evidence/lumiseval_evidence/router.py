@@ -46,31 +46,31 @@ def _query_lancedb(
     table_name: str = "documents",
     top_k: int = 5,
 ) -> list[dict[str, Any]]:
-    try:
-        db = lancedb.connect(db_path)
-        if table_name not in db.table_names():
-            return []
-        table = db.open_table(table_name)
-        model = _get_model()
-        embedding = model.encode([query_text], show_progress_bar=False)[0].tolist()
-        results = table.search(embedding).limit(top_k).to_list()
-        return results
-    except Exception as exc:
-        logger.warning("LanceDB query failed: %s", exc)
+    # try:
+    db = lancedb.connect(db_path)
+    if table_name not in db.table_names():
         return []
+    table = db.open_table(table_name)
+    model = _get_model()
+    embedding = model.encode([query_text], show_progress_bar=False)[0].tolist()
+    results = table.search(embedding).limit(top_k).to_list()
+    return results
+    # except Exception as exc:
+    #     logger.warning("LanceDB query failed: %s", exc)
+    #     return []
 
 
 def _tavily_search(query: str) -> list[dict[str, Any]]:
     """Execute a Tavily search and return raw result dicts."""
-    try:
-        from tavily import TavilyClient
+    # try:
+    from tavily import TavilyClient
 
-        client = TavilyClient(api_key=config.TAVILY_API_KEY)
-        response = client.search(query, max_results=5)
-        return response.get("results", [])
-    except Exception as exc:
-        logger.error("Tavily search failed for query '%s': %s", query, exc)
-        return []
+    client = TavilyClient(api_key=config.TAVILY_API_KEY)
+    response = client.search(query, max_results=5)
+    return response.get("results", [])
+    # except Exception as exc:
+    #     logger.error("Tavily search failed for query '%s': %s", query, exc)
+    #     return []
 
 
 def _results_to_passages(

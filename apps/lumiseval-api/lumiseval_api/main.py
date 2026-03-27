@@ -64,17 +64,17 @@ def create_job(request: EvalJobRequest) -> EvalReport:
         budget_cap_usd=request.budget_cap_usd,
     )
 
-    try:
-        report = run_graph(
-            generation=request.generation,
-            job_config=job_config,
-            question=request.question,
-            ground_truth=request.ground_truth,
-            rubric_rules=request.rubric_rules or None,
-            reference_files=request.reference_files or None,
-        )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+    # try:
+    report = run_graph(
+        generation=request.generation,
+        job_config=job_config,
+        question=request.question,
+        ground_truth=request.ground_truth,
+        rubric_rules=request.rubric_rules or None,
+        reference_files=request.reference_files or None,
+    )
+    # except RuntimeError as exc:
+    #     raise HTTPException(status_code=400, detail=str(exc))
 
     return report
 

@@ -71,12 +71,12 @@ def eval(
         budget_cap_usd=budget_cap,
     )
 
-    try:
-        cost = compute_estimate(meta, job_config)
-        _print_cost_table(cost)
-    except Exception as exc:
-        console.print(f"[red]Budget exceeded: {exc}[/red]")
-        raise typer.Exit(1)
+    # try:
+    cost = compute_estimate(meta, job_config)
+    _print_cost_table(cost)
+    # except Exception as exc:
+    #     console.print(f"[red]Budget exceeded: {exc}[/red]")
+    #     raise typer.Exit(1)
 
     if not yes:
         proceed = typer.confirm(f"\nEstimated cost: ${cost.total_estimated_usd:.4f}. Proceed?")
@@ -85,15 +85,15 @@ def eval(
             raise typer.Exit(0)
 
     console.print("\n[cyan]Running evaluation...[/cyan]")
-    try:
-        report = run_graph(
-            generation=generation,
-            job_config=job_config,
-            question=question,
-        )
-    except RuntimeError as exc:
-        console.print(f"[red]Evaluation failed: {exc}[/red]")
-        raise typer.Exit(1)
+    # try:
+    report = run_graph(
+        generation=generation,
+        job_config=job_config,
+        question=question,
+    )
+    # except RuntimeError as exc:
+    #     console.print(f"[red]Evaluation failed: {exc}[/red]")
+    #     raise typer.Exit(1)
 
     _print_report_summary(report)
 
