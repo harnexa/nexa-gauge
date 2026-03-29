@@ -49,3 +49,6 @@ logs/
 uv.lock
 product-doc.md
 idea.md
+.lumiseval_cache
+.mypy_cache
+.ruff_cache

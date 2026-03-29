@@ -1,0 +1,120 @@
+[
+  {
+    "case_id": "eiffel-tower-basic",
+    "question": "What is the Eiffel Tower and where is it located?",
+    "generation": "The Eiffel Tower is a wrought-iron lattice tower located in Paris, France. It was constructed between 1887 and 1889 and served as the entrance arch to the 1889 World's Fair. Standing at 330 metres, it is one of the most recognisable structures in the world.",
+    "context": "The Eiffel Tower (/ˈaɪfəl/ EYE-fəl; French: Tour Eiffel) is a wrought-iron lattice tower on the Champ de Mars in Paris, France. It is named after the engineer Gustave Eiffel, whose company designed and built the tower from 1887 to 1889 as the centerpiece of the 1889 World's Fair.",
+    "ground_truth": "The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, France, built between 1887 and 1889 as the entrance arch for the 1889 World's Fair."
+  },
+
+  {
+    "case_id": "photosynthesis-short",
+    "question": "How does photosynthesis work?",
+    "generation": "Photosynthesis is the process by which plants convert sunlight into food. Using chlorophyll in their leaves, plants absorb light energy and combine carbon dioxide from the air with water from the soil to produce glucose and oxygen. The overall equation is: 6CO2 + 6H2O + light energy → C6H12O6 + 6O2.",
+    "context": "Photosynthesis is a process used by plants and other organisms to convert light energy into chemical energy that, through cellular respiration, can later be released to fuel the organism's activities.",
+    "rubric_rules": [
+      "The response must mention chlorophyll as the light-absorbing pigment.",
+      "The response must state that oxygen is a byproduct.",
+      "The response should include the chemical equation or its components."
+    ]
+  },
+
+  {
+    "case_id": "climate-change-medium",
+    "question": "What are the main causes and effects of climate change?",
+    "generation": "Climate change is driven primarily by the emission of greenhouse gases — especially carbon dioxide (CO2), methane (CH4), and nitrous oxide (N2O) — resulting from burning fossil fuels, deforestation, and industrial agriculture. These gases trap heat in the Earth's atmosphere through the greenhouse effect, causing global average temperatures to rise.\n\nThe effects are widespread and interconnected. Rising temperatures are melting polar ice caps and mountain glaciers, causing sea levels to rise and threatening coastal communities. Ocean temperatures are increasing, which intensifies hurricanes and bleaches coral reefs. Altered precipitation patterns lead to more frequent droughts in some regions and heavier rainfall and flooding in others.\n\nBiodiversity is under threat: species are migrating toward the poles or to higher altitudes, and those unable to adapt fast enough face extinction. Human health is also affected through heat stress, the spread of vector-borne diseases like malaria, and food insecurity caused by disrupted agricultural yields. Globally, the economic costs of inaction are projected to exceed the costs of transitioning to clean energy by a wide margin.",
+    "ground_truth": "Climate change is primarily caused by human-generated greenhouse gas emissions from fossil fuels, agriculture, and deforestation. Effects include rising temperatures, sea-level rise, more extreme weather events, biodiversity loss, and threats to food and water security."
+  },
+
+  {
+    "case_id": "transformer-architecture-technical",
+    "question": "Explain the Transformer architecture and why it replaced RNNs for NLP tasks.",
+    "generation": "The Transformer, introduced in the 2017 paper 'Attention Is All You Need' by Vaswani et al., is a deep learning architecture built entirely around the self-attention mechanism. Unlike recurrent neural networks (RNNs) and their variants — LSTMs and GRUs — the Transformer processes entire input sequences in parallel rather than sequentially, making it dramatically faster to train on modern hardware.\n\nAt its core, a Transformer consists of an encoder and a decoder (though many modern models like BERT use only the encoder and GPT uses only the decoder). Each layer contains two sublayers: a multi-head self-attention mechanism and a position-wise feed-forward network, both wrapped with residual connections and layer normalization.\n\nSelf-attention allows each token in the sequence to attend to every other token, computing a weighted sum of value vectors based on the compatibility of query and key vectors. Multi-head attention runs several attention operations in parallel, each in a lower-dimensional subspace, then concatenates and projects the results. This lets the model jointly attend to information from different representation subspaces.\n\nBecause there is no recurrence, the model has no inherent notion of position. Positional encodings — either fixed sinusoidal functions or learned embeddings — are added to the input embeddings to inject sequence order information.\n\nRNNs suffered from vanishing/exploding gradients over long sequences and could not be parallelised during training because each hidden state depended on the previous one. The Transformer sidesteps both problems: its attention spans the full context in one step (no sequential dependency), and gradient paths are short. This allowed training on much larger datasets, which, combined with self-supervised objectives like masked language modelling, led to the large language model revolution.",
+    "rubric_rules": [
+      "The response must explain what self-attention is.",
+      "The response must mention positional encodings.",
+      "The response must explain why RNNs are slower or harder to train.",
+      "The response must not contain factual errors about the architecture."
+    ]
+  },
+
+  {
+    "case_id": "french-revolution-history-long",
+    "question": "What caused the French Revolution and what were its major consequences?",
+    "generation": "The French Revolution (1789–1799) was one of the most transformative political upheavals in modern history, fundamentally reshaping France and echoing across the world. Its causes were layered: social, economic, and ideological.\n\nSocial tensions arose from the rigid Ancien Régime, a three-estate system in which the clergy (First Estate) and nobility (Second Estate) enjoyed enormous privileges while the commoners — the Third Estate — bore most of the tax burden. The bourgeoisie, intellectually influenced by Enlightenment thinkers such as Rousseau, Voltaire, and Montesquieu, grew increasingly resentful of exclusion from political power.\n\nEconomically, France was near bankruptcy after decades of costly wars, including its support for the American Revolution. A series of poor harvests in the 1780s drove bread prices beyond the reach of ordinary people, compounding popular discontent. When King Louis XVI convened the Estates-General in May 1789 to address the fiscal crisis, disagreements over voting procedure — the Third Estate wanted representation by head rather than by order — triggered the political rupture.\n\nThe Third Estate declared itself a National Assembly and, after being locked out of its meeting hall, convened at a nearby tennis court and swore to draft a constitution (the Tennis Court Oath, June 1789). Widespread popular anger culminated in the storming of the Bastille fortress on 14 July 1789, now celebrated as Bastille Day. The feudal system was abolished in August, and the Declaration of the Rights of Man and of the Citizen proclaimed liberty, equality, and popular sovereignty.\n\nThe Revolution's trajectory radicalized rapidly. The constitutional monarchy gave way to the First Republic in 1792. Louis XVI was tried for treason and executed by guillotine in January 1793. The Reign of Terror (1793–1794), led by the Committee of Public Safety under Maximilien Robespierre, saw thousands executed as enemies of the Revolution before Robespierre himself was overthrown in the Thermidorian Reaction.\n\nConsequences were profound. Domestically, the Revolution dismantled feudalism, secularized institutions, unified legal codes, and entrenched the metric system. Internationally, its ideals of liberty, equality, and fraternity inspired revolutions across Europe and Latin America throughout the 19th century. Napoleonic expansion, which followed the revolutionary period, spread many of its legal and administrative reforms far beyond French borders. Yet the Revolution also demonstrated the dangers of political extremism, leaving a contested legacy that continues to shape debates about democracy, nationalism, and human rights.",
+    "ground_truth": "The French Revolution was caused by fiscal bankruptcy, social inequality under the Ancien Régime, Enlightenment ideas, and food shortages. Its major consequences included the abolition of feudalism, the execution of Louis XVI, the Reign of Terror, and the spread of democratic and nationalist ideals across the world."
+  },
+
+  {
+    "case_id": "diabetes-management-health",
+    "question": "How should a person with Type 2 diabetes manage their condition?",
+    "generation": "Type 2 diabetes management focuses on keeping blood glucose levels within a healthy range to prevent complications such as neuropathy, retinopathy, and cardiovascular disease. The cornerstone of management is lifestyle modification: a balanced diet low in refined carbohydrates and added sugars, regular aerobic exercise (at least 150 minutes per week), weight loss if overweight, and smoking cessation.\n\nBlood glucose should be monitored regularly, either through self-monitoring with a glucometer or via continuous glucose monitors (CGMs). HbA1c testing every three to six months gives a picture of average blood sugar over recent months, with a target typically below 7% for most patients.\n\nMedication is often necessary. Metformin remains the first-line pharmacological treatment, improving insulin sensitivity and reducing hepatic glucose output. If glycaemic control remains inadequate, additional agents such as SGLT2 inhibitors, GLP-1 receptor agonists, DPP-4 inhibitors, or insulin may be added based on individual patient factors including cardiovascular history, kidney function, and weight.\n\nRegular check-ups should include blood pressure monitoring, lipid panels, kidney function tests (eGFR and albuminuria), foot examinations, and dilated eye exams. Mental health support is also important, as diabetes distress and depression are common comorbidities that can undermine self-management.",
+    "rubric_rules": [
+      "The response must recommend lifestyle modifications including diet and exercise.",
+      "The response must mention HbA1c monitoring.",
+      "The response must name at least one class of medication beyond lifestyle changes.",
+      "The response must mention at least one complication that management aims to prevent."
+    ]
+  },
+
+  {
+    "case_id": "bitcoin-economics-medium",
+    "question": "What is Bitcoin and how does it work as a currency?",
+    "generation": "Bitcoin is a decentralised digital currency created in 2009 by the pseudonymous Satoshi Nakamoto. Unlike traditional currencies issued by central banks, Bitcoin operates on a peer-to-peer network with no central authority. Transactions are verified by network participants called miners, who use computational power to solve cryptographic puzzles — a process called proof of work.\n\nAll confirmed transactions are recorded on a public distributed ledger called the blockchain. Each block contains a cryptographic hash of the previous block, timestamps, and transaction data, making the chain resistant to tampering: altering one block would require recomputing all subsequent blocks, which is computationally infeasible without controlling more than half of the network's total mining power (a 51% attack).\n\nBitcoin's supply is capped at 21 million coins. New bitcoins are created as a reward to miners who successfully add a block; this reward halves approximately every four years in an event called the halving. The fixed supply schedule is designed to prevent inflation, contrasting sharply with fiat currencies that central banks can expand.\n\nAs a currency, Bitcoin is divisible to eight decimal places (the smallest unit, 0.00000001 BTC, is called a satoshi). Transactions are pseudonymous: wallets are identified by public addresses rather than names, though blockchain analysis can sometimes de-anonymize users. High price volatility has limited Bitcoin's adoption as a day-to-day medium of exchange, though it is widely used as a store of value and speculative asset.",
+    "ground_truth": "Bitcoin is a decentralised digital currency launched in 2009, using blockchain technology and proof-of-work mining to verify transactions without a central authority. Its supply is capped at 21 million coins."
+  },
+
+  {
+    "case_id": "great-barrier-reef-environment",
+    "question": "What is the Great Barrier Reef and what threats does it face?",
+    "generation": "The Great Barrier Reef is the world's largest coral reef ecosystem, stretching over 2,300 kilometres along the northeastern coast of Australia in the Coral Sea. It encompasses more than 2,900 individual reefs and 900 islands, covering approximately 344,400 square kilometres. Designated a UNESCO World Heritage Site in 1981, it supports extraordinary biodiversity — over 1,500 species of fish, 4,000 species of mollusc, 240 species of birds, and six of the world's seven species of marine turtle.\n\nThe reef faces severe and escalating threats. Climate change is the most critical: ocean warming triggers coral bleaching, a stress response in which corals expel the symbiotic algae (zooxanthellae) that provide them with colour and up to 90% of their energy. Prolonged bleaching causes coral death. The reef has experienced five mass bleaching events since 1998, with the 2016, 2017, 2020, and 2022 events being particularly devastating. Ocean acidification — caused by the absorption of atmospheric CO2 — weakens coral skeletons by reducing the availability of carbonate ions.\n\nAdditional stressors include agricultural runoff carrying pesticides and excess nutrients that fuel algae growth smothering corals; outbreaks of the crown-of-thorns starfish (Acanthaster planci), which feeds on coral polyps; cyclones causing physical damage; and coastal development. Despite conservation efforts, including stricter regulation of water quality and coral restoration programs, scientists warn that without significant global emissions reductions, large portions of the reef may be functionally extinct by mid-century.",
+    "context": [
+      "The Great Barrier Reef is the world's largest coral reef system, located in the Coral Sea off the coast of Queensland, Australia. It was selected as a World Heritage Area in 1981.",
+      "Coral bleaching occurs when water temperatures rise above normal levels and corals expel the algae that live within their tissues, causing them to turn white. If the stress is prolonged, the coral dies."
+    ]
+  },
+
+  {
+    "case_id": "hallucinated-science-bad-response",
+    "question": "What did the James Webb Space Telescope discover in its first year?",
+    "generation": "The James Webb Space Telescope (JWST), launched in December 2021, made several groundbreaking discoveries in its first year of science operations. It captured the deepest infrared images of the universe ever taken, revealing galaxies formed just a few hundred million years after the Big Bang. JWST detected carbon dioxide in the atmosphere of exoplanet WASP-39b, marking the first clear detection of this molecule in an exoplanet atmosphere. It also imaged the Carina Nebula and Stephan's Quintet in unprecedented detail.\n\nCritically, JWST also confirmed that the universe is approximately 20 billion years old, revising the previous estimate of 13.8 billion years significantly upward. Astronomers are now rewriting models of cosmic evolution based on this revised figure. Additionally, the telescope detected liquid water oceans on two moons of Saturn — Titan and Rhea — providing the strongest evidence yet for potentially habitable environments in our solar system.",
+    "rubric_rules": [
+      "The response must not claim the universe is 20 billion years old.",
+      "The response must not claim liquid water was detected on Rhea.",
+      "Claims about WASP-39b atmosphere detection should be accurate."
+    ]
+  },
+
+  {
+    "case_id": "machine-learning-overfitting-technical",
+    "question": "What is overfitting in machine learning and how can it be prevented?",
+    "generation": "Overfitting occurs when a machine learning model learns the training data too well — including its noise and random fluctuations — and as a result generalises poorly to unseen data. An overfitted model has low training error but high validation or test error, indicating that it has memorized the training set rather than learned underlying patterns.\n\nThe bias-variance trade-off frames the problem: a very complex model (high variance) captures noise; a very simple model (high bias) misses signal. Overfitting is a manifestation of excessive variance.\n\nSeveral techniques mitigate overfitting:\n\n1. **Regularisation** — L1 (Lasso) regularisation adds the absolute value of weights to the loss, encouraging sparsity; L2 (Ridge) regularisation adds the squared magnitude, discouraging large weights. Elastic Net combines both. These penalties constrain model complexity.\n\n2. **Dropout** (for neural networks) — During training, randomly deactivating a fraction of neurons at each step prevents co-adaptation and encourages the network to learn redundant representations.\n\n3. **Early stopping** — Monitoring validation loss during training and halting when it begins to rise prevents the model from training too long.\n\n4. **Data augmentation** — Synthetically expanding the training set (e.g., image flipping, cropping, colour jitter) exposes the model to more variation and reduces reliance on specific training examples.\n\n5. **Cross-validation** — Using k-fold cross-validation to evaluate generalisation more robustly and tune hyperparameters helps identify when a model overfits.\n\n6. **Reducing model complexity** — Fewer layers, fewer parameters, shallower trees, or lower-degree polynomials can be chosen when simpler models achieve comparable validation performance.\n\n7. **More data** — The most reliable cure: a larger, more representative training set makes it harder for the model to memorize rather than generalise.\n\nThe right combination of techniques depends on the model type, dataset size, and domain.",
+    "rubric_rules": [
+      "The response must define overfitting clearly in terms of train vs. test performance.",
+      "The response must mention at least three distinct prevention techniques.",
+      "The response must mention the bias-variance trade-off.",
+      "The response should not recommend only one technique as universally best."
+    ]
+  },
+
+  {
+    "case_id": "shakespeare-hamlet-short",
+    "question": "What is the central theme of Shakespeare's Hamlet?",
+    "generation": "The central theme of Hamlet is mortality and the paralysis that arises from contemplating it. Through the famous 'To be or not to be' soliloquy and repeated encounters with death — the Ghost, Yorick's skull, Ophelia's drowning — Shakespeare explores how consciousness of death impedes decisive action. Secondary themes include revenge and its moral cost, corruption in the Danish court, appearance versus reality, and the burden of filial duty. Hamlet's indecision stems not from cowardice but from his philosophical nature: he cannot act without questioning the meaning and consequences of every action.",
+    "ground_truth": "Hamlet's central themes include mortality, revenge, corruption, and the difficulty of action in the face of moral uncertainty."
+  },
+
+  {
+    "case_id": "gpt-rag-explanation-large",
+    "question": "Explain retrieval-augmented generation (RAG) and when it should be used over fine-tuning.",
+    "generation": "Retrieval-Augmented Generation (RAG) is a technique that combines a large language model (LLM) with an external retrieval system to ground the model's responses in up-to-date or domain-specific information that may not have been captured during pretraining.\n\nIn a standard RAG pipeline, when a user submits a query, the system first encodes the query into a dense vector using an embedding model. It then searches a vector database (such as Pinecone, Weaviate, Chroma, or FAISS) for the most semantically similar passages from a pre-indexed document corpus. Those retrieved passages are injected into the LLM's context window as 'context', and the model is prompted to answer the question using both its parametric knowledge and the retrieved evidence. The answer is thus grounded in verifiable, cited sources rather than relying solely on the model's internal weights.\n\nRAG has several key advantages:\n- **Freshness**: the knowledge base can be updated without retraining the model. Documents can be re-indexed as new information becomes available, allowing the system to answer questions about recent events.\n- **Transparency**: citations from retrieved passages allow users to verify answers and trace claims to source documents.\n- **Cost efficiency**: retrieval-based grounding is far cheaper than retraining or even fine-tuning large models.\n- **Reduced hallucination**: anchoring generation to retrieved text reduces, though does not eliminate, the risk of the model fabricating information.\n\nFine-tuning, by contrast, updates the model's weights on a task-specific or domain-specific dataset. It is better suited when:\n- The task requires a change in **output style or format** (e.g., always respond in bullet points, use a particular tone).\n- The model needs to learn **new capabilities** not present in pretraining (e.g., code generation in a proprietary DSL).\n- The domain has highly **specialised vocabulary or reasoning patterns** that benefit from weight-level adaptation (e.g., medical radiology report generation).\n- Latency is critical and injecting long contexts into each request is prohibitive.\n\nThe two approaches are not mutually exclusive. A fine-tuned model can serve as the LLM backbone of a RAG system, benefiting from both domain adaptation and grounded retrieval. In practice, RAG is typically the right first step when the goal is factual accuracy over a dynamic corpus, while fine-tuning adds value when stylistic or task-specific behavioural changes are needed that prompt engineering alone cannot achieve.",
+    "rubric_rules": [
+      "The response must explain what RAG is at a conceptual level.",
+      "The response must describe the retrieval step (embedding + vector search).",
+      "The response must give at least two scenarios where RAG is preferred over fine-tuning.",
+      "The response must give at least one scenario where fine-tuning is preferred over RAG.",
+      "The response must not claim RAG completely eliminates hallucination."
+    ]
+  }
+  
+]

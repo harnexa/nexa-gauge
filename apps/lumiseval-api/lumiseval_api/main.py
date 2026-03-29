@@ -13,12 +13,12 @@ TODO:
 """
 
 import uuid
+from typing import Union
 
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-
+from fastapi import FastAPI
 from lumiseval_agent.graph import run_graph
 from lumiseval_core.types import EvalJobConfig, EvalReport, RubricRule
+from pydantic import BaseModel
 
 app = FastAPI(
     title="LumisEval API",
@@ -31,53 +31,63 @@ class EvalJobRequest(BaseModel):
     generation: str
     question: str | None = None
     ground_truth: str | None = None
+    context: list[str] = []
     rubric_rules: list[RubricRule] = []
     reference_files: list[str] = []
     judge_model: str = "gpt-4o-mini"
     web_search: bool = False
-    adversarial: bool = False
-    enable_ragas: bool = True
-    enable_deepeval: bool = True
-    enable_giskard: bool = False
-    enable_rubric_eval: bool = False
+    enable_hallucination: bool = True
+    enable_faithfulness: bool = True
+    enable_answer_relevancy: bool = True
+    enable_adversarial: bool = False
+    enable_rubric: bool = False
     evidence_threshold: float = 0.75
     budget_cap_usd: float | None = None
     acknowledge_cost: bool = False
 
 
-@app.post("/jobs", response_model=EvalReport)
-def create_job(request: EvalJobRequest) -> EvalReport:
-    """Create and synchronously execute an evaluation job.
-
-    Set ``acknowledge_cost=true`` to confirm the pre-run cost estimate and proceed.
-    """
+def _run_one(request: EvalJobRequest) -> EvalReport:
     job_id = str(uuid.uuid4())
     job_config = EvalJobConfig(
         job_id=job_id,
         judge_model=request.judge_model,
-        enable_ragas=request.enable_ragas,
-        enable_deepeval=request.enable_deepeval,
-        enable_giskard=request.enable_giskard,
-        enable_rubric_eval=request.enable_rubric_eval,
+        enable_hallucination=request.enable_hallucination,
+        enable_faithfulness=request.enable_faithfulness,
+        enable_answer_relevancy=request.enable_answer_relevancy,
+        enable_adversarial=request.enable_adversarial,
+        enable_rubric=request.enable_rubric,
         web_search=request.web_search,
-        adversarial=request.adversarial,
         evidence_threshold=request.evidence_threshold,
         budget_cap_usd=request.budget_cap_usd,
     )
 
-    try:
-        report = run_graph(
-            generation=request.generation,
-            job_config=job_config,
-            question=request.question,
-            ground_truth=request.ground_truth,
-            rubric_rules=request.rubric_rules or None,
-            reference_files=request.reference_files or None,
-        )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
+    report = run_graph(
+        generation=request.generation,
+        job_config=job_config,
+        question=request.question,
+        ground_truth=request.ground_truth,
+        context=request.context or None,
+        rubric_rules=request.rubric_rules or None,
+        reference_files=request.reference_files or None,
+    )
     return report
+
+
+@app.post("/jobs", response_model=Union[EvalReport, list[EvalReport]])
+def create_job(
+    request: Union[EvalJobRequest, list[EvalJobRequest]],
+) -> Union[EvalReport, list[EvalReport]]:
+    """Create and synchronously execute one or many evaluation jobs.
+
+    Accepts either:
+      - a single EvalJobRequest object
+      - a JSON array of EvalJobRequest objects
+
+    Set ``acknowledge_cost=true`` in each request payload to indicate pre-run cost acknowledgement.
+    """
+    if isinstance(request, list):
+        return [_run_one(item) for item in request]
+    return _run_one(request)
 
 
 @app.get("/health")

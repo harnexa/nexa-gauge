@@ -1,0 +1,92 @@
+<svg width="1600" height="640" viewBox="0 0 1600 640" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="LumisEval project banner">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1600" y2="640" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1220"/>
+      <stop offset="0.55" stop-color="#121E36"/>
+      <stop offset="1" stop-color="#1B2E56"/>
+    </linearGradient>
+    <radialGradient id="glowA" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(260 110) rotate(26) scale(420 300)">
+      <stop stop-color="#25C2FF" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#25C2FF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowB" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1320 110) rotate(23) scale(360 260)">
+      <stop stop-color="#6BFFCE" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#6BFFCE" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowC" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1480 530) rotate(-18) scale(360 240)">
+      <stop stop-color="#FFC766" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#FFC766" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="card" x1="80" y1="80" x2="1520" y2="560" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0D162A" stop-opacity="0.88"/>
+      <stop offset="1" stop-color="#122145" stop-opacity="0.88"/>
+    </linearGradient>
+    <linearGradient id="line" x1="1100" y1="180" x2="1510" y2="440" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7FC7FF"/>
+      <stop offset="1" stop-color="#5BE8D0"/>
+    </linearGradient>
+    <filter id="shadow" x="0" y="0" width="1600" height="640" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#02060E" flood-opacity="0.52"/>
+    </filter>
+    <style>
+      .title { font: 800 88px "Avenir Next", "SF Pro Display", "Segoe UI", sans-serif; letter-spacing: 0.4px; fill: #EDF5FF; }
+      .subtitle { font: 600 34px "Avenir Next", "SF Pro Display", "Segoe UI", sans-serif; letter-spacing: 0.25px; fill: #A8CBFF; }
+      .chipText { font: 700 26px "Avenir Next", "SF Pro Text", "Segoe UI", sans-serif; fill: #E8F3FF; }
+      .nodeText { font: 700 19px "Avenir Next", "SF Pro Text", "Segoe UI", sans-serif; fill: #08182E; }
+      .calloutTitle { font: 700 30px "Avenir Next", "SF Pro Text", "Segoe UI", sans-serif; fill: #CBFFEF; }
+      .calloutSub { font: 500 22px "Avenir Next", "SF Pro Text", "Segoe UI", sans-serif; fill: #ADE8D8; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="640" fill="url(#bg)"/>
+  <ellipse cx="260" cy="110" rx="420" ry="300" fill="url(#glowA)"/>
+  <ellipse cx="1320" cy="110" rx="360" ry="260" fill="url(#glowB)"/>
+  <ellipse cx="1480" cy="530" rx="360" ry="240" fill="url(#glowC)"/>
+
+  <g filter="url(#shadow)">
+    <rect x="80" y="80" width="1440" height="480" rx="34" fill="url(#card)" stroke="#6A8EF4" stroke-opacity="0.45" stroke-width="2"/>
+  </g>
+
+  <text x="150" y="220" class="title">LumisEval</text>
+  <text x="150" y="274" class="subtitle">Transparent, Cost-Aware, Configurable</text>
+  <text x="150" y="314" class="subtitle">LLM Evaluation Pipeline</text>
+
+  <g>
+    <rect x="150" y="340" width="220" height="58" rx="16" fill="#1A2F56" stroke="#6A8EF4"/>
+    <text x="260" y="378" class="chipText" text-anchor="middle">LLM-as-Judge</text>
+
+    <rect x="390" y="340" width="220" height="58" rx="16" fill="#17384A" stroke="#5DD9C5"/>
+    <text x="500" y="378" class="chipText" text-anchor="middle">Cost Upfront</text>
+
+    <rect x="630" y="340" width="220" height="58" rx="16" fill="#2E365A" stroke="#9AB0FF"/>
+    <text x="740" y="378" class="chipText" text-anchor="middle">Traceable</text>
+
+    <rect x="870" y="340" width="220" height="58" rx="16" fill="#364049" stroke="#F0C57A"/>
+    <text x="980" y="378" class="chipText" text-anchor="middle">Configurable</text>
+  </g>
+
+  <g>
+    <path d="M1135 210L1245 280L1358 210L1245 350L1358 420" stroke="url(#line)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+
+    <circle cx="1135" cy="210" r="46" fill="#64B4FF" stroke="#EAF5FF" stroke-width="3"/>
+    <text x="1109" y="216" class="nodeText">Input</text>
+
+    <circle cx="1245" cy="280" r="46" fill="#7AE2FF" stroke="#EAF5FF" stroke-width="3"/>
+    <text x="1217" y="286" class="nodeText">Claims</text>
+
+    <circle cx="1358" cy="210" r="46" fill="#74F2CC" stroke="#EAF5FF" stroke-width="3"/>
+    <text x="1332" y="216" class="nodeText">Judge</text>
+
+    <circle cx="1245" cy="350" r="46" fill="#FFD284" stroke="#EAF5FF" stroke-width="3"/>
+    <text x="1212" y="356" class="nodeText">Metrics</text>
+
+    <circle cx="1358" cy="420" r="46" fill="#FFA886" stroke="#EAF5FF" stroke-width="3"/>
+    <text x="1334" y="426" class="nodeText">Report</text>
+  </g>
+
+  <g>
+    <rect x="150" y="438" width="940" height="90" rx="18" fill="#144A43" fill-opacity="0.55" stroke="#7CE9CE" stroke-opacity="0.85" stroke-width="2"/>
+    <text x="184" y="478" class="calloutTitle">Upfront Cost Preview</text>
+    <text x="184" y="508" class="calloutSub">Estimate budget before full execution. No blind spend.</text>
+  </g>
+</svg>

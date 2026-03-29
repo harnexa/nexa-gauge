@@ -16,11 +16,13 @@ import logging
 from typing import Any
 
 import lancedb
-import numpy as np
-from sentence_transformers import SentenceTransformer
-
 from lumiseval_core.config import config
-from lumiseval_core.errors import EvidenceRoutingError
+from lumiseval_core.constants import (
+    EVIDENCE_RETRIEVAL_TOP_K,
+    EVIDENCE_TAVILY_MAX_RESULTS,
+    EVIDENCE_VERDICT_SUPPORTED_THRESHOLD,
+    EVIDENCE_VERDICT_UNVERIFIABLE_THRESHOLD,
+)
 from lumiseval_core.types import (
     Claim,
     ClaimVerdict,
@@ -28,6 +30,7 @@ from lumiseval_core.types import (
     EvidenceResult,
     EvidenceSource,
 )
+from sentence_transformers import SentenceTransformer
 
 from .indexer import index_texts
 
@@ -47,33 +50,33 @@ def _query_lancedb(
     query_text: str,
     db_path: str,
     table_name: str = "documents",
-    top_k: int = 5,
+    top_k: int = EVIDENCE_RETRIEVAL_TOP_K,
 ) -> list[dict[str, Any]]:
-    try:
-        db = lancedb.connect(db_path)
-        if table_name not in db.table_names():
-            return []
-        table = db.open_table(table_name)
-        model = _get_model()
-        embedding = model.encode([query_text], show_progress_bar=False)[0].tolist()
-        results = table.search(embedding).limit(top_k).to_list()
-        return results
-    except Exception as exc:
-        logger.warning("LanceDB query failed: %s", exc)
+    # try:
+    db = lancedb.connect(db_path)
+    if table_name not in db.table_names():
         return []
+    table = db.open_table(table_name)
+    model = _get_model()
+    embedding = model.encode([query_text], show_progress_bar=False)[0].tolist()
+    results = table.search(embedding).limit(top_k).to_list()
+    return results
+    # except Exception as exc:
+    #     logger.warning("LanceDB query failed: %s", exc)
+    #     return []
 
 
 def _tavily_search(query: str) -> list[dict[str, Any]]:
     """Execute a Tavily search and return raw result dicts."""
-    try:
-        from tavily import TavilyClient
+    # try:
+    from tavily import TavilyClient
 
-        client = TavilyClient(api_key=config.TAVILY_API_KEY)
-        response = client.search(query, max_results=5)
-        return response.get("results", [])
-    except Exception as exc:
-        logger.error("Tavily search failed for query '%s': %s", query, exc)
-        return []
+    client = TavilyClient(api_key=config.TAVILY_API_KEY)
+    response = client.search(query, max_results=EVIDENCE_TAVILY_MAX_RESULTS)
+    return response.get("results", [])
+    # except Exception as exc:
+    #     logger.error("Tavily search failed for query '%s': %s", query, exc)
+    #     return []
 
 
 def _results_to_passages(
@@ -168,8 +171,8 @@ def route(
 
 
 def _score_to_verdict(score: float) -> ClaimVerdict:
-    if score >= 0.75:
+    if score >= EVIDENCE_VERDICT_SUPPORTED_THRESHOLD:
         return ClaimVerdict.SUPPORTED
-    if score >= 0.4:
+    if score >= EVIDENCE_VERDICT_UNVERIFIABLE_THRESHOLD:
         return ClaimVerdict.UNVERIFIABLE
     return ClaimVerdict.CONTRADICTED

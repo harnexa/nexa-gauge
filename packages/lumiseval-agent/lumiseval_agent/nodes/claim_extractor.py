@@ -1,25 +1,22 @@
 """
 Claim Extractor — decomposes each text chunk into atomic, verifiable factual claims.
 
-Uses instructor with a configurable judge LLM (via litellm) to extract claims.
-Pydantic validation is handled automatically by instructor; up to 3 retries per chunk.
-Chunks that fail after retries are flagged with extraction_failed=True rather than
-aborting the full evaluation.
+Routes through the LLM Gateway so model selection, fallback strategy, and token
+tracking are centralised. Per-node model override: LLM_CLAIMS_MODEL.
 
 TODO: Tune the extraction prompt for domain-specific claim types.
 """
 
-import logging
 from typing import Optional
-
-import instructor
-import litellm
-from pydantic import BaseModel, Field
 
 from lumiseval_core.config import config
 from lumiseval_core.types import Chunk, Claim
+from pydantic import BaseModel, Field
 
-logger = logging.getLogger(__name__)
+from lumiseval_agent.llm import get_llm
+from lumiseval_agent.log import get_node_logger
+
+log = get_node_logger("claims")
 
 _EXTRACTION_PROMPT = """You are a precise claim extractor. Given the following text chunk, extract
 all atomic, verifiable factual claims it makes.
@@ -46,56 +43,49 @@ class _ClaimList(BaseModel):
 def extract_claims(
     chunks: list[Chunk],
     model: Optional[str] = None,
-    max_retries: int = 3,
 ) -> list[Claim]:
-    """Extract atomic factual claims from all chunks.
+    """Extract atomic factual claims from all chunks via the LLM Gateway.
 
     Args:
         chunks: List of Chunk objects from the Chunker.
-        model: LiteLLM model string (e.g., ``"gpt-4o-mini"``). Defaults to config.LLM_MODEL.
-        max_retries: Number of instructor retries per chunk on validation failure.
+        model: LiteLLM model string. Defaults to config.LLM_MODEL.
+               Overridden at the node level by LLM_CLAIMS_MODEL env var.
 
     Returns:
         Flat list of Claim objects across all chunks.
     """
-    model = model or config.LLM_MODEL
-    client = instructor.from_litellm(litellm.completion)
+    default_model = model or config.LLM_MODEL
+    # get_llm returns a cached instance — safe to call in the loop
+    structured_llm = get_llm("claims", _ClaimList, default_model=default_model)
     all_claims: list[Claim] = []
 
     for chunk in chunks:
-        try:
-            result = client.chat.completions.create(
-                model=model,
-                response_model=_ClaimList,
-                max_retries=max_retries,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": _EXTRACTION_PROMPT.format(chunk_text=chunk.text),
-                    }
-                ],
-            )
-            for claim_text, confidence in zip(result.claims, result.confidences):
-                all_claims.append(
-                    Claim(
-                        text=claim_text,
-                        source_chunk_index=chunk.index,
-                        confidence=confidence,
-                    )
-                )
-        except Exception as exc:
-            logger.warning(
-                "Claim extraction failed for chunk %d after %d retries: %s",
-                chunk.index,
-                max_retries,
-                exc,
-            )
+        log.info(f"chunk {chunk.index + 1}/{len(chunks)}  ({len(chunk.text)} chars)")
+
+        response = structured_llm.invoke(
+            [{"role": "user", "content": _EXTRACTION_PROMPT.format(chunk_text=chunk.text)}]
+        )
+
+        if response["parsing_error"]:
+            raise response["parsing_error"]
+
+        result: _ClaimList = response["parsed"]
+        tokens = response["usage"]["total_tokens"]
+        n = len(result.claims)
+        log.info(
+            f"  → {n} claim(s) extracted from chunk {chunk.index}"
+            f"  (model={response['model']}  tokens={tokens})"
+        )
+
+        for claim_text, confidence in zip(result.claims, result.confidences):
             all_claims.append(
                 Claim(
-                    text="",
+                    text=claim_text,
                     source_chunk_index=chunk.index,
-                    extraction_failed=True,
+                    confidence=confidence,
                 )
             )
 
-    return [c for c in all_claims if not c.extraction_failed or c.text]
+    valid = [c for c in all_claims if not c.extraction_failed or c.text]
+    log.success(f"{len(valid)} total claim(s) across all chunks")
+    return valid

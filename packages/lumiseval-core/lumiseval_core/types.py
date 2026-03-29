@@ -1,11 +1,22 @@
 """Shared domain types for lumis-eval."""
 
-from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from pydantic import BaseModel, Field
 
+from lumiseval_core.constants import (
+    DEFAULT_DATASET_NAME,
+    DEFAULT_JUDGE_MODEL,
+    DEFAULT_SPLIT,
+    EVIDENCE_VERDICT_SUPPORTED_THRESHOLD,
+    SCORE_WEIGHT_ANSWER_RELEVANCY,
+    SCORE_WEIGHT_EVIDENCE_SUPPORT_RATE,
+    SCORE_WEIGHT_FAITHFULNESS,
+    SCORE_WEIGHT_HALLUCINATION,
+    SCORE_WEIGHT_RUBRIC,
+    SCORE_WEIGHT_SAFETY,
+)
 
 # ── Enums ──────────────────────────────────────────────────────────────────
 
@@ -23,17 +34,16 @@ class EvidenceSource(str, Enum):
     NONE = "none"
 
 
-class RuleCompliance(str, Enum):
-    PASS = "PASS"
-    FAIL = "FAIL"
-    UNCERTAIN = "UNCERTAIN"
-
-
 class Severity(str, Enum):
     LOW = "LOW"
     MEDIUM = "MEDIUM"
     HIGH = "HIGH"
     CRITICAL = "CRITICAL"
+
+
+class MetricCategory(str, Enum):
+    RETRIEVAL = "retrieval"  # was evidence retrieval correct/complete?
+    ANSWER = "answer"  # is the answer correct, relevant, and safe?
 
 
 # ── Core domain models ─────────────────────────────────────────────────────
@@ -68,15 +78,6 @@ class EvidencePassage(BaseModel):
     source: EvidenceSource
 
 
-class EvidenceResult(BaseModel):
-    claim_text: str
-    source: EvidenceSource
-    passages: list[EvidencePassage] = Field(default_factory=list)
-    verdict: ClaimVerdict = ClaimVerdict.UNVERIFIABLE
-    no_evidence_found: bool = False
-    knowledge_gap: bool = False
-
-
 class InputMetadata(BaseModel):
     record_count: int
     total_tokens: int
@@ -84,6 +85,9 @@ class InputMetadata(BaseModel):
     estimated_chunk_count: int
     estimated_claim_count: int
     per_record: list[dict[str, Any]] = Field(default_factory=list)
+    eligible_record_count: dict[str, int] = Field(default_factory=dict)
+    eligible_chunk_count: dict[str, int] = Field(default_factory=dict)
+    eligible_claim_count: dict[str, int] = Field(default_factory=dict)
 
 
 class CostEstimate(BaseModel):
@@ -100,81 +104,92 @@ class CostEstimate(BaseModel):
     approximate_warning: Optional[str] = None
 
 
+# ── Unified metric result types ─────────────────────────────────────────────
+
+
+class Faithfulness(Claim):
+    """Per-claim verdict produced by the faithfulness evaluator.
+
+    Inherits all Claim fields (text, source_chunk_index, confidence,
+    extraction_failed) and adds the faithfulness verdict.
+    """
+
+    verdict: str  # "ACCEPTED" or "REJECTED"
+
+
+class Relevancy(Claim):
+    verdict: str
+
+
+class MetricResult(BaseModel):
+    """Result for a single evaluation metric. score is always 0.0–1.0 where 1.0 is best."""
+
+    name: str
+    category: MetricCategory
+    score: Optional[float] = None
+    passed: Optional[bool] = None
+    reasoning: Optional[str] = None
+    error: Optional[str] = None
+    result: list[Union[Faithfulness, Relevancy]] = Field(default_factory=list)
+
+
+class QualityScore(BaseModel):
+    """Composite score for one evaluation dimension (retrieval or answer)."""
+
+    score: Optional[float] = None
+    metrics: list[MetricResult] = Field(default_factory=list)
+
+
+class EvalCase(BaseModel):
+    """Canonical dataset row used by adapters and dataset runners."""
+
+    case_id: str
+    generation: str
+    dataset: str = DEFAULT_DATASET_NAME
+    split: str = DEFAULT_SPLIT
+    question: Optional[str] = None
+    ground_truth: Optional[str] = None
+    context: list[str] = Field(default_factory=list)
+    reference_files: list[str] = Field(default_factory=list)
+    rubric_rules: list[RubricRule] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+# ── Configuration ───────────────────────────────────────────────────────────
+
+
 class EvalJobConfig(BaseModel):
     job_id: str
-    judge_model: str = "gpt-4o-mini"
-    enable_ragas: bool = True
-    enable_deepeval: bool = True
-    enable_giskard: bool = False
-    enable_rubric_eval: bool = False
+    judge_model: str = DEFAULT_JUDGE_MODEL
+    enable_hallucination: bool = True
+    enable_faithfulness: bool = True
+    enable_answer_relevancy: bool = True
+    enable_adversarial: bool = False
+    enable_rubric: bool = False
     web_search: bool = False
-    adversarial: bool = False
-    evidence_threshold: float = 0.75
+    evidence_threshold: float = EVIDENCE_VERDICT_SUPPORTED_THRESHOLD
     score_weights: dict[str, float] = Field(
         default_factory=lambda: {
-            "faithfulness": 0.4,
-            "hallucination": 0.3,
-            "rubric": 0.2,
-            "safety": 0.1,
+            "faithfulness": SCORE_WEIGHT_FAITHFULNESS,
+            "answer_relevancy": SCORE_WEIGHT_ANSWER_RELEVANCY,
+            "hallucination": SCORE_WEIGHT_HALLUCINATION,
+            "rubric": SCORE_WEIGHT_RUBRIC,
+            "safety": SCORE_WEIGHT_SAFETY,
+            "evidence_support_rate": SCORE_WEIGHT_EVIDENCE_SUPPORT_RATE,
         }
     )
     budget_cap_usd: Optional[float] = None
 
 
-class RAGASMetricResult(BaseModel):
-    faithfulness: Optional[float] = None
-    answer_relevancy: Optional[float] = None
-    context_precision: Optional[float] = None
-    context_recall: Optional[float] = None
-    error: Optional[str] = None
-
-
-class DeepEvalMetricResult(BaseModel):
-    hallucination_score: Optional[float] = None
-    g_eval_score: Optional[float] = None
-    privacy_score: Optional[float] = None
-    bias_score: Optional[float] = None
-    error: Optional[str] = None
-
-
-class GiskardVulnerability(BaseModel):
-    probe_type: str
-    severity: Severity
-    description: str
-    reproduction_details: str
-    false_positive: bool = False
-
-
-class GiskardScanResult(BaseModel):
-    vulnerabilities: list[GiskardVulnerability] = Field(default_factory=list)
-    giskard_available: bool = True
-    error: Optional[str] = None
-
-
-class RubricRuleResult(BaseModel):
-    rule_id: str
-    compliance: RuleCompliance
-    reasoning: str
-    confidence: float
-    violated_claims: list[str] = Field(default_factory=list)
-    error: Optional[str] = None
-
-
-class RubricEvalResult(BaseModel):
-    rule_results: list[RubricRuleResult] = Field(default_factory=list)
-    compliance_rate: float = 0.0
-    composite_adherence_score: float = 0.0
+# ── Report ──────────────────────────────────────────────────────────────────
 
 
 class EvalReport(BaseModel):
     job_id: str
     composite_score: Optional[float] = None
     confidence_band: Optional[float] = None
-    claim_verdicts: list[EvidenceResult] = Field(default_factory=list)
-    ragas: Optional[RAGASMetricResult] = None
-    deepeval: Optional[DeepEvalMetricResult] = None
-    giskard: Optional[GiskardScanResult] = None
-    rubric: Optional[RubricEvalResult] = None
+    retrieval_score: Optional[QualityScore] = None
+    answer_score: Optional[QualityScore] = None
     cost_estimate: Optional[CostEstimate] = None
     cost_actual_usd: float = 0.0
     evaluation_incomplete: bool = False

@@ -9,12 +9,10 @@ TODO: Implement MCP LanceDB connection support.
 """
 
 from pathlib import Path
-from typing import Any
 
 import lancedb
-from sentence_transformers import SentenceTransformer
-
 from lumiseval_core.config import config
+from sentence_transformers import SentenceTransformer
 
 _model: SentenceTransformer | None = None
 
@@ -24,13 +22,6 @@ def _get_model() -> SentenceTransformer:
     if _model is None:
         _model = SentenceTransformer(config.EMBEDDING_MODEL)
     return _model
-
-
-def _get_table(db_path: str, table_name: str = "documents") -> Any:
-    db = lancedb.connect(db_path)
-    if table_name in db.table_names():
-        return db.open_table(table_name)
-    return None
 
 
 def index_texts(

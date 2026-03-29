@@ -1,3 +1,9 @@
+<p align="center">
+  <img src="lumiseval-banner.svg" alt="Lumis Eval" width="720" />
+</p>
+
+
+
 # LumisEval
 
 > Agentic LLM evaluation pipeline — orchestrate RAGAS, DeepEval, and Giskard from a single command, with upfront cost estimates and per-claim source citations.
@@ -33,12 +39,12 @@ lumis-eval/
 │           └── nodes/
 │               ├── claim_extractor.py
 │               ├── cost_estimator.py
-│               ├── aggregation.py
+│               ├── eval.py
 │               └── metrics/
-│                   ├── ragas_node.py
-│                   ├── deepeval_node.py
-│                   ├── giskard_node.py
-│                   └── rubric_node.py
+│                   ├── relevance.py
+│                   ├── grounding.py
+│                   ├── redteam.py
+│                   └── rubric.py
 ├── apps/
 │   ├── lumiseval-api/          # FastAPI REST API
 │   └── lumiseval-cli/          # Typer CLI
@@ -58,9 +64,9 @@ lumis-eval/
 | `lumiseval-core` | Shared Pydantic types, pydantic-settings config, custom errors |
 | `lumiseval-ingest` | Token-accurate metadata scanner (tiktoken) + semantic chunker (semchunk) |
 | `lumiseval-evidence` | Evidence router (local LanceDB → MCP → Tavily), MMR deduplicator, LanceDB indexer |
-| `lumiseval-agent` | LangGraph orchestration graph, claim extractor (instructor), RAGAS / DeepEval / Giskard / Rubric metric nodes, cost estimator, aggregation |
+| `lumiseval-agent` | LangGraph orchestration graph, node runners, claim extraction, relevance/grounding/redteam/rubric metrics, estimate, and final eval |
 | `lumiseval-api` | FastAPI REST interface (`POST /jobs`, `GET /jobs/{id}/report`) |
-| `lumiseval-cli` | Typer CLI (`lumiseval eval`, `lumiseval estimate`, `lumiseval batch`) |
+| `lumiseval-cli` | Typer CLI (`lumiseval run <node_name> --input <source>`) |
 
 ## Quick start
 
@@ -77,11 +83,11 @@ make install
 cp .env.example .env
 # Edit .env: add OPENAI_API_KEY (and TAVILY_API_KEY if using web search)
 
-# 4. Evaluate a generation
-lumiseval eval --input my_blog_post.txt
+# 4. Run pipeline to final eval (includes preflight scan + estimate)
+lumiseval run eval --input sample.json
 
-# 5. Get a cost estimate first (no LLM calls)
-lumiseval estimate --input my_blog_post.txt
+# 5. Or run to an intermediate node
+lumiseval run estimate --input sample.json
 
 # 6. Start the REST API
 make api
@@ -103,11 +109,10 @@ make clean       # remove build artifacts
 
 | Mode | Command | Description |
 |------|---------|-------------|
-| Single generation | `lumiseval eval --input blog.txt` | Claim extraction → evidence routing → RAGAS + DeepEval |
-| Cost estimate only | `lumiseval estimate --input blog.txt` | No LLM calls; returns cost breakdown with ±20% band |
-| Rubric evaluation | Pass `RubricRule` list to API or rubric file to CLI | G-Eval per rule; compliance rate + composite adherence |
-| Adversarial probes | `lumiseval eval --adversarial` | Giskard scan + DeepEval Privacy/Bias metrics |
-| Batch dataset | `lumiseval batch dataset.jsonl` | Cost estimate first; each record needs a `generation` field |
+| Preflight only | `lumiseval run estimate --input sample.json` | Scans selected cases, prints estimate, and stops at `estimate` |
+| Claims stage | `lumiseval run claims --input sample.json` | Runs scan/estimate/approve/chunk/claims |
+| Full scoring | `lumiseval run eval --input sample.json` | Runs complete dependency chain and final scoring |
+| Rubric/adversarial variants | `lumiseval run eval --enable-rubric --enable-adversarial --input sample.json` | Enables optional metric branches before final eval |
 | REST API | `POST /jobs` | Programmatic integration |
 
 ## Roadmap

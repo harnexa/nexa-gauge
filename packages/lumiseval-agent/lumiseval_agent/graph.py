@@ -2,10 +2,10 @@
 LangGraph Orchestration Graph — the core evaluation pipeline.
 
 Node sequence:
-  metadata_scanner → cost_estimator → [user confirm gate] → chunker →
-  claim_extractor → mmr_deduplicator → evidence_router →
-  [parallel: ragas_node, deepeval_node, giskard_node, rubric_node] →
-  aggregation → result
+  scan → estimate → [user approve gate] → chunk →
+  claims → dedupe → retrieve →
+  [parallel: relevance, grounding, redteam, rubric] →
+  eval → result
 
 TODO:
   - Implement async TaskIQ dispatch for batch jobs.
@@ -15,43 +15,56 @@ TODO:
 
 import logging
 import uuid
-from typing import Annotated, Any, Optional, TypedDict
+from typing import Optional, TypedDict
 
 from langgraph.graph import END, StateGraph
-
+from lumiseval_core.config import config as cfg
 from lumiseval_core.types import (
     Chunk,
     Claim,
     CostEstimate,
-    DeepEvalMetricResult,
     EvalJobConfig,
     EvalReport,
-    EvidenceResult,
-    GiskardScanResult,
     InputMetadata,
-    RAGASMetricResult,
-    RubricEvalResult,
+    MetricResult,
     RubricRule,
 )
+from lumiseval_evidence.indexer import index_file
+from lumiseval_evidence.mmr import deduplicate
 from lumiseval_ingest.chunker import chunk_text
 from lumiseval_ingest.scanner import scan_text
-from lumiseval_evidence.mmr import deduplicate
-from lumiseval_evidence.router import route
 
-from .nodes import aggregation
-from .nodes import claim_extractor
-from .nodes import cost_estimator
-from .nodes.metrics import deepeval_node, giskard_node, ragas_node, rubric_node
+from .llm import get_judge_model
+from .log import get_node_logger, print_pipeline_footer, print_pipeline_header
+from .nodes import claim_extractor, cost_estimator, eval
+from .nodes.metrics import grounding, redteam, relevance, rubric
+from .observability import observe, score_trace, update_trace
 
 logger = logging.getLogger(__name__)
 
+# Module-level node loggers — one per pipeline node
+_log_scanner = get_node_logger("scan")
+_log_cost = get_node_logger("estimate")
+_log_confirm = get_node_logger("approve")
+_log_chunker = get_node_logger("chunk")
+_log_claims = get_node_logger("claims")
+_log_mmr = get_node_logger("dedupe")
+_log_ragas = get_node_logger("relevance")
+_log_hallucination = get_node_logger("grounding")
+_log_adversarial = get_node_logger("redteam")
+_log_rubric = get_node_logger("rubric")
+_log_agg = get_node_logger("eval")
+
 
 # ── Graph state ────────────────────────────────────────────────────────────
+
 
 class EvalState(TypedDict):
     generation: str
     question: Optional[str]
     ground_truth: Optional[str]
+    context: Optional[list[str]]
+    target_node: Optional[str]
     reference_files: list[str]
     rubric_rules: list[RubricRule]
     job_config: EvalJobConfig
@@ -62,11 +75,11 @@ class EvalState(TypedDict):
     chunks: list[Chunk]
     raw_claims: list[Claim]
     unique_claims: list[Claim]
-    evidence_results: list[EvidenceResult]
-    ragas_result: Optional[RAGASMetricResult]
-    deepeval_result: Optional[DeepEvalMetricResult]
-    giskard_result: Optional[GiskardScanResult]
-    rubric_result: Optional[RubricEvalResult]
+    # Metric results — one list per parallel node
+    grounding_metrics: list[MetricResult]
+    relevance_metrics: list[MetricResult]
+    redteam_metrics: list[MetricResult]
+    rubric_metrics: list[MetricResult]
     cost_actual_usd: float
     report: Optional[EvalReport]
     error: Optional[str]
@@ -74,109 +87,141 @@ class EvalState(TypedDict):
 
 # ── Node implementations ───────────────────────────────────────────────────
 
+
+@observe(name="node_scan")
 def node_metadata_scanner(state: EvalState) -> dict:
-    meta = scan_text(state["generation"])
+    gen = state["generation"]
+    has_context = any(
+        isinstance(item, str) and item.strip() for item in (state.get("context") or [])
+    )
+    meta = scan_text(
+        gen,
+        has_context=has_context,
+        has_rubric_rules=bool(state.get("rubric_rules")),
+    )
     return {"metadata": meta}
 
 
+@observe(name="node_estimate")
 def node_cost_estimator(state: EvalState) -> dict:
-    try:
-        estimate = cost_estimator.estimate(state["metadata"], state["job_config"])
-        return {"cost_estimate": estimate}
-    except Exception as exc:
-        return {"error": str(exc)}
+    estimate = cost_estimator.estimate(
+        state["metadata"],
+        state["job_config"],
+        target_node=state.get("target_node"),
+        rubric_rule_count=len(state.get("rubric_rules") or []),
+    )
+    if estimate.approximate_warning:
+        _log_cost.warning(estimate.approximate_warning)
+
+    return {"cost_estimate": estimate}
 
 
+@observe(name="node_approve")
 def node_confirm_gate(state: EvalState) -> dict:
     # In API mode, confirmation is handled via the request payload (acknowledge=True).
     # In CLI mode, the CLI layer prompts interactively before calling run_graph().
     # This node is a passthrough — confirmation is expected before graph execution.
+    _log_confirm.info("Passthrough — confirmation already handled by caller")
     return {"confirmed": True}
 
 
-def node_chunker(state: EvalState) -> dict:
+@observe(name="node_chunk")
+def node_chunk(state: EvalState) -> dict:
+    if not state.get("context"):
+        return {"chunks": []}
     chunks = chunk_text(state["generation"])
     return {"chunks": chunks}
 
 
-def node_claim_extractor(state: EvalState) -> dict:
+@observe(name="node_claims")
+def node_claims(state: EvalState) -> dict:
+    if not state.get("context") or not state.get("chunks"):
+        return {"raw_claims": []}
+    model = state["job_config"].judge_model
     claims = claim_extractor.extract_claims(
         state["chunks"],
-        model=state["job_config"].judge_model,
+        model=model,
     )
     return {"raw_claims": claims}
 
 
-def node_mmr_deduplicator(state: EvalState) -> dict:
-    unique, _ = deduplicate(state["raw_claims"])
+@observe(name="node_dedupe")
+def node_dedupe(state: EvalState) -> dict:
+    raw = state["raw_claims"]
+    if not raw:
+        return {"unique_claims": []}
+    unique, dedup_map = deduplicate(raw)
     return {"unique_claims": unique}
 
 
-def node_evidence_router(state: EvalState) -> dict:
-    cfg = state["job_config"]
-    results = [
-        route(
-            claim,
-            web_search=cfg.web_search,
-            threshold=cfg.evidence_threshold,
-        )
-        for claim in state["unique_claims"]
-    ]
-    return {"evidence_results": results}
-
-
-def node_ragas(state: EvalState) -> dict:
-    if not state["job_config"].enable_ragas:
-        return {"ragas_result": None}
-    result = ragas_node.run(
-        generation=state["generation"],
-        evidence_results=state["evidence_results"],
+@observe(name="node_relevance")
+def node_relevance(state: EvalState) -> dict:
+    claims = state.get("unique_claims") or []
+    if not claims:
+        return {"relevance_metrics": []}
+    if not state["job_config"].enable_answer_relevancy:
+        return {"relevance_metrics": []}
+    model = get_judge_model("relevance", state["job_config"].judge_model)
+    results = relevance.run(
+        claims=claims,
         question=state.get("question"),
-        ground_truth=state.get("ground_truth"),
-        judge_model=state["job_config"].judge_model,
+        judge_model=model,
+        enable_answer_relevancy=True,
     )
-    return {"ragas_result": result}
+    return {"relevance_metrics": results}
 
 
-def node_deepeval(state: EvalState) -> dict:
-    if not state["job_config"].enable_deepeval:
-        return {"deepeval_result": None}
-    result = deepeval_node.run(
+@observe(name="node_grounding")
+def node_grounding(state: EvalState) -> dict:
+    claims = state.get("unique_claims") or []
+    if not claims or not state.get("context"):
+        return {"grounding_metrics": []}
+    if not state["job_config"].enable_faithfulness:
+        return {"grounding_metrics": []}
+    model = get_judge_model("grounding", state["job_config"].judge_model)
+    results = grounding.run(
+        claims=claims,
+        context=state["context"],
+        judge_model=model,
+        enable_faithfulness=True,
+    )
+    return {"grounding_metrics": results}
+
+
+@observe(name="node_redteam")
+def node_adversarial(state: EvalState) -> dict:
+    if not state["job_config"].enable_adversarial:
+        return {"redteam_metrics": []}
+    model = get_judge_model("redteam", state["job_config"].judge_model)
+    results = redteam.run(
         generation=state["generation"],
-        evidence_results=state["evidence_results"],
-        rubric_rules=state["rubric_rules"] if state["job_config"].enable_rubric_eval else None,
-        adversarial=state["job_config"].adversarial,
-        judge_model=state["job_config"].judge_model,
+        judge_model=model,
     )
-    return {"deepeval_result": result}
+    return {"redteam_metrics": results}
 
 
-def node_giskard(state: EvalState) -> dict:
-    if not state["job_config"].enable_giskard or not state["job_config"].adversarial:
-        return {"giskard_result": None}
-    result = giskard_node.run(generation=state["generation"])
-    return {"giskard_result": result}
-
-
-def node_rubric_eval(state: EvalState) -> dict:
-    if not state["job_config"].enable_rubric_eval or not state["rubric_rules"]:
-        return {"rubric_result": None}
-    result = rubric_node.run(
+@observe(name="node_rubric")
+def node_rubric(state: EvalState) -> dict:
+    if not state["job_config"].enable_rubric or not state["rubric_rules"]:
+        return {"rubric_metrics": []}
+    rules = state["rubric_rules"]
+    model = get_judge_model("rubric", state["job_config"].judge_model)
+    results = rubric.run(
         generation=state["generation"],
-        rubric_rules=state["rubric_rules"],
-        judge_model=state["job_config"].judge_model,
+        rubric_rules=rules,
+        judge_model=model,
     )
-    return {"rubric_result": result}
+    return {"rubric_metrics": results}
 
 
-def node_aggregation(state: EvalState) -> dict:
-    report = aggregation.aggregate(
+@observe(name="node_eval")
+def node_eval(state: EvalState) -> dict:
+    report = eval.aggregate(
         job_id=state["job_config"].job_id,
-        claim_verdicts=state["evidence_results"],
-        ragas=state.get("ragas_result"),
-        deepeval=state.get("deepeval_result"),
-        giskard=state.get("giskard_result"),
-        rubric=state.get("rubric_result"),
+        grounding_metrics=state.get("grounding_metrics") or [],
+        relevance_metrics=state.get("relevance_metrics") or [],
+        redteam_metrics=state.get("redteam_metrics") or [],
+        rubric_metrics=state.get("rubric_metrics") or [],
         cost_estimate=state.get("cost_estimate"),
         cost_actual_usd=state.get("cost_actual_usd", 0.0),
         job_config=state["job_config"],
@@ -186,47 +231,92 @@ def node_aggregation(state: EvalState) -> dict:
 
 # ── Graph construction ─────────────────────────────────────────────────────
 
+
 def build_graph() -> StateGraph:
     g = StateGraph(EvalState)
 
-    g.add_node("metadata_scanner", node_metadata_scanner)
-    g.add_node("cost_estimator", node_cost_estimator)
-    g.add_node("confirm_gate", node_confirm_gate)
-    g.add_node("chunker", node_chunker)
-    g.add_node("claim_extractor", node_claim_extractor)
-    g.add_node("mmr_deduplicator", node_mmr_deduplicator)
-    g.add_node("evidence_router", node_evidence_router)
-    g.add_node("ragas", node_ragas)
-    g.add_node("deepeval", node_deepeval)
-    g.add_node("giskard", node_giskard)
-    g.add_node("rubric_eval", node_rubric_eval)
-    g.add_node("aggregation", node_aggregation)
+    g.add_node("scan", node_metadata_scanner)
+    g.add_node("estimate", node_cost_estimator)
+    g.add_node("approve", node_confirm_gate)
+    g.add_node("chunk", node_chunk)
+    g.add_node("claims", node_claims)
+    g.add_node("dedupe", node_dedupe)
+    g.add_node("relevance", node_relevance)
+    g.add_node("grounding", node_grounding)
+    g.add_node("redteam", node_adversarial)
+    g.add_node("rubric", node_rubric)
+    g.add_node("eval", node_eval)
 
-    g.set_entry_point("metadata_scanner")
-    g.add_edge("metadata_scanner", "cost_estimator")
-    g.add_edge("cost_estimator", "confirm_gate")
-    g.add_edge("confirm_gate", "chunker")
-    g.add_edge("chunker", "claim_extractor")
-    g.add_edge("claim_extractor", "mmr_deduplicator")
-    g.add_edge("mmr_deduplicator", "evidence_router")
-    g.add_edge("evidence_router", "ragas")
-    g.add_edge("evidence_router", "deepeval")
-    g.add_edge("evidence_router", "giskard")
-    g.add_edge("evidence_router", "rubric_eval")
-    g.add_edge("ragas", "aggregation")
-    g.add_edge("deepeval", "aggregation")
-    g.add_edge("giskard", "aggregation")
-    g.add_edge("rubric_eval", "aggregation")
-    g.add_edge("aggregation", END)
+    g.set_entry_point("scan")
+    g.add_edge("scan", "estimate")
+    g.add_edge("estimate", "approve")
+    g.add_edge("approve", "chunk")
+    g.add_edge("chunk", "claims")
+    g.add_edge("claims", "dedupe")
+    g.add_edge("dedupe", "relevance")
+    g.add_edge("dedupe", "grounding")
+    g.add_edge("approve", "redteam")
+    g.add_edge("approve", "rubric")
+    g.add_edge("relevance", "eval")
+    g.add_edge("grounding", "eval")
+    g.add_edge("redteam", "eval")
+    g.add_edge("rubric", "eval")
+    g.add_edge("eval", END)
 
     return g
 
 
+def build_initial_state(
+    generation: str,
+    job_config: Optional[EvalJobConfig] = None,
+    question: Optional[str] = None,
+    ground_truth: Optional[str] = None,
+    context: Optional[list[str]] = None,
+    target_node: Optional[str] = None,
+    rubric_rules: Optional[list[RubricRule]] = None,
+    reference_files: Optional[list[str]] = None,
+) -> EvalState:
+    """Build the canonical graph state for one evaluation input."""
+    if job_config is None:
+        job_config = EvalJobConfig(
+            job_id=str(uuid.uuid4()),
+            judge_model=cfg.LLM_MODEL,
+            web_search=cfg.WEB_SEARCH_ENABLED,
+            evidence_threshold=cfg.EVIDENCE_THRESHOLD,
+        )
+
+    return EvalState(
+        generation=generation,
+        question=question,
+        ground_truth=ground_truth,
+        context=context or [],
+        target_node=target_node,
+        reference_files=reference_files or [],
+        rubric_rules=rubric_rules or [],
+        job_config=job_config,
+        metadata=None,
+        cost_estimate=None,
+        confirmed=False,
+        chunks=[],
+        raw_claims=[],
+        unique_claims=[],
+        grounding_metrics=[],
+        relevance_metrics=[],
+        redteam_metrics=[],
+        rubric_metrics=[],
+        cost_actual_usd=0.0,
+        report=None,
+        error=None,
+    )
+
+
+@observe(name="lumiseval_pipeline")
 def run_graph(
     generation: str,
     job_config: Optional[EvalJobConfig] = None,
     question: Optional[str] = None,
     ground_truth: Optional[str] = None,
+    context: Optional[list[str]] = None,
     rubric_rules: Optional[list[RubricRule]] = None,
     reference_files: Optional[list[str]] = None,
 ) -> EvalReport:
@@ -237,55 +327,41 @@ def run_graph(
         job_config: Evaluation configuration. A default config is created if not provided.
         question: Optional query that produced the generation (improves RAGAS scores).
         ground_truth: Optional reference answer (enables context recall).
+        context: Optional retrieval context passages for retrieval-path metrics.
         rubric_rules: Optional list of rubric rules to evaluate against.
         reference_files: Optional list of file paths to index before evaluation.
 
     Returns:
-        EvalReport with all available metric scores and per-claim verdicts.
+        EvalReport with retrieval_score, answer_score, composite_score, and per-claim verdicts.
     """
-    from lumiseval_core.config import config as cfg
+    initial_state = build_initial_state(
+        generation=generation,
+        job_config=job_config,
+        question=question,
+        ground_truth=ground_truth,
+        context=context,
+        rubric_rules=rubric_rules,
+        reference_files=reference_files,
+        target_node="eval",
+    )
+    job_config = initial_state["job_config"]
 
-    if job_config is None:
-        job_config = EvalJobConfig(
-            job_id=str(uuid.uuid4()),
-            judge_model=cfg.LLM_MODEL,
-            web_search=cfg.WEB_SEARCH_ENABLED,
-            evidence_threshold=cfg.EVIDENCE_THRESHOLD,
-        )
+    print_pipeline_header(
+        job_id=job_config.job_id,
+        model=job_config.judge_model,
+        web_search=job_config.web_search,
+    )
 
     # Index reference files into local LanceDB before graph runs
     if reference_files:
-        from lumiseval_evidence.indexer import index_file
+        _log_scanner.info(f"Indexing {len(reference_files)} reference file(s) into LanceDB")
 
         for fpath in reference_files:
-            try:
-                count = index_file(fpath)
-                logger.info("Indexed %d passages from %s", count, fpath)
-            except Exception as exc:
-                logger.warning("Failed to index %s: %s", fpath, exc)
-
-    initial_state = EvalState(
-        generation=generation,
-        question=question,
-        ground_truth=ground_truth,
-        reference_files=reference_files or [],
-        rubric_rules=rubric_rules or [],
-        job_config=job_config,
-        metadata=None,
-        cost_estimate=None,
-        confirmed=False,
-        chunks=[],
-        raw_claims=[],
-        unique_claims=[],
-        evidence_results=[],
-        ragas_result=None,
-        deepeval_result=None,
-        giskard_result=None,
-        rubric_result=None,
-        cost_actual_usd=0.0,
-        report=None,
-        error=None,
-    )
+            # try:
+            count = index_file(fpath)
+            _log_scanner.success(f"Indexed {count} passages from {fpath}")
+            # except Exception as exc:
+            #     _log_scanner.warning(f"Failed to index {fpath}: {exc}")
 
     graph = build_graph().compile()
     final_state = graph.invoke(initial_state)
@@ -293,4 +369,21 @@ def run_graph(
     if final_state.get("error"):
         raise RuntimeError(final_state["error"])
 
-    return final_state["report"]
+    report = final_state["report"]
+    print_pipeline_footer(
+        composite_score=report.composite_score,
+        cost_usd=report.cost_actual_usd,
+    )
+
+    update_trace(
+        metadata={
+            "job_id": job_config.job_id,
+            "judge_model": job_config.judge_model,
+            "cost_actual_usd": report.cost_actual_usd,
+            "warnings": report.warnings,
+        }
+    )
+    if report.composite_score is not None:
+        score_trace("composite_score", report.composite_score)
+
+    return report
