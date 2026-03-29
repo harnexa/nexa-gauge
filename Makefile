@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install sync lint format typecheck test test-verbose test-pkg clean clean-venv
+.PHONY: help install sync lint format typecheck test test-verbose test-pkg ci clean clean-venv
 
 # ── Variables ──────────────────────────────────────────────────────────────
 PROJECT_NAME := lumis-eval
@@ -37,6 +37,16 @@ test-verbose: ## Run all tests with verbose output
 
 test-pkg: ## Run tests for a specific package. Usage: make test-pkg PKG=packages/lumiseval-core
 	uv run pytest $(PKG)
+
+# ── CI ─────────────────────────────────────────────────────────────────────
+ci: ## Run full CI pipeline locally (format check → lint → test)
+	@echo "==> format check"
+	uv run ruff format --check .
+	@echo "==> lint"
+	uv run ruff check .
+	@echo "==> test"
+	uv run pytest
+	@echo "==> CI passed"
 
 # ── Dev servers ────────────────────────────────────────────────────────────
 api: ## Start the FastAPI dev server

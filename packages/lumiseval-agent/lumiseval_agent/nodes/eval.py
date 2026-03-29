@@ -54,11 +54,11 @@ def aggregate(
 
     # Partition — vulnerability markers (score=0 presence flags) go to warnings, not scores
     retrieval_metrics = [
-        m for m in all_metrics
-        if m.category == MetricCategory.RETRIEVAL and m.score is not None
+        m for m in all_metrics if m.category == MetricCategory.RETRIEVAL and m.score is not None
     ]
     answer_metrics = [
-        m for m in all_metrics
+        m
+        for m in all_metrics
         if m.category == MetricCategory.ANSWER
         and m.score is not None
         and not m.name.startswith("vulnerability_")

@@ -91,7 +91,9 @@ class EvalState(TypedDict):
 @observe(name="node_scan")
 def node_metadata_scanner(state: EvalState) -> dict:
     gen = state["generation"]
-    has_context = any(isinstance(item, str) and item.strip() for item in (state.get("context") or []))
+    has_context = any(
+        isinstance(item, str) and item.strip() for item in (state.get("context") or [])
+    )
     meta = scan_text(
         gen,
         has_context=has_context,

@@ -19,12 +19,7 @@ class _FaithfulnessResult(BaseModel):
     verdicts: list[bool]
 
 
-
-def _faithfulness(
-    claims: list[Claim],
-    context: list[str],
-    judge_model: str
-) -> MetricResult:
+def _faithfulness(claims: list[Claim], context: list[str], judge_model: str) -> MetricResult:
     """Check each claim against context passages; return fraction supported."""
     context_text = "\n\n".join(context)
     numbered = "\n".join(f"{i + 1}. {c.text}" for i, c in enumerate(claims))
@@ -52,9 +47,7 @@ def _faithfulness(
     if result is None or not result.verdicts:
         log.warning("Faithfulness LLM call returned no verdicts")
         return MetricResult(
-            name="faithfulness",
-            category=MetricCategory.ANSWER,
-            error="No verdicts returned"
+            name="faithfulness", category=MetricCategory.ANSWER, error="No verdicts returned"
         )
 
     # Align length in case LLM returns fewer/more verdicts than claims
@@ -72,7 +65,6 @@ def _faithfulness(
         score=score,
         result=claim_verdicts,
     )
-
 
 
 def run(
@@ -94,6 +86,7 @@ def run(
         else:
             results.append(_faithfulness(claims, context, judge_model))
     return results
+
 
 # ── Manual smoke test ─────────────────────────────────────────────────────────
 
@@ -149,7 +142,6 @@ if __name__ == "__main__":
 
     result = _faithfulness(claims, context, judge_model="gpt-4o-mini")
     print("result: ", result)
-
 
     # assert result.error is None, f"Unexpected error: {result.error}"
     # assert result.score is not None and 0.5 <= result.score <= 0.8, (

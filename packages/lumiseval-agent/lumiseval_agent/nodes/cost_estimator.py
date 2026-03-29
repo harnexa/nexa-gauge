@@ -66,7 +66,14 @@ def _estimate_call_counts(
     eligible_chunks = metadata.eligible_chunk_count or {}
     eligible_claims = metadata.eligible_claim_count or {}
 
-    needs_claim_path = target_node in {"estimate", "claims", "dedupe", "relevance", "grounding", "eval"} # "retrieve",
+    needs_claim_path = target_node in {
+        "estimate",
+        "claims",
+        "dedupe",
+        "relevance",
+        "grounding",
+        "eval",
+    }  # "retrieve",
     # needs_retrieval_path = target_node in {"retrieve", "relevance", "grounding", "eval"}
     needs_relevance = target_node in {"relevance", "eval"}
     needs_grounding = target_node in {"grounding", "eval"} and job_config.enable_hallucination
@@ -82,7 +89,8 @@ def _estimate_call_counts(
     claim_extraction_calls = claim_path_chunks if needs_claim_path else 0
     relevance_calls = (
         relevance_records
-        if needs_relevance and (job_config.enable_faithfulness or job_config.enable_answer_relevancy)
+        if needs_relevance
+        and (job_config.enable_faithfulness or job_config.enable_answer_relevancy)
         else 0
     )
     grounding_calls = grounding_records if needs_grounding else 0
@@ -133,11 +141,13 @@ def estimate(
     approximate = False
     approximate_warning: Optional[str] = None
 
-    estimated_judge_calls, estimated_embedding_calls, estimated_tavily_calls = _estimate_call_counts(
-        metadata=metadata,
-        job_config=job_config,
-        target_node=normalized_target,
-        rubric_rule_count=rubric_rule_count or 0,
+    estimated_judge_calls, estimated_embedding_calls, estimated_tavily_calls = (
+        _estimate_call_counts(
+            metadata=metadata,
+            job_config=job_config,
+            target_node=normalized_target,
+            rubric_rule_count=rubric_rule_count or 0,
+        )
     )
 
     # Judge call cost

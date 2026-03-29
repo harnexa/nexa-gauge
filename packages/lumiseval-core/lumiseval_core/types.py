@@ -113,7 +113,9 @@ class Faithfulness(Claim):
     Inherits all Claim fields (text, source_chunk_index, confidence,
     extraction_failed) and adds the faithfulness verdict.
     """
+
     verdict: str  # "ACCEPTED" or "REJECTED"
+
 
 class Relevancy(Claim):
     verdict: str

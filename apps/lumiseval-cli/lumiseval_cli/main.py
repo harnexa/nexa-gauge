@@ -137,8 +137,12 @@ def run(
         min=1,
         help="Maximum number of cases to run from the source.",
     ),
-    adapter: str = typer.Option("auto", "--adapter", help="Adapter to use: auto, local, huggingface."),
-    hf_config: Optional[str] = typer.Option(None, "--hf-config", help="Optional Hugging Face dataset config name."),
+    adapter: str = typer.Option(
+        "auto", "--adapter", help="Adapter to use: auto, local, huggingface."
+    ),
+    hf_config: Optional[str] = typer.Option(
+        None, "--hf-config", help="Optional Hugging Face dataset config name."
+    ),
     hf_revision: Optional[str] = typer.Option(
         None,
         "--hf-revision",

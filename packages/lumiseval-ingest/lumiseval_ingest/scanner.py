@@ -63,7 +63,9 @@ def _has_context(value: Any) -> bool:
     if isinstance(value, str):
         return bool(value.strip())
     if isinstance(value, list):
-        return any(_is_nonempty_text(item) or (item is not None and str(item).strip()) for item in value)
+        return any(
+            _is_nonempty_text(item) or (item is not None and str(item).strip()) for item in value
+        )
     return bool(str(value).strip())
 
 
@@ -314,12 +316,8 @@ def scan_file(
             )
         meta = _record_metadata(i, str(generation))
 
-        has_context = _has_context(
-            rec.get("context", rec.get("contexts", rec.get("documents")))
-        )
-        has_rubric_rules = _has_rubric_rules(
-            rec.get("rubric_rules", rec.get("rubric"))
-        )
+        has_context = _has_context(rec.get("context", rec.get("contexts", rec.get("documents"))))
+        has_rubric_rules = _has_rubric_rules(rec.get("rubric_rules", rec.get("rubric")))
         flags = _node_eligibility(
             has_generation=_is_nonempty_text(str(generation)),
             has_context=has_context,

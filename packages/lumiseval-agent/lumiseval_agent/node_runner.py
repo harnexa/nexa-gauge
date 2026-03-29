@@ -313,8 +313,7 @@ class CachedNodeRunner:
                 if to_run:
                     with ThreadPoolExecutor(max_workers=len(to_run)) as pool:
                         futures = {
-                            pool.submit(NodeRunner._node_fns[m], dict(state)): m
-                            for m in to_run
+                            pool.submit(NodeRunner._node_fns[m], dict(state)): m for m in to_run
                         }
                         for future in as_completed(futures):
                             metric_step = futures[future]
@@ -354,7 +353,6 @@ class CachedNodeRunner:
                         node_output = cached_output
                     i += 1
                     continue
-
 
             output = NodeRunner._node_fns[step](state)
             state.update(output)

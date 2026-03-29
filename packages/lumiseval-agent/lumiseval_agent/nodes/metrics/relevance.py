@@ -67,7 +67,7 @@ def _answer_relevancy(
                 "  - 'irrelevant' : the statement does not relate to the question\n"
                 "  - 'idk'        : cannot determine relevance (ambiguous or incomplete)\n\n"
                 "Return a JSON object with a single key 'verdicts' containing a list of objects "
-                "{\"verdict\": \"relevant\"|\"irrelevant\"|\"idk\"} in the same order as the statements."
+                '{"verdict": "relevant"|"irrelevant"|"idk"} in the same order as the statements.'
             ),
         },
     ]
@@ -87,10 +87,7 @@ def _answer_relevancy(
     relevant_count = sum(1 for v in verdicts if v.verdict == "relevant")
     score = relevant_count / len(verdicts)
 
-    per_claim = [
-        Relevancy(**c.model_dump(), verdict=v.verdict)
-        for c, v in zip(claims, verdicts)
-    ]
+    per_claim = [Relevancy(**c.model_dump(), verdict=v.verdict) for c, v in zip(claims, verdicts)]
 
     log.success(
         f"answer_relevancy={score:.3f}  "

@@ -74,7 +74,9 @@ def _run_one(request: EvalJobRequest) -> EvalReport:
 
 
 @app.post("/jobs", response_model=Union[EvalReport, list[EvalReport]])
-def create_job(request: Union[EvalJobRequest, list[EvalJobRequest]]) -> Union[EvalReport, list[EvalReport]]:
+def create_job(
+    request: Union[EvalJobRequest, list[EvalJobRequest]],
+) -> Union[EvalReport, list[EvalReport]]:
     """Create and synchronously execute one or many evaluation jobs.
 
     Accepts either:

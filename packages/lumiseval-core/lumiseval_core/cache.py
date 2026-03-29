@@ -161,9 +161,7 @@ class CacheStore:
         """Return True if a valid cache entry exists for this node."""
         return self._path(case_hash, config_hash, node_name).exists()
 
-    def get(
-        self, case_hash: str, config_hash: str, node_name: str
-    ) -> Optional[dict[str, Any]]:
+    def get(self, case_hash: str, config_hash: str, node_name: str) -> Optional[dict[str, Any]]:
         """Load and deserialise a cached node output.
 
         Returns None on a cache miss or if the file cannot be parsed.
