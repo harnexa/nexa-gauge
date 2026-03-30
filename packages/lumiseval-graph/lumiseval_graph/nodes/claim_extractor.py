@@ -13,8 +13,8 @@ from lumiseval_core.config import config
 from lumiseval_core.types import Chunk, Claim
 from pydantic import BaseModel, Field
 
-from lumiseval_agent.llm import get_llm
-from lumiseval_agent.log import get_node_logger
+from lumiseval_graph.llm import get_llm
+from lumiseval_graph.log import get_node_logger
 
 log = get_node_logger("claims")
 

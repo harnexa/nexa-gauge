@@ -14,6 +14,9 @@ from typing import Any, Callable, Optional, Sequence
 import tiktoken
 from lumiseval_core.constants import CHUNK_SIZE_TOKENS, CLAIMS_PER_CHUNK, TIKTOKEN_ENCODING
 from lumiseval_core.errors import InputParseError
+from lumiseval_core.pipeline import CONTEXT_REQUIRED_NODES as _CONTEXT_NODES
+from lumiseval_core.pipeline import NODE_ORDER as _NODE_ORDER
+from lumiseval_core.pipeline import RUBRIC_REQUIRED_NODES as _RUBRIC_NODES
 from lumiseval_core.types import EvalCase, InputMetadata
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
 
@@ -21,20 +24,6 @@ _ENCODING = tiktoken.get_encoding(TIKTOKEN_ENCODING)
 
 TOKENS_PER_CHUNK = CHUNK_SIZE_TOKENS
 ProgressCallback = Callable[[int, int], None]
-_NODE_ORDER = [
-    "scan",
-    "estimate",
-    "approve",
-    "chunk",
-    "claims",
-    "dedupe",
-    "relevance",
-    "grounding",
-    "redteam",
-    "rubric",
-    "eval",
-]
-_CONTEXT_NODES = {"chunk", "claims", "dedupe", "relevance", "grounding"}
 
 
 def _count_tokens(text: str) -> int:
@@ -86,7 +75,8 @@ def _node_eligibility(
     flags = {node: has_generation for node in _NODE_ORDER}
     for node in _CONTEXT_NODES:
         flags[node] = has_generation and has_context
-    flags["rubric"] = has_generation and has_rubric_rules
+    for node in _RUBRIC_NODES:
+        flags[node] = has_generation and has_rubric_rules
     return flags
 
 

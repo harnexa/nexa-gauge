@@ -90,6 +90,11 @@ class InputMetadata(BaseModel):
     eligible_claim_count: dict[str, int] = Field(default_factory=dict)
 
 
+class NodeCostBreakdown(BaseModel):
+    judge_calls: int = 0
+    cost_usd: float = 0.0
+
+
 class CostEstimate(BaseModel):
     estimated_judge_calls: int
     estimated_embedding_calls: int
@@ -102,6 +107,7 @@ class CostEstimate(BaseModel):
     high_usd: float
     approximate: bool = False
     approximate_warning: Optional[str] = None
+    node_breakdown: dict[str, NodeCostBreakdown] = Field(default_factory=dict)
 
 
 # ── Unified metric result types ─────────────────────────────────────────────

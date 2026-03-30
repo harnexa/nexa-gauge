@@ -37,7 +37,10 @@ from lumiseval_ingest.scanner import scan_text
 from .llm import get_judge_model
 from .log import get_node_logger, print_pipeline_footer, print_pipeline_header
 from .nodes import claim_extractor, cost_estimator, eval
-from .nodes.metrics import grounding, redteam, relevance, rubric
+from .nodes.metrics.grounding import GroundingNode
+from .nodes.metrics.redteam import RedteamNode
+from .nodes.metrics.relevance import RelevanceNode
+from .nodes.metrics.rubric import RubricNode
 from .observability import observe, score_trace, update_trace
 
 logger = logging.getLogger(__name__)
@@ -162,10 +165,9 @@ def node_relevance(state: EvalState) -> dict:
     if not state["job_config"].enable_answer_relevancy:
         return {"relevance_metrics": []}
     model = get_judge_model("relevance", state["job_config"].judge_model)
-    results = relevance.run(
+    results = RelevanceNode(judge_model=model).run(
         claims=claims,
         question=state.get("question"),
-        judge_model=model,
         enable_answer_relevancy=True,
     )
     return {"relevance_metrics": results}
@@ -179,10 +181,9 @@ def node_grounding(state: EvalState) -> dict:
     if not state["job_config"].enable_faithfulness:
         return {"grounding_metrics": []}
     model = get_judge_model("grounding", state["job_config"].judge_model)
-    results = grounding.run(
+    results = GroundingNode(judge_model=model).run(
         claims=claims,
         context=state["context"],
-        judge_model=model,
         enable_faithfulness=True,
     )
     return {"grounding_metrics": results}
@@ -193,10 +194,7 @@ def node_adversarial(state: EvalState) -> dict:
     if not state["job_config"].enable_adversarial:
         return {"redteam_metrics": []}
     model = get_judge_model("redteam", state["job_config"].judge_model)
-    results = redteam.run(
-        generation=state["generation"],
-        judge_model=model,
-    )
+    results = RedteamNode(judge_model=model).run(generation=state["generation"])
     return {"redteam_metrics": results}
 
 
@@ -206,10 +204,9 @@ def node_rubric(state: EvalState) -> dict:
         return {"rubric_metrics": []}
     rules = state["rubric_rules"]
     model = get_judge_model("rubric", state["job_config"].judge_model)
-    results = rubric.run(
+    results = RubricNode(judge_model=model).run(
         generation=state["generation"],
         rubric_rules=rules,
-        judge_model=model,
     )
     return {"rubric_metrics": results}
 

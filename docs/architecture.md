@@ -3,7 +3,7 @@
 This document reflects the current implementation across:
 - `apps/lumiseval-cli`
 - `apps/lumiseval-api`
-- `packages/lumiseval-agent`
+- `packages/lumiseval-graph`
 - `packages/lumiseval-ingest`
 - `packages/lumiseval-evidence`
 - `packages/lumiseval-core`

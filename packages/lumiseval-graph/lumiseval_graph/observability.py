@@ -4,7 +4,7 @@ Observability helpers for LumisEval.
 Provides Langfuse tracing utilities — all soft-imported so the package works
 without langfuse installed.  Install the optional extra to activate tracing:
 
-    uv pip install "lumiseval-agent[observability]"
+    uv pip install "lumiseval-graph[observability]"
 
 Env vars (all optional):
     LANGFUSE_SECRET_KEY   — enable tracing when set
@@ -12,14 +12,14 @@ Env vars (all optional):
     LANGFUSE_HOST         — defaults to https://cloud.langfuse.com
 
 Usage in graph nodes:
-    from lumiseval_agent.observability import observe
+    from lumiseval_graph.observability import observe
 
     @observe(name="node_claims")
     def node_claims(state):
         ...
 
 Usage after an LLM call:
-    from lumiseval_agent.observability import log_llm_usage
+    from lumiseval_graph.observability import log_llm_usage
 
     response = structured_llm.invoke(messages)
     log_llm_usage(response)   # no-op when langfuse is absent

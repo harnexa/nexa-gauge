@@ -7,11 +7,11 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
-    "lumiseval-agent",
+    "lumiseval-graph",
 ]
 
 [tool.uv.sources]
-lumiseval-agent = { workspace = true }
+lumiseval-graph = { workspace = true }
 
 [project.scripts]
 lumiseval-api = "lumiseval_api.main:app"

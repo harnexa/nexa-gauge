@@ -7,7 +7,7 @@ Wraps ``litellm.completion`` so every call:
   - Returns a unified dict with the parsed Pydantic object + token usage
 
 Usage:
-    from lumiseval_agent.llm import get_llm
+    from lumiseval_graph.llm import get_llm
 
     llm = get_llm("claims", _ClaimList, default_model="gpt-4o-mini")
     response = llm.invoke([{"role": "user", "content": "..."}])
@@ -23,7 +23,7 @@ import litellm
 from lumiseval_core.constants import LLM_CALL_TIMEOUT_SECONDS
 from pydantic import BaseModel
 
-from lumiseval_agent.llm.config import get_node_config
+from lumiseval_graph.llm.config import get_node_config
 
 logger = logging.getLogger(__name__)
 

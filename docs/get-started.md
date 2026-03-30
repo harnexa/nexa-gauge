@@ -24,7 +24,7 @@ POST /jobs
 ## 2) Setup
 
 ```bash
-cd /Volumes/Raid1CrucialHD/sardhendu/workspace/lumis-eval
+cd lumis-eval
 uv sync
 cp .env.example .env
 ```

@@ -18,11 +18,12 @@ from pathlib import Path
 from typing import Any, Optional
 
 import typer
-from lumiseval_agent.nodes.cost_estimator import estimate as compute_estimate
-from lumiseval_agent.runners.node_runner import CachedNodeRunner, NodeRunner
 from lumiseval_core.cache import CacheStore, NoOpCacheStore
 from lumiseval_core.errors import InputParseError
+from lumiseval_core.pipeline import NODE_ORDER, NODES_BY_NAME, PREFLIGHT_NODES
 from lumiseval_core.types import EvalJobConfig
+from lumiseval_graph import CachedNodeRunner, NodeRunner
+from lumiseval_graph.nodes.cost_estimator import estimate as compute_estimate
 from lumiseval_ingest import create_dataset_adapter
 from lumiseval_ingest.scanner import scan_cases
 from rich.console import Console
@@ -54,17 +55,24 @@ def _to_jsonable(value: Any) -> Any:
 
 def _print_cost_table(cost) -> None:
     table = Table(title="Cost Estimate", show_header=True)
-    table.add_column("Component", style="cyan")
-    table.add_column("Calls", justify="right")
+    table.add_column("Node", style="cyan")
+    table.add_column("Judge Calls", justify="right")
     table.add_column("Cost (USD)", justify="right")
-    table.add_row("Judge calls", str(cost.estimated_judge_calls), f"${cost.judge_cost_usd:.6f}")
+    for node in NODE_ORDER:
+        if node not in cost.node_breakdown:
+            continue
+        bd = cost.node_breakdown[node]
+        table.add_row(node, str(bd.judge_calls), f"${bd.cost_usd:.6f}")
     table.add_row(
-        "Embedding calls", str(cost.estimated_embedding_calls), f"${cost.embedding_cost_usd:.6f}"
+        "[dim]embeddings[/dim]",
+        f"[dim]{cost.estimated_embedding_calls}[/dim]",
+        f"[dim]${cost.embedding_cost_usd:.6f}[/dim]",
     )
     table.add_row(
-        "Tavily searches", str(cost.estimated_tavily_calls), f"${cost.tavily_cost_usd:.6f}"
+        "[dim]tavily[/dim]",
+        f"[dim]{cost.estimated_tavily_calls}[/dim]",
+        f"[dim]${cost.tavily_cost_usd:.6f}[/dim]",
     )
-    table.add_row("[bold]Total[/bold]", "", f"[bold]${cost.total_estimated_usd:.6f}[/bold]")
     console.print(table)
     console.print(f"  Confidence range: ${cost.low_usd:.6f} – ${cost.high_usd:.6f} (±20%)")
     if cost.approximate_warning:
@@ -75,17 +83,22 @@ def _print_scan_table(meta) -> None:
     table = Table(title="Scan Statistics", show_header=True)
     table.add_column("Metric", style="cyan")
     table.add_column("Value", justify="right")
+    table.add_column("Source", style="dim")
 
     avg_tokens = (meta.total_tokens / meta.record_count) if meta.record_count else 0
     avg_chars = (meta.total_chars / meta.record_count) if meta.record_count else 0
 
-    table.add_row("Records scanned", f"{meta.record_count:,}")
-    table.add_row("Total tokens", f"{meta.total_tokens:,}")
-    table.add_row("Total characters", f"{meta.total_chars:,}")
-    table.add_row("Estimated chunks", f"{meta.estimated_chunk_count:,}")
-    table.add_row("Estimated claims", f"{meta.estimated_claim_count:,}")
-    table.add_row("Avg tokens / record", f"{avg_tokens:.1f}")
-    table.add_row("Avg chars / record", f"{avg_chars:.1f}")
+    table.add_row("Records scanned", f"{meta.record_count:,}", "dataset adapter")
+    table.add_row("Total ~tokens", f"{meta.total_tokens:,}", "tiktoken (cl100k_base)")
+    table.add_row("Total characters", f"{meta.total_chars:,}", "len(text)")
+    table.add_row(
+        "Estimated chunks", f"{meta.estimated_chunk_count:,}", "ceil(tokens / chunk_size)"
+    )
+    table.add_row(
+        "Estimated claims", f"{meta.estimated_claim_count:,}", "chunks × claims_per_chunk"
+    )
+    table.add_row("Avg tokens / record", f"{avg_tokens:.1f}", "total_tokens / records")
+    table.add_row("Avg chars / record", f"{avg_chars:.1f}", "total_chars / records")
     console.print(table)
 
 
@@ -100,20 +113,7 @@ def _print_node_eligibility_table(meta) -> None:
     table.add_column("Eligible Records", justify="right")
     table.add_column("Coverage", justify="right")
 
-    node_order = [
-        "scan",
-        "estimate",
-        "approve",
-        "chunk",
-        "claims",
-        "dedupe",
-        "relevance",
-        "grounding",
-        "redteam",
-        "rubric",
-        "eval",
-    ]
-    for node in node_order:
+    for node in NODE_ORDER:
         eligible = int(counts.get(node, 0))
         pct = (eligible / total * 100.0) if total else 0.0
         table.add_row(node, f"{eligible:,} / {total:,}", f"{pct:.1f}%")
@@ -195,8 +195,8 @@ def run(
     """Run selected cases up to target node, with preflight scan/cost confirmation."""
     console.print(f"[yellow]Preparing source: {input}[/yellow]")
     target_node = NodeRunner.normalize_node_name(node_name)
-    if target_node not in NodeRunner._node_fns:
-        valid = ", ".join(sorted(NodeRunner._node_fns))
+    if target_node not in NODES_BY_NAME:
+        valid = ", ".join(NODE_ORDER)
         console.print(f"[red]Unknown node '{node_name}'. Valid options: {valid}.[/red]")
         raise typer.Exit(1)
 
@@ -253,7 +253,7 @@ def run(
         raise typer.Exit(1)
     _print_cost_table(cost)
 
-    if not yes:
+    if not yes and target_node not in PREFLIGHT_NODES:
         proceed = typer.confirm(f"\nEstimated cost: ${cost.total_estimated_usd:.4f}. Proceed?")
         if not proceed:
             console.print("[yellow]Aborted.[/yellow]")

@@ -16,8 +16,8 @@ import uuid
 from typing import Union
 
 from fastapi import FastAPI
-from lumiseval_agent.graph import run_graph
 from lumiseval_core.types import EvalJobConfig, EvalReport, RubricRule
+from lumiseval_graph.graph import run_graph
 from pydantic import BaseModel
 
 app = FastAPI(

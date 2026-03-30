@@ -1,7 +1,8 @@
-from lumiseval_agent.node_runner import NodeRunner
-from lumiseval_agent.nodes.cost_estimator import estimate
 from lumiseval_core.constants import COST_WEB_SEARCH_CLAIM_FRACTION
+from lumiseval_core.pipeline import NODE_PREREQUISITES
 from lumiseval_core.types import EvalJobConfig, InputMetadata
+from lumiseval_graph.node_runner import NodeRunner
+from lumiseval_graph.nodes.cost_estimator import estimate
 
 
 def _meta() -> InputMetadata:
@@ -15,8 +16,8 @@ def _meta() -> InputMetadata:
 
 
 def test_redteam_and_rubric_do_not_depend_on_claims_branch() -> None:
-    redteam_plan = NodeRunner._prerequisites["redteam"]
-    rubric_plan = NodeRunner._prerequisites["rubric"]
+    redteam_plan = NODE_PREREQUISITES["redteam"]
+    rubric_plan = NODE_PREREQUISITES["rubric"]
 
     for plan in (redteam_plan, rubric_plan):
         assert "chunk" not in plan

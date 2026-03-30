@@ -19,10 +19,11 @@ from lumiseval_core.constants import (
     COST_WEB_SEARCH_CLAIM_FRACTION,
 )
 from lumiseval_core.errors import BudgetExceededError
-from lumiseval_core.types import CostEstimate, EvalJobConfig, InputMetadata
+from lumiseval_core.pipeline import NODE_PREREQUISITES, normalize_node_name
+from lumiseval_core.types import CostEstimate, EvalJobConfig, InputMetadata, NodeCostBreakdown
 from tokencost import calculate_prompt_cost
 
-from lumiseval_agent.log import get_node_logger
+from lumiseval_graph.log import get_node_logger
 
 log = get_node_logger("estimate")
 
@@ -31,25 +32,6 @@ _AVG_JUDGE_TOKENS = COST_AVG_JUDGE_TOKENS
 _WEB_SEARCH_CLAIM_FRACTION = COST_WEB_SEARCH_CLAIM_FRACTION
 _AVG_EMBEDDING_TOKENS = COST_AVG_EMBEDDING_TOKENS
 
-_LEGACY_NODE_ALIASES = {
-    "metadata_scanner": "scan",
-    "cost_estimator": "estimate",
-    "confirm_gate": "approve",
-    "chunker": "chunk",
-    "claim_extractor": "claims",
-    "mmr_deduplicator": "dedupe",
-    "ragas": "relevance",
-    "hallucination": "grounding",
-    "adversarial": "redteam",
-    "eval": "eval",
-}
-
-
-def _normalize_target_node(node_name: Optional[str]) -> str:
-    if not node_name:
-        return "eval"
-    return _LEGACY_NODE_ALIASES.get(node_name, node_name)
-
 
 def _estimate_call_counts(
     *,
@@ -57,8 +39,13 @@ def _estimate_call_counts(
     job_config: EvalJobConfig,
     target_node: str,
     rubric_rule_count: int,
-) -> tuple[int, int, int]:
-    """Estimate judge/embedding/tavily call counts for a specific target node."""
+) -> tuple[dict[str, int], int, int]:
+    """Estimate judge call counts per node, plus embedding and Tavily totals.
+
+    Returns:
+        (node_judge_calls, estimated_embedding_calls, estimated_tavily_calls)
+        where node_judge_calls maps node name → number of judge API calls.
+    """
     records = metadata.record_count
     chunks = metadata.estimated_chunk_count
     claims = metadata.estimated_claim_count
@@ -66,40 +53,34 @@ def _estimate_call_counts(
     eligible_chunks = metadata.eligible_chunk_count or {}
     eligible_claims = metadata.eligible_claim_count or {}
 
-    needs_claim_path = target_node in {
-        "estimate",
-        "claims",
-        "dedupe",
-        "relevance",
-        "grounding",
-        "eval",
-    }  # "retrieve",
-    # needs_retrieval_path = target_node in {"retrieve", "relevance", "grounding", "eval"}
-    needs_relevance = target_node in {"relevance", "eval"}
-    needs_grounding = target_node in {"grounding", "eval"} and job_config.enable_hallucination
-    needs_redteam = target_node in {"redteam", "eval"} and job_config.enable_adversarial
-    needs_rubric = target_node in {"rubric", "eval"} and job_config.enable_rubric
+    target_plan = set(NODE_PREREQUISITES.get(target_node, [])) | {target_node}
+    needs_claim_path = (
+        bool(target_plan & {"chunk", "claims", "dedupe", "relevance", "grounding"})
+        or target_node == "estimate"
+    )
+    needs_relevance = "relevance" in target_plan
+    needs_grounding = "grounding" in target_plan and job_config.enable_hallucination
+    needs_redteam = "redteam" in target_plan and job_config.enable_adversarial
+    needs_rubric = "rubric" in target_plan and job_config.enable_rubric
 
     claim_path_chunks = eligible_chunks.get("claims", chunks)
-    # retrieval_path_claims = eligible_claims.get("retrieve", claims)
     relevance_records = eligible_records.get("relevance", records)
     grounding_records = eligible_records.get("grounding", records)
     redteam_records = eligible_records.get("redteam", records)
 
-    claim_extraction_calls = claim_path_chunks if needs_claim_path else 0
-    relevance_calls = (
-        relevance_records
-        if needs_relevance
-        and (job_config.enable_faithfulness or job_config.enable_answer_relevancy)
-        else 0
-    )
-    grounding_calls = grounding_records if needs_grounding else 0
-    redteam_calls = redteam_records if needs_redteam else 0
-    rubric_calls = rubric_rule_count if needs_rubric else 0
+    node_judge_calls: dict[str, int] = {
+        "claims": claim_path_chunks if needs_claim_path else 0,
+        "relevance": (
+            relevance_records
+            if needs_relevance
+            and (job_config.enable_faithfulness or job_config.enable_answer_relevancy)
+            else 0
+        ),
+        "grounding": grounding_records if needs_grounding else 0,
+        "redteam": redteam_records if needs_redteam else 0,
+        "rubric": rubric_rule_count if needs_rubric else 0,
+    }
 
-    estimated_judge_calls = (
-        claim_extraction_calls + relevance_calls + grounding_calls + redteam_calls + rubric_calls
-    )
     estimated_embedding_calls = claim_path_chunks if needs_claim_path else 0
 
     retrieval_path_claims = eligible_claims.get("retrieve", claims)
@@ -109,7 +90,7 @@ def _estimate_call_counts(
         else 0
     )
 
-    return estimated_judge_calls, estimated_embedding_calls, estimated_tavily_calls
+    return node_judge_calls, estimated_embedding_calls, estimated_tavily_calls
 
 
 def estimate(
@@ -135,20 +116,17 @@ def estimate(
     """
 
     model = job_config.judge_model
-    normalized_target = _normalize_target_node(target_node)
-    # print("normalized_targetnormalized_targetnormalized_target: ", normalized_target)
-    # print(1/0)
+    normalized_target = normalize_node_name(target_node) if target_node else "eval"
     approximate = False
     approximate_warning: Optional[str] = None
 
-    estimated_judge_calls, estimated_embedding_calls, estimated_tavily_calls = (
-        _estimate_call_counts(
-            metadata=metadata,
-            job_config=job_config,
-            target_node=normalized_target,
-            rubric_rule_count=rubric_rule_count or 0,
-        )
+    node_judge_calls, estimated_embedding_calls, estimated_tavily_calls = _estimate_call_counts(
+        metadata=metadata,
+        job_config=job_config,
+        target_node=normalized_target,
+        rubric_rule_count=rubric_rule_count or 0,
     )
+    estimated_judge_calls = sum(node_judge_calls.values())
 
     # Judge call cost
     # try:
@@ -198,6 +176,14 @@ def estimate(
             "before running."
         )
 
+    node_breakdown = {
+        node: NodeCostBreakdown(
+            judge_calls=calls,
+            cost_usd=round(calls * cost_per_call, 6),
+        )
+        for node, calls in node_judge_calls.items()
+    }
+
     return CostEstimate(
         estimated_judge_calls=estimated_judge_calls,
         estimated_embedding_calls=estimated_embedding_calls,
@@ -210,4 +196,5 @@ def estimate(
         high_usd=round(total * COST_ESTIMATE_BAND_HIGH, 6),
         approximate=approximate,
         approximate_warning=approximate_warning,
+        node_breakdown=node_breakdown,
     )
