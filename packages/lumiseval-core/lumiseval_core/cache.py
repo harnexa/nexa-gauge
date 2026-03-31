@@ -32,7 +32,7 @@ from lumiseval_core.types import (
     EvalReport,
     InputMetadata,
     MetricResult,
-    RubricRule,
+    Rubric,
 )
 
 # ── Field → Pydantic type map ────────────────────────────────────────────────
@@ -52,7 +52,7 @@ _FIELD_TYPE_MAP: dict[str, Any] = {
     "rubric_metrics": (list, MetricResult),
     "report": EvalReport,
     "job_config": EvalJobConfig,
-    "rubric_rules": (list, RubricRule),
+    "rubric": (list, Rubric),
 }
 
 
@@ -99,7 +99,7 @@ def compute_case_hash(
     generation: str,
     question: Optional[str],
     ground_truth: Optional[str],
-    rubric_rules: list[RubricRule],
+    rubric: list[Rubric],
     context: Optional[list[str]] = None,
     reference_files: Optional[list[str]] = None,
 ) -> str:
@@ -109,7 +109,7 @@ def compute_case_hash(
     produces a different hash, which causes a cache miss for the affected case.
     """
     rubric_text = "|".join(
-        sorted(f"{r.id}\x1f{r.statement}\x1f{r.pass_condition}" for r in rubric_rules)
+        sorted(f"{r.id}\x1f{r.statement}\x1f{r.pass_condition}" for r in rubric)
     )
     context_text = "|".join(context or [])
     reference_text = "|".join(sorted(reference_files or []))

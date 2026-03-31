@@ -1,7 +1,7 @@
 """Shared domain types for lumis-eval."""
 
 from enum import Enum
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, List
 
 from pydantic import BaseModel, Field
 
@@ -64,7 +64,7 @@ class Claim(BaseModel):
     extraction_failed: bool = False
 
 
-class RubricRule(BaseModel):
+class Rubric(BaseModel):
     id: str
     statement: str
     pass_condition: str
@@ -77,17 +77,52 @@ class EvidencePassage(BaseModel):
     retrieval_score: float
     source: EvidenceSource
 
+class RecordMeta(BaseModel):
+    chars: int
+    context_chunks: int
+    context_tokens: int
+    estimated_chunks: int
+    estimated_claims: int
+    generation_chunks: int
+    generation_tokens: int
+    has_context: bool
+    has_rubric_rules: bool
+    rubric_tokens: int
+    tokens: int
+    eligible_nodes: List[str]
+
+class Record(BaseModel):
+    case_id: str
+    record_index: int
+    question: Optional[str]
+    generation: Optional[str]
+    rubric: Optional[List[str]]
+    context: Optional[List[str]]
+    record_metadata: RecordMeta
 
 class InputMetadata(BaseModel):
     record_count: int
-    total_tokens: int
+    total_tokens: int  # generation_tokens + context_tokens + rubric_tokens
     total_chars: int
-    estimated_chunk_count: int
-    estimated_claim_count: int
-    per_record: list[dict[str, Any]] = Field(default_factory=list)
+    estimated_chunk_count: int  # context_chunk_count + generation_chunk_count (total)
+    estimated_claim_count: int  # generation_chunk_count * CLAIMS_PER_CHUNK
+    generation_tokens: int = 0  # tokens across all generation fields
+    context_tokens: int = 0  # tokens across all context passages
+    rubric_tokens: int = 0  # tokens across all rubric rule statements + conditions
+    context_chunk_count: int = 0  # chunks produced by chunking context passages
+    generation_chunk_count: int = 0  # chunks produced by chunking generation text
+
+    # Record count statistics for each Node
     eligible_record_count: dict[str, int] = Field(default_factory=dict)
+
+    # Chunk count statistics for each Node
     eligible_chunk_count: dict[str, int] = Field(default_factory=dict)
+
+    # Claim count statistics for each Node
     eligible_claim_count: dict[str, int] = Field(default_factory=dict)
+
+    # Each Record and its respective metadata
+    record_meta: list[Record] = Field(default_factory=list)
 
 
 class NodeCostBreakdown(BaseModel):
@@ -157,7 +192,7 @@ class EvalCase(BaseModel):
     ground_truth: Optional[str] = None
     context: list[str] = Field(default_factory=list)
     reference_files: list[str] = Field(default_factory=list)
-    rubric_rules: list[RubricRule] = Field(default_factory=list)
+    rubric: list[Rubric] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

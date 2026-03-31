@@ -6,7 +6,7 @@ from lumiseval_core.errors import InputParseError
 from lumiseval_core.types import EvalCase
 
 from .base import DatasetAdapter
-from .local_file import _normalize_context, _normalize_reference_files, _normalize_rubric_rules
+from .local_file import _normalize_context, _normalize_reference_files, _normalize_rubric
 
 
 def _first_present(record: dict[str, Any], candidates: list[str]) -> Any:
@@ -75,7 +75,7 @@ class HuggingFaceDatasetAdapter(DatasetAdapter):
         case_id_keys = self._field_candidates("case_id", ["case_id", "id", "prompt_id"])
         context_keys = self._field_candidates("context", ["context", "contexts", "documents"])
         ref_keys = self._field_candidates("reference_files", ["reference_files", "reference_paths"])
-        rubric_keys = self._field_candidates("rubric_rules", ["rubric_rules", "rubric"])
+        rubric_keys = self._field_candidates("rubric", ["rubric", "rubric"])
 
         for idx, record in enumerate(dataset):
             if limit is not None and idx >= limit:
@@ -97,7 +97,7 @@ class HuggingFaceDatasetAdapter(DatasetAdapter):
             ground_truth = _first_present(row, ground_truth_keys)
             context = _normalize_context(_first_present(row, context_keys))
             reference_files = _normalize_reference_files(_first_present(row, ref_keys))
-            rubric_rules = _normalize_rubric_rules(_first_present(row, rubric_keys))
+            rubric = _normalize_rubric(_first_present(row, rubric_keys))
 
             yield EvalCase(
                 case_id=str(case_id if case_id is not None else idx),
@@ -108,6 +108,6 @@ class HuggingFaceDatasetAdapter(DatasetAdapter):
                 ground_truth=str(ground_truth) if ground_truth is not None else None,
                 context=context,
                 reference_files=reference_files,
-                rubric_rules=rubric_rules,
+                rubric=rubric,
                 metadata=row,
             )

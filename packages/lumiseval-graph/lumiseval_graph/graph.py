@@ -27,7 +27,7 @@ from lumiseval_core.types import (
     EvalReport,
     InputMetadata,
     MetricResult,
-    RubricRule,
+    Rubric,
 )
 from lumiseval_evidence.indexer import index_file
 from lumiseval_evidence.mmr import deduplicate
@@ -69,7 +69,7 @@ class EvalState(TypedDict):
     context: Optional[list[str]]
     target_node: Optional[str]
     reference_files: list[str]
-    rubric_rules: list[RubricRule]
+    rubric: list[Rubric]
     job_config: EvalJobConfig
     # Populated as nodes run
     metadata: Optional[InputMetadata]
@@ -100,7 +100,7 @@ def node_metadata_scanner(state: EvalState) -> dict:
     meta = scan_text(
         gen,
         has_context=has_context,
-        has_rubric_rules=bool(state.get("rubric_rules")),
+        has_rubric=bool(state.get("rubric")),
     )
     return {"metadata": meta}
 
@@ -111,7 +111,7 @@ def node_cost_estimator(state: EvalState) -> dict:
         state["metadata"],
         state["job_config"],
         target_node=state.get("target_node"),
-        rubric_rule_count=len(state.get("rubric_rules") or []),
+        rubric_rule_count=len(state.get("rubric") or []),
     )
     if estimate.approximate_warning:
         _log_cost.warning(estimate.approximate_warning)
@@ -141,10 +141,7 @@ def node_claims(state: EvalState) -> dict:
     if not state.get("context") or not state.get("chunks"):
         return {"raw_claims": []}
     model = state["job_config"].judge_model
-    claims = claim_extractor.extract_claims(
-        state["chunks"],
-        model=model,
-    )
+    claims = claim_extractor.ClaimExtractorNode(model=model).run(state["chunks"])
     return {"raw_claims": claims}
 
 
@@ -200,13 +197,13 @@ def node_adversarial(state: EvalState) -> dict:
 
 @observe(name="node_rubric")
 def node_rubric(state: EvalState) -> dict:
-    if not state["job_config"].enable_rubric or not state["rubric_rules"]:
+    if not state["job_config"].enable_rubric or not state["rubric"]:
         return {"rubric_metrics": []}
-    rules = state["rubric_rules"]
+    rules = state["rubric"]
     model = get_judge_model("rubric", state["job_config"].judge_model)
     results = RubricNode(judge_model=model).run(
         generation=state["generation"],
-        rubric_rules=rules,
+        rubric=rules,
     )
     return {"rubric_metrics": results}
 
@@ -270,7 +267,7 @@ def build_initial_state(
     ground_truth: Optional[str] = None,
     context: Optional[list[str]] = None,
     target_node: Optional[str] = None,
-    rubric_rules: Optional[list[RubricRule]] = None,
+    rubric: Optional[list[Rubric]] = None,
     reference_files: Optional[list[str]] = None,
 ) -> EvalState:
     """Build the canonical graph state for one evaluation input."""
@@ -289,7 +286,7 @@ def build_initial_state(
         context=context or [],
         target_node=target_node,
         reference_files=reference_files or [],
-        rubric_rules=rubric_rules or [],
+        rubric=rubric or [],
         job_config=job_config,
         metadata=None,
         cost_estimate=None,
@@ -314,7 +311,7 @@ def run_graph(
     question: Optional[str] = None,
     ground_truth: Optional[str] = None,
     context: Optional[list[str]] = None,
-    rubric_rules: Optional[list[RubricRule]] = None,
+    rubric: Optional[list[Rubric]] = None,
     reference_files: Optional[list[str]] = None,
 ) -> EvalReport:
     """Execute the full evaluation pipeline synchronously.
@@ -325,7 +322,7 @@ def run_graph(
         question: Optional query that produced the generation (improves RAGAS scores).
         ground_truth: Optional reference answer (enables context recall).
         context: Optional retrieval context passages for retrieval-path metrics.
-        rubric_rules: Optional list of rubric rules to evaluate against.
+        rubric: Optional list of rubric rules to evaluate against.
         reference_files: Optional list of file paths to index before evaluation.
 
     Returns:
@@ -337,7 +334,7 @@ def run_graph(
         question=question,
         ground_truth=ground_truth,
         context=context,
-        rubric_rules=rubric_rules,
+        rubric=rubric,
         reference_files=reference_files,
         target_node="eval",
     )

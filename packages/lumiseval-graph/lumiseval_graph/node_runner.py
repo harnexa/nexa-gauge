@@ -72,7 +72,7 @@ class NodeRunner:
 
     @staticmethod
     def _has_rubric(case: EvalCase) -> bool:
-        return len(case.rubric_rules or []) > 0
+        return len(case.rubric or []) > 0
 
     @classmethod
     def is_case_eligible_for_node(cls, case: EvalCase, node_name: str) -> bool:
@@ -108,7 +108,7 @@ class NodeRunner:
             ground_truth=case.ground_truth,
             context=case.context,
             target_node=node_name,
-            rubric_rules=case.rubric_rules,
+            rubric=case.rubric,
             reference_files=case.reference_files,
         )
 
@@ -175,7 +175,7 @@ class CachedNodeRunner:
             ground_truth=case.ground_truth,
             context=case.context,
             target_node=node_name,
-            rubric_rules=case.rubric_rules,
+            rubric=case.rubric,
             reference_files=case.reference_files,
         )
 
@@ -184,7 +184,7 @@ class CachedNodeRunner:
             generation=case.generation,
             question=case.question,
             ground_truth=case.ground_truth,
-            rubric_rules=case.rubric_rules or [],
+            rubric=case.rubric or [],
             context=case.context or [],
             reference_files=case.reference_files or [],
         )

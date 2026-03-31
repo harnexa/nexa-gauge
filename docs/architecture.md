@@ -78,7 +78,7 @@ flowchart TD
     C1["enable_faithfulness + enable_answer_relevancy"]
     C2["enable_hallucination"]
     C3["enable_adversarial"]
-    C4["enable_rubric + rubric_rules"]
+    C4["enable_rubric + rubric"]
   end
 
   C1 -.controls.-> M1
@@ -187,7 +187,7 @@ All dataset sources are normalized to `EvalCase`:
 - `ground_truth` (optional)
 - `context` (optional list)
 - `reference_files` (optional list)
-- `rubric_rules` (optional list)
+- `rubric` (optional list)
 - `metadata` (free-form)
 
 This contract is what makes both flows modular:

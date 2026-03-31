@@ -12,6 +12,7 @@ def _meta() -> InputMetadata:
         total_chars=6000,
         estimated_chunk_count=20,
         estimated_claim_count=40,
+        generation_chunk_count=20,
     )
 
 
@@ -55,14 +56,14 @@ def test_estimate_for_rubric_uses_rule_count() -> None:
 
 
 def test_case_eligibility_requires_context_for_claim_path_and_rubric_for_rubric() -> None:
-    from lumiseval_core.types import EvalCase, RubricRule
+    from lumiseval_core.types import EvalCase, Rubric
 
     no_context = EvalCase(case_id="c1", generation="answer")
     with_context_and_rubric = EvalCase(
         case_id="c2",
         generation="answer",
         context=["context passage"],
-        rubric_rules=[RubricRule(id="R-1", statement="s", pass_condition="p")],
+        rubric=[Rubric(id="R-1", statement="s", pass_condition="p")],
     )
 
     assert not NodeRunner.is_case_eligible_for_node(no_context, "claims")

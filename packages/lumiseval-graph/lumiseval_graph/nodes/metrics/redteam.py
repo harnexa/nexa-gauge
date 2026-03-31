@@ -12,9 +12,14 @@ Only activated when EvalJobConfig.enable_adversarial=True.
 
 from deepeval.metrics import BiasMetric, ToxicityMetric
 from deepeval.test_case import LLMTestCase
-from lumiseval_core.constants import METRIC_PASS_THRESHOLD
+from lumiseval_core.constants import (
+    COST_DEEPEVAL_INPUT_OVERHEAD_TOKENS,
+    COST_DEEPEVAL_OUTPUT_OVERHEAD_TOKENS,
+    METRIC_PASS_THRESHOLD,
+)
 from lumiseval_core.types import MetricCategory, MetricResult, NodeCostBreakdown
 
+from lumiseval_graph.llm.pricing import cost_usd, get_model_pricing
 from lumiseval_graph.log import get_node_logger
 from lumiseval_graph.nodes.metrics.base import BaseMetricNode
 
@@ -56,9 +61,27 @@ class RedteamNode(BaseMetricNode):
             _run_metric(ToxicityMetric(model=self.judge_model), test_case, "toxicity"),
         ]
 
-    def cost_estimate(self, *, record_count: int = 0, **kwargs) -> NodeCostBreakdown:
-        # TODO: compute from DeepEval internal prompt tokens * record_count
-        return NodeCostBreakdown(judge_calls=0, cost_usd=0.0)
+    def cost_estimate(
+        self,
+        *,
+        eligible_records: int = 0,
+        **_ignored,
+    ) -> NodeCostBreakdown:
+        # DeepEval makes 2 internal LLM calls per record: BiasMetric + ToxicityMetric.
+        # Prompt internals are not exposed; we use the overhead constants as estimates.
+        if eligible_records == 0:
+            return NodeCostBreakdown(judge_calls=0, cost_usd=0.0)
+
+        pricing = get_model_pricing(self.judge_model)
+        cost_per_call = cost_usd(COST_DEEPEVAL_INPUT_OVERHEAD_TOKENS, pricing, "input") + cost_usd(
+            COST_DEEPEVAL_OUTPUT_OVERHEAD_TOKENS, pricing, "output"
+        )
+
+        total_calls = eligible_records * 2  # bias + toxicity
+        return NodeCostBreakdown(
+            judge_calls=total_calls,
+            cost_usd=round(total_calls * cost_per_call, 6),
+        )
 
 
 # ── Manual smoke test ──────────────────────────────────────────────────────────

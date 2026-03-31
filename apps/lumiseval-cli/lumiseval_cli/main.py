@@ -240,7 +240,7 @@ def run(
     )
 
     console.print("\n[cyan]Estimating cost...[/cyan]")
-    rubric_rule_count = sum(len(case.rubric_rules) for case in cases)
+    rubric_rule_count = sum(len(case.rubric) for case in cases)
     try:
         cost = compute_estimate(
             meta,

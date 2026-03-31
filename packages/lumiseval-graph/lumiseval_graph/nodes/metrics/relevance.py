@@ -19,6 +19,11 @@ Using claims (not chunks) as statements because:
 
 from typing import Literal, Optional
 
+from lumiseval_core.constants import (
+    COST_AVG_CLAIM_TOKENS,
+    COST_AVG_OUTPUT_TOKENS_JSON_VERDICT,
+    COST_AVG_QUESTION_TOKENS,
+)
 from lumiseval_core.types import (
     Claim,
     MetricCategory,
@@ -29,8 +34,10 @@ from lumiseval_core.types import (
 from pydantic import BaseModel
 
 from lumiseval_graph.llm.gateway import get_llm
+from lumiseval_graph.llm.pricing import cost_usd, get_model_pricing
 from lumiseval_graph.log import get_node_logger
 from lumiseval_graph.nodes.metrics.base import BaseMetricNode
+from lumiseval_graph.nodes.metrics.token_utils import count_tokens, template_static_tokens
 
 log = get_node_logger("relevance")
 
@@ -132,10 +139,39 @@ class RelevanceNode(BaseMetricNode):
 
         return results
 
-    def cost_estimate(self, *, claim_count: int = 0, **kwargs) -> NodeCostBreakdown:
-        # TODO: compute from prompt tokens + claim_count * avg_claim_tokens
-        return NodeCostBreakdown(judge_calls=0, cost_usd=0.0)
+    def cost_estimate(
+        self,
+        *,
+        eligible_records: int = 0,
+        avg_claims_per_record: float = 0.0,
+        avg_question_tokens: int = COST_AVG_QUESTION_TOKENS,
+        **_ignored,
+    ) -> NodeCostBreakdown:
+        if eligible_records == 0:
+            return NodeCostBreakdown(judge_calls=0, cost_usd=0.0)
 
+        pricing = get_model_pricing(self.judge_model)
+        claims = max(1.0, avg_claims_per_record)
+
+        input_tokens = (
+            _RELEVANCE_STATIC_TOKENS + avg_question_tokens + round(claims * COST_AVG_CLAIM_TOKENS)
+        )
+        output_tokens = round(claims * COST_AVG_OUTPUT_TOKENS_JSON_VERDICT)
+
+        cost_per_record = cost_usd(input_tokens, pricing, "input") + cost_usd(
+            output_tokens, pricing, "output"
+        )
+        return NodeCostBreakdown(
+            judge_calls=eligible_records,
+            cost_usd=round(eligible_records * cost_per_record, 6),
+        )
+
+
+# Pre-computed once at module load — static (non-placeholder) token overhead
+# for RelevanceNode's prompts.
+_RELEVANCE_STATIC_TOKENS: int = count_tokens(RelevanceNode.SYSTEM_PROMPT) + template_static_tokens(
+    RelevanceNode.USER_PROMPT
+)
 
 # ── Manual smoke test ─────────────────────────────────────────────────────────
 

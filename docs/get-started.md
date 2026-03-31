@@ -139,7 +139,7 @@ Optional:
 - `ground_truth`
 - `context`
 - `reference_files`
-- `rubric_rules`
+- `rubric`
 - additional metadata fields
 
 ### 5.2 Local adapter aliases
@@ -150,7 +150,7 @@ Optional:
 - Ground truth: `ground_truth | reference | gold_answer`
 - Context: `context | contexts | documents`
 - Reference files: `reference_files | reference_paths`
-- Rubric rules: `rubric_rules | rubric`
+- Rubric rules: `rubric | rubric`
 
 ### 5.3 Hugging Face adapter aliases
 
@@ -160,7 +160,7 @@ Optional:
 - Ground truth: `ground_truth | reference`
 - Context: `context | contexts | documents`
 - Reference files: `reference_files | reference_paths`
-- Rubric rules: `rubric_rules | rubric`
+- Rubric rules: `rubric | rubric`
 
 ## 6) Cache Behavior
 
@@ -175,7 +175,7 @@ Case hash includes:
 - `generation`
 - `question`
 - `ground_truth`
-- `rubric_rules` (`id`, `statement`, `pass_condition`)
+- `rubric` (`id`, `statement`, `pass_condition`)
 - `reference_files`
 
 Config hash includes:
@@ -274,7 +274,7 @@ Required:
 Optional:
 - `question: str | null`
 - `ground_truth: str | null`
-- `rubric_rules: RubricRule[]`
+- `rubric: Rubric[]`
 - `reference_files: list[str]`
 - `judge_model: str`
 - `web_search: bool`

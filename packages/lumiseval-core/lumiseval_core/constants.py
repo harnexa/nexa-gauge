@@ -29,7 +29,7 @@ TIKTOKEN_ENCODING: str = "cl100k_base"
 
 # Target chunk size (in tokens) for the text splitter and the scanner's
 # heuristic chunk count estimate.
-CHUNK_SIZE_TOKENS: int = 512
+CHUNK_SIZE_TOKENS: int = 54
 
 # Minimum token count before attempting semantic splitting.
 # Short texts below this threshold are returned as a single chunk.
@@ -65,6 +65,37 @@ COST_ESTIMATE_BAND_HIGH: float = 1.2
 # Conservative per-call cost fallback used when tokencost cannot price the
 # chosen model (e.g. a private deployment).
 COST_FALLBACK_PER_CALL_USD: float = 0.0003
+
+# ── Per-Node Token Estimation Heuristics ─────────────────────────────────────
+# These constants drive the per-node cost_estimate() methods. They model the
+# dynamic content that varies at runtime (claims, context, questions, outputs)
+# without actually running any LLM calls.
+
+# Average tokens in a single extracted claim text.
+COST_AVG_CLAIM_TOKENS: int = 15
+
+# Average tokens of retrieved context passages passed to the grounding node
+# per record (roughly one CHUNK_SIZE_TOKENS chunk from the evidence retriever).
+COST_AVG_CONTEXT_TOKENS: int = 512
+
+# Average tokens in a user question / query string.
+COST_AVG_QUESTION_TOKENS: int = 25
+
+# Average output tokens for a single boolean verdict (grounding): "true"/"false".
+COST_AVG_OUTPUT_TOKENS_BOOLEAN_VERDICT: int = 5
+
+# Average output tokens for a single JSON relevance verdict:
+# {"verdict": "relevant"} is ~10 tokens.
+COST_AVG_OUTPUT_TOKENS_JSON_VERDICT: int = 10
+
+# DeepEval BiasMetric / ToxicityMetric each make internal LLM calls whose
+# prompts are not directly accessible. These constants approximate that overhead.
+COST_DEEPEVAL_INPUT_OVERHEAD_TOKENS: int = 350
+COST_DEEPEVAL_OUTPUT_OVERHEAD_TOKENS: int = 50
+
+# DeepEval GEval (rubric) constructs a multi-step evaluation prompt per rule.
+COST_GEVAL_INPUT_OVERHEAD_TOKENS: int = 400
+COST_GEVAL_OUTPUT_OVERHEAD_TOKENS: int = 60
 
 # ── MMR Claim Deduplication ──────────────────────────────────────────────────
 

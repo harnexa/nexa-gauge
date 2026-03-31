@@ -10,7 +10,7 @@ Subclass contract:
     templates (empty strings for nodes that delegate to an external library).
     `USER_PROMPT` may use `str.format()` placeholders for dynamic content.
   - Implement `run(**kwargs)` with the concrete typed signature for that metric.
-  - Override `cost_estimate(**kwargs)` when token-based cost math is implemented.
+  - Override `cost_estimate()` with the same typed signature defined on the base.
 """
 
 from abc import ABC
@@ -51,15 +51,31 @@ class BaseMetricNode(ABC):
         """
         raise NotImplementedError(f"{self.__class__.__name__}.run() is not implemented")
 
-    def cost_estimate(self, **kwargs) -> NodeCostBreakdown:
-        """Estimate cost for one invocation of this metric without running it.
+    def cost_estimate(
+        self,
+        *,
+        eligible_records: int = 0,
+        avg_claims_per_record: float = 0.0,
+        avg_context_tokens: int = 0,
+        avg_question_tokens: int = 0,
+        rubric_rule_count: int = 0,
+    ) -> NodeCostBreakdown:
+        """Estimate cost for this node without running any LLM calls.
 
-        Kwargs recognised by subclasses (all optional):
-            record_count (int)       — number of records / cases
-            claim_count (int)        — number of unique claims
-            rubric_rule_count (int)  — number of rubric rules (rubric node only)
+        All arguments are keyword-only with safe defaults so the orchestrator
+        can call every node uniformly with the same kwargs dict — each node
+        ignores what it does not use.
 
-        The default returns zeros. Subclasses override this with real token
-        arithmetic once the prompt templates stabilise.
+        Args:
+            eligible_records:      Records this node will process.
+            avg_claims_per_record: Average extracted claims per eligible record.
+            avg_context_tokens:    Average retrieved-context tokens per record
+                                   (grounding).
+            avg_question_tokens:   Average question length in tokens (relevance).
+            rubric_rule_count:     Number of rubric rules to evaluate (rubric).
+
+        Returns:
+            NodeCostBreakdown. Base returns zeros; subclasses override with
+            real token arithmetic.
         """
         return NodeCostBreakdown(judge_calls=0, cost_usd=0.0)

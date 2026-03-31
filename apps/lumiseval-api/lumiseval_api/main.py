@@ -16,7 +16,7 @@ import uuid
 from typing import Union
 
 from fastapi import FastAPI
-from lumiseval_core.types import EvalJobConfig, EvalReport, RubricRule
+from lumiseval_core.types import EvalJobConfig, EvalReport, Rubric
 from lumiseval_graph.graph import run_graph
 from pydantic import BaseModel
 
@@ -32,7 +32,7 @@ class EvalJobRequest(BaseModel):
     question: str | None = None
     ground_truth: str | None = None
     context: list[str] = []
-    rubric_rules: list[RubricRule] = []
+    rubric: list[Rubric] = []
     reference_files: list[str] = []
     judge_model: str = "gpt-4o-mini"
     web_search: bool = False
@@ -67,7 +67,7 @@ def _run_one(request: EvalJobRequest) -> EvalReport:
         question=request.question,
         ground_truth=request.ground_truth,
         context=request.context or None,
-        rubric_rules=request.rubric_rules or None,
+        rubric=request.rubric or None,
         reference_files=request.reference_files or None,
     )
     return report
