@@ -50,7 +50,8 @@ lumis-eval/
 │   └── lumiseval-cli/          # Typer CLI
 ├── infra/                  # Placeholder for Docker / Terraform
 ├── docs/
-│   └── architecture.md
+│   ├── architecture.md
+│   └── get-started.md
 ├── .github/workflows/ci.yml
 ├── pyproject.toml          # Root workspace config
 ├── Makefile

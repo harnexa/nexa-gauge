@@ -35,17 +35,13 @@ flowchart LR
   R --> O2["Outputs: API response / report"]
 
   subgraph EXT["External Engines & Services"]
-    E1["RAGAS"]
-    E2["DeepEval"]
-    E3["Giskard"]
+    E2["DeepEval (GEval, BiasMetric, ToxicityMetric)"]
     E4["LiteLLM Judge Models"]
     E5["LanceDB + SentenceTransformers"]
     E6["Tavily Web Search (optional)"]
   end
 
-  G -.uses.-> E1
   G -.uses.-> E2
-  G -.uses.-> E3
   G -.uses.-> E4
   G -.uses.-> E5
   G -.optional.-> E6
@@ -113,7 +109,7 @@ sequenceDiagram
   participant AD as "create_dataset_adapter()"
   participant DA as "DatasetAdapter.iter_cases()"
   participant SC as "scan_cases()"
-  participant ES as "nodes.cost_estimator.estimate()"
+  participant ES as "CostEstimator(job_config).estimate()"
   participant CN as "CachedNodeRunner.run_case()"
   participant NF as "node function map"
 
@@ -124,8 +120,8 @@ sequenceDiagram
   DA-->>CLI: EvalCase[]
   CLI->>SC: scan selected cases
   SC-->>CLI: InputMetadata
-  CLI->>ES: estimate(scan_meta, job_config)
-  ES-->>CLI: CostEstimate
+  CLI->>ES: estimate(scan_meta)
+  ES-->>CLI: CostReport (rich table printed inline)
   CLI->>User: confirm (unless --yes)
 
   loop each EvalCase
