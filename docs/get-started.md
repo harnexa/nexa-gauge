@@ -24,7 +24,7 @@ POST /jobs
 ## 2) Setup
 
 ```bash
-cd /Volumes/Raid1CrucialHD/sardhendu/workspace/lumis-eval
+cd lumis-eval
 uv sync
 cp .env.example .env
 ```
@@ -139,7 +139,7 @@ Optional:
 - `ground_truth`
 - `context`
 - `reference_files`
-- `rubric_rules`
+- `rubric`
 - additional metadata fields
 
 ### 5.2 Local adapter aliases
@@ -150,7 +150,7 @@ Optional:
 - Ground truth: `ground_truth | reference | gold_answer`
 - Context: `context | contexts | documents`
 - Reference files: `reference_files | reference_paths`
-- Rubric rules: `rubric_rules | rubric`
+- Rubric rules: `rubric | rubric`
 
 ### 5.3 Hugging Face adapter aliases
 
@@ -160,7 +160,7 @@ Optional:
 - Ground truth: `ground_truth | reference`
 - Context: `context | contexts | documents`
 - Reference files: `reference_files | reference_paths`
-- Rubric rules: `rubric_rules | rubric`
+- Rubric rules: `rubric | rubric`
 
 ## 6) Cache Behavior
 
@@ -175,15 +175,14 @@ Case hash includes:
 - `generation`
 - `question`
 - `ground_truth`
-- `rubric_rules` (`id`, `statement`, `pass_condition`)
+- `rubric` (`id`, `statement`, `pass_condition`)
 - `reference_files`
 
 Config hash includes:
 - `judge_model`
-- `enable_hallucination`
-- `enable_faithfulness`
-- `enable_answer_relevancy`
-- `enable_adversarial`
+- `enable_grounding`
+- `enable_relevance`
+- `enable_redteam`
 - `enable_rubric`
 - `web_search`
 - `evidence_threshold`
@@ -206,11 +205,10 @@ This enables incremental behavior:
   - `--web-search`
   - `--evidence-threshold`
 - Metric toggles:
-  - `--enable-hallucination/--disable-hallucination`
-  - `--enable-faithfulness/--disable-faithfulness`
-  - `--enable-answer-relevancy/--disable-answer-relevancy`
-  - `--enable-adversarial/--disable-adversarial`
-  - `--enable-rubric/--disable-rubric`
+  - `--enable-hallucination/--disable-hallucination` (grounding node)
+  - `--enable-answer-relevancy/--disable-answer-relevancy` (relevance node)
+  - `--enable-adversarial/--disable-adversarial` (redteam node)
+  - `--enable-rubric/--disable-rubric` (rubric node)
 - Control:
   - `--yes`
   - `--continue-on-error/--fail-fast`
@@ -238,9 +236,8 @@ curl -X POST "http://localhost:8080/jobs" \
     "ground_truth": "The Eiffel Tower is a wrought-iron lattice tower in Paris.",
     "judge_model": "gpt-4o-mini",
     "web_search": false,
-    "enable_hallucination": true,
-    "enable_faithfulness": true,
-    "enable_answer_relevancy": true
+    "enable_grounding": true,
+    "enable_relevance": true
   }'
 ```
 
@@ -274,14 +271,13 @@ Required:
 Optional:
 - `question: str | null`
 - `ground_truth: str | null`
-- `rubric_rules: RubricRule[]`
+- `rubric: Rubric[]`
 - `reference_files: list[str]`
 - `judge_model: str`
 - `web_search: bool`
-- `enable_hallucination: bool`
-- `enable_faithfulness: bool`
-- `enable_answer_relevancy: bool`
-- `enable_adversarial: bool`
+- `enable_grounding: bool`
+- `enable_relevance: bool`
+- `enable_redteam: bool`
 - `enable_rubric: bool`
 - `evidence_threshold: float`
 - `budget_cap_usd: float | null`

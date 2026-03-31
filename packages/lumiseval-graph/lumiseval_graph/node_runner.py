@@ -19,10 +19,19 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from lumiseval_core.cache import CacheStore, compute_case_hash, compute_config_hash
+from lumiseval_core.pipeline import (
+    CONTEXT_REQUIRED_NODES,
+    METRIC_NODES,
+    NODE_PREREQUISITES,
+    RUBRIC_REQUIRED_NODES,
+    SKIP_OUTPUTS,
+    normalize_node_name,
+)
 from lumiseval_core.types import EvalCase, EvalJobConfig
 from pydantic import BaseModel
 
-from lumiseval_agent import graph as graph_module
+from lumiseval_graph import graph as graph_module
+from lumiseval_graph.registry import NODE_FNS
 
 
 class NodeRunResult(BaseModel):
@@ -45,106 +54,10 @@ class CachedNodeRunResult(BaseModel):
 class NodeRunner:
     """Execute a single node for a case, optionally running required prior nodes."""
 
-    _legacy_aliases = {
-        "metadata_scanner": "scan",
-        "cost_estimator": "estimate",
-        "confirm_gate": "approve",
-        "chunker": "chunk",
-        "claim_extractor": "claims",
-        "mmr_deduplicator": "dedupe",
-        "ragas": "relevance",
-        "hallucination": "grounding",
-        "adversarial": "redteam",
-        "eval": "eval",
-    }
-
-    _node_fns = {
-        "scan": graph_module.node_metadata_scanner,
-        "estimate": graph_module.node_cost_estimator,
-        "approve": graph_module.node_confirm_gate,
-        "chunk": graph_module.node_chunk,
-        "claims": graph_module.node_claims,
-        "dedupe": graph_module.node_dedupe,
-        "relevance": graph_module.node_relevance,
-        "grounding": graph_module.node_grounding,
-        "redteam": graph_module.node_adversarial,
-        "rubric": graph_module.node_rubric,
-        "eval": graph_module.node_eval,
-    }
-
-    _prerequisites = {
-        "scan": [],
-        "estimate": ["scan"],
-        "approve": ["scan", "estimate"],
-        "chunk": ["scan", "estimate", "approve"],
-        "claims": [
-            "scan",
-            "estimate",
-            "approve",
-            "chunk",
-        ],
-        "dedupe": [
-            "scan",
-            "estimate",
-            "approve",
-            "chunk",
-            "claims",
-        ],
-        "relevance": [
-            "scan",
-            "estimate",
-            "approve",
-            "chunk",
-            "claims",
-            "dedupe",
-        ],
-        "grounding": [
-            "scan",
-            "estimate",
-            "approve",
-            "chunk",
-            "claims",
-            "dedupe",
-        ],
-        "redteam": [
-            "scan",
-            "estimate",
-            "approve",
-        ],
-        "rubric": [
-            "scan",
-            "estimate",
-            "approve",
-        ],
-        "eval": [
-            "scan",
-            "estimate",
-            "approve",
-            "chunk",
-            "claims",
-            "dedupe",
-            "relevance",
-            "grounding",
-            "redteam",
-            "rubric",
-        ],
-    }
-    _context_required_nodes = {"chunk", "claims", "dedupe", "relevance", "grounding"}
-    _rubric_required_nodes = {"rubric"}
-    _skip_outputs: dict[str, dict[str, Any]] = {
-        "chunk": {"chunks": []},
-        "claims": {"raw_claims": []},
-        "dedupe": {"unique_claims": []},
-        "relevance": {"relevance_metrics": []},
-        "grounding": {"grounding_metrics": []},
-        "redteam": {"redteam_metrics": []},
-        "rubric": {"rubric_metrics": []},
-    }
-
-    @classmethod
-    def normalize_node_name(cls, node_name: str) -> str:
+    @staticmethod
+    def normalize_node_name(node_name: str) -> str:
         """Map legacy node names to canonical one-word names."""
-        return cls._legacy_aliases.get(node_name, node_name)
+        return normalize_node_name(node_name)
 
     @staticmethod
     def _has_generation(case: EvalCase) -> bool:
@@ -159,21 +72,21 @@ class NodeRunner:
 
     @staticmethod
     def _has_rubric(case: EvalCase) -> bool:
-        return len(case.rubric_rules or []) > 0
+        return len(case.rubric or []) > 0
 
     @classmethod
     def is_case_eligible_for_node(cls, case: EvalCase, node_name: str) -> bool:
         if not cls._has_generation(case):
             return False
-        if node_name in cls._context_required_nodes:
+        if node_name in CONTEXT_REQUIRED_NODES:
             return cls._has_context(case)
-        if node_name in cls._rubric_required_nodes:
+        if node_name in RUBRIC_REQUIRED_NODES:
             return cls._has_rubric(case)
         return True
 
     @classmethod
     def skipped_output_for_node(cls, node_name: str) -> dict[str, Any]:
-        return dict(cls._skip_outputs.get(node_name, {}))
+        return dict(SKIP_OUTPUTS.get(node_name, {}))
 
     def run_case(
         self,
@@ -184,8 +97,8 @@ class NodeRunner:
         include_prerequisites: bool = True,
     ) -> NodeRunResult:
         node_name = self.normalize_node_name(node_name)
-        if node_name not in self._node_fns:
-            valid = ", ".join(sorted(self._node_fns))
+        if node_name not in NODE_FNS:
+            valid = ", ".join(sorted(NODE_FNS))
             raise ValueError(f"Unknown node '{node_name}'. Valid options: {valid}.")
 
         state = graph_module.build_initial_state(
@@ -195,11 +108,11 @@ class NodeRunner:
             ground_truth=case.ground_truth,
             context=case.context,
             target_node=node_name,
-            rubric_rules=case.rubric_rules,
+            rubric=case.rubric,
             reference_files=case.reference_files,
         )
 
-        plan = list(self._prerequisites[node_name]) if include_prerequisites else []
+        plan = list(NODE_PREREQUISITES[node_name]) if include_prerequisites else []
         plan.append(node_name)
 
         node_output: dict[str, Any] = {}
@@ -208,7 +121,7 @@ class NodeRunner:
             if not self.is_case_eligible_for_node(case, step):
                 updates = self.skipped_output_for_node(step)
             else:
-                updates = self._node_fns[step](state)
+                updates = NODE_FNS[step](state)
                 executed_nodes.append(step)
             state.update(updates)
             if step == node_name:
@@ -249,8 +162,8 @@ class CachedNodeRunner:
             CachedNodeRunResult with lists of executed vs cached nodes.
         """
         node_name = NodeRunner.normalize_node_name(node_name)
-        if node_name not in NodeRunner._node_fns:
-            valid = ", ".join(sorted(NodeRunner._node_fns))
+        if node_name not in NODE_FNS:
+            valid = ", ".join(sorted(NODE_FNS))
             raise ValueError(f"Unknown node '{node_name}'. Valid options: {valid}.")
 
         t0 = time.monotonic()
@@ -262,7 +175,7 @@ class CachedNodeRunner:
             ground_truth=case.ground_truth,
             context=case.context,
             target_node=node_name,
-            rubric_rules=case.rubric_rules,
+            rubric=case.rubric,
             reference_files=case.reference_files,
         )
 
@@ -271,17 +184,17 @@ class CachedNodeRunner:
             generation=case.generation,
             question=case.question,
             ground_truth=case.ground_truth,
-            rubric_rules=case.rubric_rules or [],
+            rubric=case.rubric or [],
             context=case.context or [],
             reference_files=case.reference_files or [],
         )
         config_hash = compute_config_hash(state["job_config"])
 
-        plan: list[str] = list(NodeRunner._prerequisites[node_name]) + [node_name]
+        plan: list[str] = list(NODE_PREREQUISITES[node_name]) + [node_name]
         executed: list[str] = []
         cached: list[str] = []
         node_output: dict[str, Any] = {}
-        metric_group = ["relevance", "grounding", "redteam", "rubric"]
+        metric_group = METRIC_NODES
 
         # A plan may look like below
         # plan:  ['scan', 'estimate']
@@ -312,9 +225,7 @@ class CachedNodeRunner:
                 run_group_outputs: dict[str, dict[str, Any]] = {}
                 if to_run:
                     with ThreadPoolExecutor(max_workers=len(to_run)) as pool:
-                        futures = {
-                            pool.submit(NodeRunner._node_fns[m], dict(state)): m for m in to_run
-                        }
+                        futures = {pool.submit(NODE_FNS[m], dict(state)): m for m in to_run}
                         for future in as_completed(futures):
                             metric_step = futures[future]
                             output = future.result()
@@ -354,7 +265,7 @@ class CachedNodeRunner:
                     i += 1
                     continue
 
-            output = NodeRunner._node_fns[step](state)
+            output = NODE_FNS[step](state)
             state.update(output)
             self._cache.put(case_hash, config_hash, step, output)
             executed.append(step)

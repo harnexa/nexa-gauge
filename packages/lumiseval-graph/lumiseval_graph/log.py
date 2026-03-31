@@ -7,26 +7,12 @@ Uses Rich for colored output. Import get_node_logger() in each node module.
 
 from datetime import datetime
 
+from lumiseval_core.pipeline import NODE_COLORS
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
 
 _console = Console(highlight=False)
-
-# One color per pipeline node — keep these visually distinct
-NODE_COLORS: dict[str, str] = {
-    "scan": "cyan",
-    "estimate": "yellow",
-    "approve": "white",
-    "chunk": "blue",
-    "claims": "magenta",
-    "dedupe": "green",
-    "relevance": "bright_green",
-    "grounding": "cornflower_blue",
-    "redteam": "red",
-    "rubric": "orchid",
-    "eval": "gold1",
-}
 
 
 class NodeLogger:

@@ -18,7 +18,7 @@ def test_local_file_adapter_maps_jsonl_to_eval_cases(tmp_path) -> None:
             "generation": "Paris is the capital of France.",
             "context": "Paris is France's capital city.",
             "ground_truth": "Paris is the capital of France.",
-            "rubric_rules": [
+            "rubric": [
                 {
                     "id": "R-001",
                     "statement": "Answer should be factual.",
@@ -46,7 +46,7 @@ def test_local_file_adapter_maps_jsonl_to_eval_cases(tmp_path) -> None:
     assert cases[0].question == "What is Paris?"
     assert cases[0].generation == "Paris is the capital of France."
     assert cases[0].context == ["Paris is France's capital city."]
-    assert cases[0].rubric_rules[0].id == "R-001"
+    assert cases[0].rubric[0].id == "R-001"
     assert cases[0].metadata["extra_field"] == "x"
 
     assert cases[1].case_id == "row-2"

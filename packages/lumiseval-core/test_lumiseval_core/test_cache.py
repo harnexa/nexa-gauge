@@ -1,7 +1,7 @@
 import json
 
 from lumiseval_core.cache import CacheStore, compute_case_hash
-from lumiseval_core.types import RubricRule
+from lumiseval_core.types import Rubric
 
 
 def test_compute_case_hash_changes_when_reference_files_change() -> None:
@@ -9,7 +9,7 @@ def test_compute_case_hash_changes_when_reference_files_change() -> None:
         generation="answer",
         question="q",
         ground_truth="gt",
-        rubric_rules=[],
+        rubric=[],
         context=[],
         reference_files=["docs/a.txt"],
     )
@@ -17,7 +17,7 @@ def test_compute_case_hash_changes_when_reference_files_change() -> None:
         generation="answer",
         question="q",
         ground_truth="gt",
-        rubric_rules=[],
+        rubric=[],
         context=[],
         reference_files=["docs/b.txt"],
     )
@@ -25,20 +25,16 @@ def test_compute_case_hash_changes_when_reference_files_change() -> None:
 
 
 def test_compute_case_hash_changes_when_rubric_pass_condition_changes() -> None:
-    rules_a = [
-        RubricRule(id="R-1", statement="Mention year", pass_condition="Must include a year.")
-    ]
+    rules_a = [Rubric(id="R-1", statement="Mention year", pass_condition="Must include a year.")]
     rules_b = [
-        RubricRule(
-            id="R-1", statement="Mention year", pass_condition="Must include month and year."
-        )
+        Rubric(id="R-1", statement="Mention year", pass_condition="Must include month and year.")
     ]
 
     h1 = compute_case_hash(
         generation="answer",
         question="q",
         ground_truth="gt",
-        rubric_rules=rules_a,
+        rubric=rules_a,
         context=[],
         reference_files=[],
     )
@@ -46,7 +42,7 @@ def test_compute_case_hash_changes_when_rubric_pass_condition_changes() -> None:
         generation="answer",
         question="q",
         ground_truth="gt",
-        rubric_rules=rules_b,
+        rubric=rules_b,
         context=[],
         reference_files=[],
     )
@@ -58,7 +54,7 @@ def test_compute_case_hash_changes_when_context_changes() -> None:
         generation="answer",
         question="q",
         ground_truth="gt",
-        rubric_rules=[],
+        rubric=[],
         context=[],
         reference_files=[],
     )
@@ -66,7 +62,7 @@ def test_compute_case_hash_changes_when_context_changes() -> None:
         generation="answer",
         question="q",
         ground_truth="gt",
-        rubric_rules=[],
+        rubric=[],
         context=["retrieval context"],
         reference_files=[],
     )

@@ -23,7 +23,7 @@ from lumiseval_core.types import (
     QualityScore,
 )
 
-from lumiseval_agent.log import get_node_logger
+from lumiseval_graph.log import get_node_logger
 
 log = get_node_logger("eval")
 

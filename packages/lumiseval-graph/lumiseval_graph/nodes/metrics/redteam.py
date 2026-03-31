@@ -1,6 +1,5 @@
 # Run smoke test:
-#   python -m lumiseval_agent.nodes.metrics.redteam
-
+#   python -m lumiseval_graph.nodes.metrics.redteam
 """
 Adversarial Node — runs bias and toxicity probes on LLM-generated text.
 
@@ -8,15 +7,17 @@ Uses DeepEval BiasMetric and ToxicityMetric. Both metrics follow the convention
 that 1.0 = best (unbiased / non-toxic). DeepEval returns raw scores where higher
 means more biased/toxic, so each score is inverted: `1.0 - raw_score`.
 
-Only activated when EvalJobConfig.enable_adversarial=True.
+Only activated when EvalJobConfig.enable_redteam=True.
 """
 
 from deepeval.metrics import BiasMetric, ToxicityMetric
 from deepeval.test_case import LLMTestCase
 from lumiseval_core.constants import METRIC_PASS_THRESHOLD
-from lumiseval_core.types import MetricCategory, MetricResult
+from lumiseval_core.types import MetricCategory, MetricResult, NodeCostBreakdown, RedTeamCostMeta
 
-from lumiseval_agent.log import get_node_logger
+from lumiseval_graph.llm.pricing import cost_usd, get_model_pricing
+from lumiseval_graph.log import get_node_logger
+from lumiseval_graph.nodes.metrics.base import BaseMetricNode
 
 log = get_node_logger("redteam")
 
@@ -37,24 +38,55 @@ def _run_metric(metric, test_case, name: str) -> MetricResult:
     )
 
 
-def run(
-    generation: str,
-    judge_model: str = "gpt-4o-mini",
-) -> list[MetricResult]:
-    """Run bias and toxicity probes on the generation.
+class RedteamNode(BaseMetricNode):
+    node_name = "redteam"
+    # Delegates to DeepEval BiasMetric + ToxicityMetric — no custom prompt
 
-    Args:
-        generation: The LLM-generated text to evaluate.
-        judge_model: LiteLLM model string for DeepEval metrics.
+    def run(self, *, generation: str) -> list[MetricResult]:  # type: ignore[override]
+        """Run bias and toxicity probes on the generation.
 
-    Returns:
-        list[MetricResult] — one entry each for bias and toxicity.
-    """
-    test_case = LLMTestCase(input="", actual_output=generation)
-    return [
-        _run_metric(BiasMetric(model=judge_model), test_case, "bias"),
-        _run_metric(ToxicityMetric(model=judge_model), test_case, "toxicity"),
-    ]
+        Args:
+            generation: The LLM-generated text to evaluate.
+
+        Returns:
+            list[MetricResult] — one entry each for bias and toxicity.
+        """
+        test_case = LLMTestCase(input="", actual_output=generation)
+        return [
+            _run_metric(BiasMetric(model=self.judge_model), test_case, "bias"),
+            _run_metric(ToxicityMetric(model=self.judge_model), test_case, "toxicity"),
+        ]
+
+    def cost_estimate(
+        self,
+        *,
+        cost_meta: RedTeamCostMeta,
+        **_ignored,
+    ) -> NodeCostBreakdown:
+        # DeepEval makes 2 internal LLM calls per record: BiasMetric + ToxicityMetric.
+        # Prompt internals are not exposed; we use the overhead constants as estimates.
+        if cost_meta.eligible_records == 0:
+            return NodeCostBreakdown(model_calls=0, cost_usd=0.0)
+
+        pricing = get_model_pricing(self.judge_model)
+        cost_per_call = cost_usd(cost_meta.avg_input_tokens, pricing, "input") + cost_usd(
+            cost_meta.avg_output_tokens, pricing, "output"
+        )
+
+        total_calls = cost_meta.eligible_records * 2  # bias + toxicity
+        return NodeCostBreakdown(
+            model_calls=total_calls,
+            cost_usd=round(total_calls * cost_per_call, 6),
+        )
+
+    @staticmethod
+    def cost_formula(cost_meta: RedTeamCostMeta) -> str:
+        total_calls = cost_meta.eligible_records * 2
+        return (
+            f"{cost_meta.eligible_records} recs × 2 (bias + toxicity) = {total_calls} calls\n"
+            f"  input_tokens  = {round(cost_meta.avg_input_tokens)} (deepeval internal overhead) tok/call\n"
+            f"  output_tokens = {round(cost_meta.avg_output_tokens)} (deepeval internal overhead) tok/call"
+        )
 
 
 # ── Manual smoke test ──────────────────────────────────────────────────────────
@@ -89,10 +121,13 @@ if __name__ == "__main__":
         "consistently report higher-quality hires and lower attrition across all roles."
     )
 
+    node = RedteamNode(judge_model="gpt-4o-mini")
+    print(repr(node))
+
     print("=" * 60)
     print("TEST 1 — biased generation (expect low scores, passed=False)")
     print("=" * 60)
-    for r in run(generation=generation_biased, judge_model="gpt-4o-mini"):
+    for r in node.run(generation=generation_biased):
         print(f"  name={r.name}  score={r.score}  passed={r.passed}")
         if r.reasoning:
             print(f"  reasoning: {r.reasoning[:120]}")
@@ -101,7 +136,7 @@ if __name__ == "__main__":
     print("=" * 60)
     print("TEST 2 — neutral generation (expect high scores, passed=True)")
     print("=" * 60)
-    for r in run(generation=generation_neutral, judge_model="gpt-4o-mini"):
+    for r in node.run(generation=generation_neutral):
         print(f"  name={r.name}  score={r.score}  passed={r.passed}")
         if r.reasoning:
             print(f"  reasoning: {r.reasoning[:120]}")

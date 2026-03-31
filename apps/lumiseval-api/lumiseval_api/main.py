@@ -16,8 +16,8 @@ import uuid
 from typing import Union
 
 from fastapi import FastAPI
-from lumiseval_agent.graph import run_graph
-from lumiseval_core.types import EvalJobConfig, EvalReport, RubricRule
+from lumiseval_core.types import EvalJobConfig, EvalReport, Rubric
+from lumiseval_graph.graph import run_graph
 from pydantic import BaseModel
 
 app = FastAPI(
@@ -32,14 +32,13 @@ class EvalJobRequest(BaseModel):
     question: str | None = None
     ground_truth: str | None = None
     context: list[str] = []
-    rubric_rules: list[RubricRule] = []
+    rubric: list[Rubric] = []
     reference_files: list[str] = []
     judge_model: str = "gpt-4o-mini"
     web_search: bool = False
-    enable_hallucination: bool = True
-    enable_faithfulness: bool = True
-    enable_answer_relevancy: bool = True
-    enable_adversarial: bool = False
+    enable_grounding: bool = True
+    enable_relevance: bool = True
+    enable_redteam: bool = False
     enable_rubric: bool = False
     evidence_threshold: float = 0.75
     budget_cap_usd: float | None = None
@@ -51,10 +50,9 @@ def _run_one(request: EvalJobRequest) -> EvalReport:
     job_config = EvalJobConfig(
         job_id=job_id,
         judge_model=request.judge_model,
-        enable_hallucination=request.enable_hallucination,
-        enable_faithfulness=request.enable_faithfulness,
-        enable_answer_relevancy=request.enable_answer_relevancy,
-        enable_adversarial=request.enable_adversarial,
+        enable_grounding=request.enable_grounding,
+        enable_relevance=request.enable_relevance,
+        enable_redteam=request.enable_redteam,
         enable_rubric=request.enable_rubric,
         web_search=request.web_search,
         evidence_threshold=request.evidence_threshold,
@@ -67,7 +65,7 @@ def _run_one(request: EvalJobRequest) -> EvalReport:
         question=request.question,
         ground_truth=request.ground_truth,
         context=request.context or None,
-        rubric_rules=request.rubric_rules or None,
+        rubric=request.rubric or None,
         reference_files=request.reference_files or None,
     )
     return report

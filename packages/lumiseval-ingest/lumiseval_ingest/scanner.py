@@ -1,109 +1,165 @@
 """
-Metadata Scanner — scans input generation(s) and returns token/chunk/claim estimates.
+Metadata Scanner — scans input cases and returns token/chunk/claim counts.
 
-Reads raw text or JSON/JSONL/CSV dataset files. Makes no LLM calls.
-TODO: Implement full dataset scanning logic.
+Tokens are counted with tiktoken (cl100k_base) and generation chunks are
+produced by the actual chunk_text() function, so counts are precise.
+
+Token breakdown per record:
+  question_tokens    — tokens in the question field
+  generation_tokens  — tokens in the model's generated response
+  context_tokens     — tokens across all context passages
+  rubric_tokens      — tokens in rubric rule statements
+  total_tokens       — sum of all four above
 """
 
 import csv
 import json
-import math
 from pathlib import Path
 from typing import Any, Callable, Optional, Sequence
 
 import tiktoken
-from lumiseval_core.constants import CHUNK_SIZE_TOKENS, CLAIMS_PER_CHUNK, TIKTOKEN_ENCODING
+from lumiseval_core.constants import (
+    CLAIMS_PER_CHUNK,
+    GENERATION_CHUNK_SIZE_TOKENS,
+    TIKTOKEN_ENCODING,
+)
 from lumiseval_core.errors import InputParseError
-from lumiseval_core.types import EvalCase, InputMetadata
+from lumiseval_core.pipeline import CONTEXT_REQUIRED_NODES as _CONTEXT_NODES
+from lumiseval_core.pipeline import NODE_ORDER as _NODE_ORDER
+from lumiseval_core.pipeline import RUBRIC_REQUIRED_NODES as _RUBRIC_NODES
+from lumiseval_core.types import (
+    CostMetadata,
+    EvalCase,
+    GorundingCostMeta,
+    InputMetadata,
+    Record,
+    RecordMeta,
+    RedTeamCostMeta,
+    RelevanceCostMeta,
+    RubricCostMeta,
+)
 from rich.progress import BarColumn, MofNCompleteColumn, Progress, TextColumn, TimeElapsedColumn
+
+from lumiseval_ingest.chunker import chunk_text
 
 _ENCODING = tiktoken.get_encoding(TIKTOKEN_ENCODING)
 
-TOKENS_PER_CHUNK = CHUNK_SIZE_TOKENS
 ProgressCallback = Callable[[int, int], None]
-_NODE_ORDER = [
-    "scan",
-    "estimate",
-    "approve",
-    "chunk",
-    "claims",
-    "dedupe",
-    "relevance",
-    "grounding",
-    "redteam",
-    "rubric",
-    "eval",
-]
-_CONTEXT_NODES = {"chunk", "claims", "dedupe", "relevance", "grounding"}
+
+
+# ── Normalisation helpers ─────────────────────────────────────────────────────
 
 
 def _count_tokens(text: str) -> int:
     return len(_ENCODING.encode(text))
 
 
-def _record_metadata(idx: int, generation: str) -> dict[str, Any]:
-    tokens = _count_tokens(generation)
-    chunks = max(1, math.ceil(tokens / TOKENS_PER_CHUNK))
-    return {
-        "record_index": idx,
-        "tokens": tokens,
-        "chars": len(generation),
-        "estimated_chunks": chunks,
-        "estimated_claims": chunks * CLAIMS_PER_CHUNK,
-    }
-
-
 def _is_nonempty_text(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
-def _has_context(value: Any) -> bool:
-    if value is None:
-        return False
-    if isinstance(value, str):
-        return bool(value.strip())
-    if isinstance(value, list):
-        return any(
-            _is_nonempty_text(item) or (item is not None and str(item).strip()) for item in value
-        )
-    return bool(str(value).strip())
+def _normalize_context(raw: Any) -> list[str]:
+    """Normalise any context field to a clean list[str]."""
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        return [raw] if raw.strip() else []
+    if isinstance(raw, list):
+        return [str(item) for item in raw if item and str(item).strip()]
+    return [str(raw)] if str(raw).strip() else []
 
 
-def _has_rubric_rules(value: Any) -> bool:
-    if value is None:
-        return False
-    if isinstance(value, list):
-        return len(value) > 0
-    return True
+def _normalize_rubric(raw: Any) -> list[str]:
+    """Normalise any rubric field to a flat list of statement strings."""
+    if not raw or not isinstance(raw, list):
+        return []
+    result = []
+    for rule in raw:
+        if isinstance(rule, str) and rule.strip():
+            result.append(rule)
+        elif isinstance(rule, dict) and rule.get("statement", "").strip():
+            result.append(rule["statement"])
+    return result
+
+
+# ── Node eligibility ──────────────────────────────────────────────────────────
 
 
 def _node_eligibility(
     *,
     has_generation: bool,
     has_context: bool,
-    has_rubric_rules: bool,
+    has_rubric: bool,
 ) -> dict[str, bool]:
     flags = {node: has_generation for node in _NODE_ORDER}
     for node in _CONTEXT_NODES:
         flags[node] = has_generation and has_context
-    flags["rubric"] = has_generation and has_rubric_rules
+    for node in _RUBRIC_NODES:
+        flags[node] = has_generation and has_rubric
     return flags
 
 
-def _accumulate_node_eligibility(
-    rec: dict[str, Any],
-    flags: dict[str, bool],
+# ── Record builder ────────────────────────────────────────────────────────────
+
+
+def _build_record(
     *,
-    eligible_record_count: dict[str, int],
-    eligible_chunk_count: dict[str, int],
-    eligible_claim_count: dict[str, int],
-) -> None:
-    for node, is_eligible in flags.items():
-        if not is_eligible:
-            continue
-        eligible_record_count[node] += 1
-        eligible_chunk_count[node] += int(rec["estimated_chunks"])
-        eligible_claim_count[node] += int(rec["estimated_claims"])
+    idx: int,
+    case_id: str,
+    question: Optional[str],
+    generation: Optional[str],
+    context: list[str],
+    rubric: list[str],
+) -> Record:
+    """Compute token counts, chunk the generation, and return a typed Record."""
+    question_token_count = _count_tokens(question) if question else 0
+    generation_token_count = _count_tokens(generation) if generation else 0
+    context_token_count = sum(_count_tokens(p) for p in context)
+    rubric_token_count = sum(_count_tokens(r) for r in rubric)
+
+    generation_chunk_objects = (
+        chunk_text(generation, GENERATION_CHUNK_SIZE_TOKENS) if generation else []
+    )
+    generation_chunk_count = len(generation_chunk_objects)
+
+    has_context = bool(context)
+    has_rubric = bool(rubric)
+    eligible_nodes = [
+        node
+        for node, ok in _node_eligibility(
+            has_generation=_is_nonempty_text(generation or ""),
+            has_context=has_context,
+            has_rubric=has_rubric,
+        ).items()
+        if ok
+    ]
+
+    return Record(
+        record_index=idx,
+        case_id=case_id,
+        question=question,
+        generation=generation,
+        context=context,
+        generation_chunks=[c.text for c in generation_chunk_objects],
+        rubric=rubric,
+        record_metadata=RecordMeta(
+            context_token_count=context_token_count,
+            generation_chunk_count=generation_chunk_count,
+            generation_token_count=generation_token_count,
+            rubric_token_count=rubric_token_count,
+            total_token_count=question_token_count
+            + generation_token_count
+            + context_token_count
+            + rubric_token_count,
+            estimated_claim_count=generation_chunk_count * CLAIMS_PER_CHUNK,
+            has_context=has_context,
+            has_rubric=has_rubric,
+            eligible_nodes=eligible_nodes,
+        ),
+    )
+
+
+# ── Progress bar ──────────────────────────────────────────────────────────────
 
 
 def _make_rich_progress() -> Progress:
@@ -116,49 +172,237 @@ def _make_rich_progress() -> Progress:
     )
 
 
-def scan_text(
-    generation: str,
-    *,
-    has_context: bool = False,
-    has_rubric_rules: bool = False,
-) -> InputMetadata:
-    """Scan a single generation string and return metadata.
+# ── Scanner ───────────────────────────────────────────────────────────────────
 
-    Optional eligibility hints can be provided so downstream cost estimation can
-    reflect which nodes are runnable for this record.
+
+class Scanner:
+    """Accumulates per-record metadata and node eligibility across a scan run.
+
+    Usage::
+
+        scanner = Scanner()
+        for i, case in enumerate(cases):
+            scanner.add_case(i, case)
+        metadata = scanner.build()
     """
-    rec = _record_metadata(0, generation)
-    flags = _node_eligibility(
-        has_generation=_is_nonempty_text(generation),
-        has_context=has_context,
-        has_rubric_rules=has_rubric_rules,
-    )
-    rec["has_context"] = has_context
-    rec["has_rubric_rules"] = has_rubric_rules
-    rec["eligible_nodes"] = [node for node, ok in flags.items() if ok]
 
-    eligible_record_count = {node: 0 for node in _NODE_ORDER}
-    eligible_chunk_count = {node: 0 for node in _NODE_ORDER}
-    eligible_claim_count = {node: 0 for node in _NODE_ORDER}
-    _accumulate_node_eligibility(
-        rec,
-        flags,
-        eligible_record_count=eligible_record_count,
-        eligible_chunk_count=eligible_chunk_count,
-        eligible_claim_count=eligible_claim_count,
-    )
+    def __init__(self) -> None:
+        self._records: list[Record] = []
+        self._eligible_record_count: dict[str, int] = {node: 0 for node in _NODE_ORDER}
+        self._eligible_chunk_count: dict[str, int] = {node: 0 for node in _NODE_ORDER}
+        self._eligible_claim_count: dict[str, int] = {node: 0 for node in _NODE_ORDER}
 
-    return InputMetadata(
-        record_count=1,
-        total_tokens=rec["tokens"],
-        total_chars=rec["chars"],
-        estimated_chunk_count=rec["estimated_chunks"],
-        estimated_claim_count=rec["estimated_claims"],
-        per_record=[rec],
-        eligible_record_count=eligible_record_count,
-        eligible_chunk_count=eligible_chunk_count,
-        eligible_claim_count=eligible_claim_count,
-    )
+    # ── Per-record ingestion ──────────────────────────────────────────────────
+
+    def add_case(self, idx: int, case: EvalCase) -> None:
+        """Ingest one typed EvalCase."""
+        record = _build_record(
+            idx=idx,
+            case_id=case.case_id,
+            question=case.question,
+            generation=case.generation,
+            context=_normalize_context(case.context),
+            rubric=[r.statement for r in case.rubric],
+        )
+        self._add(record)
+
+    def add_raw(self, idx: int, raw: dict[str, Any]) -> None:
+        """Ingest one raw dict (from JSON/JSONL/CSV).
+
+        Raises:
+            InputParseError: If ``generation`` field is missing.
+        """
+        generation = raw.get("generation")
+        if generation is None:
+            raise InputParseError(
+                f"Record at index {idx} is missing required 'generation' field.",
+                record_index=idx,
+            )
+        record = _build_record(
+            idx=idx,
+            case_id=raw.get("case_id", f"record-{idx}"),
+            question=raw.get("question"),
+            generation=str(generation),
+            context=_normalize_context(
+                raw.get("context", raw.get("contexts", raw.get("documents")))
+            ),
+            rubric=_normalize_rubric(raw.get("rubric_rules", raw.get("rubric"))),
+        )
+        self._add(record)
+
+    # ── Internal accumulation ─────────────────────────────────────────────────
+
+    def _add(self, record: Record) -> None:
+        meta = record.record_metadata
+        for node in meta.eligible_nodes:
+            self._eligible_record_count[node] += 1
+            self._eligible_chunk_count[node] += meta.generation_chunk_count
+            self._eligible_claim_count[node] += meta.estimated_claim_count
+        self._records.append(record)
+
+    # ── Output ────────────────────────────────────────────────────────────────
+
+    def build(self) -> InputMetadata:
+        """Aggregate all accumulated records into an InputMetadata object.
+
+
+        cost_meta:
+        {
+            'grounding': {
+               'eligible_records': 3,
+               'avg_claims_per_record': 2.3333,
+               'avg_context_tokens': 66.6667,
+               'avg_claim_tokens': 15,
+               'avg_output_token': 5
+            },
+            'relevance': {
+                'eligible_records': 3,
+                'avg_claims_per_record': 2.3333,
+                'avg_question_tokens': 13.1667,
+                'avg_claim_tokens': 15,
+                'avg_output_token': 10
+            },
+            'rubric': {
+                'eligible_records': 6,
+                'rule_count': 28,
+                'unique_rule_count': 24,
+                'rule_tokens': 331.0,
+                'unique_rule_tokens': 303.0,
+                'avg_input_tokens': 400,
+                'avg_output_tokens': 60
+            },
+            'readteam': {
+                'eligible_records': 12,
+                'avg_input_tokens': 350,
+                'avg_output_tokens': 50
+            }
+        }
+
+
+        {
+            'case_id': 'eiffel-tower-basic',
+            'record_index': 0,
+            'question': 'What is the Eiffel Tower and where is it located?',
+            'context': ['The Eiffel Tower (/ˈaɪfəl/ EYE-fəl; French: Tour Eiffel) is a '
+                        'wrought-iron lattice tower on the Champ de Mars in Paris, '
+                        'France. It is named after the engineer Gustave Eiffel, whose '
+                        'company designed and built the tower from 1887 to 1889 as the '
+                        "centerpiece of the 1889 World's Fair."],
+            'generation': 'The Eiffel Tower is a wrought-iron lattice tower located in '
+                        'Paris, France. It was constructed between 1887 and 1889 and '
+                        "served as the entrance arch to the 1889 World's Fair. Standing "
+                        'at 330 metres, it is one of the most recognisable structures '
+                        'in the world.',
+            'generation_chunks': ['The Eiffel Tower is a wrought-iron lattice tower '
+                                'located in Paris, France. It was constructed between '
+                                '1887 and 1889 and served as the entrance arch to the '
+                                "1889 World's Fair. Standing at 330 metres, it is one "
+                                'of the most recognisable structures in the world.'],
+            'rubric': [],
+            'record_metadata': {'context_token_count': 84,
+                                'generation_chunk_count': 1,
+                                'generation_token_count': 63,
+                                'rubric_token_count': 0,
+                                'total_token_count': 160,
+                                'estimated_claim_count': 1,
+                                'has_context': True,
+                                'has_rubric': False,
+                                'eligible_nodes': ['scan',
+                                                    'estimate',
+                                                    'approve',
+                                                    'chunk',
+                                                    'claims',
+                                                    'dedupe',
+                                                    'relevance',
+                                                    'grounding',
+                                                    'redteam',
+                                                    'eval']}
+        }
+
+        """
+        metas = [r.record_metadata for r in self._records]
+
+        # ── Token aggregates ──────────────────────────────────────────────────
+        total_tokens = sum(m.total_token_count for m in metas)
+        generation_tokens = sum(m.generation_token_count for m in metas)
+        context_tokens = sum(m.context_token_count for m in metas)
+        rubric_tokens = sum(m.rubric_token_count for m in metas)
+        generation_chunk_count = sum(m.generation_chunk_count for m in metas)
+
+        # ── Unique rubric deduplication ───────────────────────────────────────
+        all_rubric_stmts = [s for r in self._records for s in (r.rubric or [])]
+        rubric_rule_count = len(all_rubric_stmts)
+        unique_stmts = list(dict.fromkeys(all_rubric_stmts))
+        unique_rubric_rule_count = len(unique_stmts)
+        unique_rubric_tokens = sum(_count_tokens(s) for s in unique_stmts)
+
+        # ── Per-node eligible counts ──────────────────────────────────────────
+        grounding_eligible = self._eligible_record_count["grounding"]
+        relevance_eligible = self._eligible_record_count["relevance"]
+        rubric_eligible = self._eligible_record_count["rubric"]
+        redteam_eligible = self._eligible_record_count["redteam"]
+
+        # ── Grounding cost meta ───────────────────────────────────────────────
+        grounding_claims = self._eligible_claim_count["grounding"]
+        avg_grounding_claims = grounding_claims / max(1, grounding_eligible)
+        context_records = [r for r in self._records if r.record_metadata.has_context]
+        avg_context_tokens = sum(
+            r.record_metadata.context_token_count for r in context_records
+        ) / max(1, len(context_records))
+
+        # ── Relevance cost meta ───────────────────────────────────────────────
+        relevance_claims = self._eligible_claim_count["relevance"]
+        avg_relevance_claims = relevance_claims / max(1, relevance_eligible)
+        q_records = [r for r in self._records if r.question]
+        avg_question_tokens = sum(_count_tokens(r.question) for r in q_records) / max(
+            1, len(q_records)
+        )
+
+        # ── Assemble ──────────────────────────────────────────────────────────
+        return InputMetadata(
+            record_count=len(self._records),
+            total_tokens=total_tokens,
+            generation_tokens=generation_tokens,
+            context_tokens=context_tokens,
+            rubric_tokens=rubric_tokens,
+            unique_rubric_tokens=unique_rubric_tokens,
+            rubric_rule_count=rubric_rule_count,
+            unique_rubric_rule_count=unique_rubric_rule_count,
+            generation_chunk_count=generation_chunk_count,
+            cost_meta=CostMetadata(
+                grounding=GorundingCostMeta(
+                    eligible_records=grounding_eligible,
+                    avg_claims_per_record=round(avg_grounding_claims, 4),
+                    avg_context_tokens=round(avg_context_tokens, 4),
+                ),
+                relevance=RelevanceCostMeta(
+                    eligible_records=relevance_eligible,
+                    avg_claims_per_record=round(avg_relevance_claims, 4),
+                    avg_question_tokens=round(avg_question_tokens, 4),
+                ),
+                rubric=RubricCostMeta(
+                    eligible_records=rubric_eligible,
+                    rule_count=rubric_rule_count,
+                    unique_rule_count=unique_rubric_rule_count,
+                    rule_tokens=round(float(rubric_tokens), 4),
+                    unique_rule_tokens=round(float(unique_rubric_tokens), 4),
+                ),
+                readteam=RedTeamCostMeta(
+                    eligible_records=redteam_eligible,
+                ),
+            ),
+            records=self._records,
+        )
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+
+def scan_text(generation: str) -> InputMetadata:
+    """Scan a single generation string and return metadata."""
+    scanner = Scanner()
+    scanner.add_case(0, EvalCase(case_id="record-0", generation=generation))
+    return scanner.build()
 
 
 def scan_cases(
@@ -166,68 +410,22 @@ def scan_cases(
     show_progress: bool = False,
     progress_callback: Optional[ProgressCallback] = None,
 ) -> InputMetadata:
-    """Scan canonical EvalCase rows and return aggregate metadata.
-
-    This is the preferred scanner for adapter-backed dataset flows because it
-    works after schema normalization (aliases already resolved into EvalCase).
-    """
-    total = len(cases)
-    per_record: list[dict[str, Any]] = []
-    eligible_record_count = {node: 0 for node in _NODE_ORDER}
-    eligible_chunk_count = {node: 0 for node in _NODE_ORDER}
-    eligible_claim_count = {node: 0 for node in _NODE_ORDER}
-
-    def _append_case(i: int, case: EvalCase) -> None:
-        rec = _record_metadata(i, case.generation)
-        rec["case_id"] = case.case_id
-
-        has_context = _has_context(case.context)
-        has_rubric_rules = len(case.rubric_rules) > 0
-        flags = _node_eligibility(
-            has_generation=_is_nonempty_text(case.generation),
-            has_context=has_context,
-            has_rubric_rules=has_rubric_rules,
-        )
-        rec["has_context"] = has_context
-        rec["has_rubric_rules"] = has_rubric_rules
-        rec["eligible_nodes"] = [node for node, ok in flags.items() if ok]
-
-        _accumulate_node_eligibility(
-            rec,
-            flags,
-            eligible_record_count=eligible_record_count,
-            eligible_chunk_count=eligible_chunk_count,
-            eligible_claim_count=eligible_claim_count,
-        )
-        per_record.append(rec)
+    """Scan a sequence of typed EvalCase rows and return aggregate metadata."""
+    scanner = Scanner()
 
     if show_progress and progress_callback is None:
         with _make_rich_progress() as progress:
-            task = progress.add_task("Scanning records", total=total)
+            task = progress.add_task("Scanning records", total=len(cases))
             for i, case in enumerate(cases):
-                _append_case(i, case)
+                scanner.add_case(i, case)
                 progress.advance(task)
     else:
         for i, case in enumerate(cases):
             if show_progress and progress_callback is not None:
-                progress_callback(i + 1, total)
-            _append_case(i, case)
+                progress_callback(i + 1, len(cases))
+            scanner.add_case(i, case)
 
-    totals: dict[str, int] = {
-        k: sum(r[k] for r in per_record)
-        for k in ("tokens", "chars", "estimated_chunks", "estimated_claims")
-    }
-    return InputMetadata(
-        record_count=len(per_record),
-        total_tokens=totals["tokens"],
-        total_chars=totals["chars"],
-        estimated_chunk_count=totals["estimated_chunks"],
-        estimated_claim_count=totals["estimated_claims"],
-        per_record=per_record,
-        eligible_record_count=eligible_record_count,
-        eligible_chunk_count=eligible_chunk_count,
-        eligible_claim_count=eligible_claim_count,
-    )
+    return scanner.build()
 
 
 def scan_file(
@@ -235,132 +433,59 @@ def scan_file(
     show_progress: bool = False,
     progress_callback: Optional[ProgressCallback] = None,
 ) -> InputMetadata:
-    """Scan a local input file and return aggregate metadata used by cost estimation.
+    """Scan a local file and return aggregate metadata.
 
-    Supported input types:
-    - ``.jsonl``: one JSON object per line
-    - ``.json``: either a single object or an array of objects
-    - ``.csv``: parsed with ``csv.DictReader``
-    - any other suffix: treated as a raw text generation (single-record scan)
-
-    For structured dataset formats (JSON/JSONL/CSV), each record must contain a
-    ``generation`` field. The scanner computes per-record token count, character
-    count, estimated chunk count, and estimated claim count, then aggregates totals.
-
-    Args:
-        path: File path to scan.
-        show_progress: If ``True``, emits per-record scan progress in the format
-            ``[current/total] scanning ...``.
-        progress_callback: Optional callback invoked as ``callback(current, total)``
-            during record scanning. If omitted and ``show_progress=True``, a default
-            console renderer is used.
-
-    Returns:
-        InputMetadata with:
-        - ``record_count``
-        - ``total_tokens``
-        - ``total_chars``
-        - ``estimated_chunk_count``
-        - ``estimated_claim_count``
-        - ``per_record`` breakdown for each scanned row
-        - ``eligible_record_count`` per node (how many records can run that node)
-        - ``eligible_chunk_count`` per node (chunk estimates across eligible records)
-        - ``eligible_claim_count`` per node (claim estimates across eligible records)
+    Supported formats: ``.json``, ``.jsonl``, ``.csv``.
+    Any other suffix is treated as a raw generation string (single-record scan).
 
     Raises:
-        InputParseError: If any structured record is missing ``generation``.
-        json.JSONDecodeError: If a JSON/JSONL payload cannot be decoded.
-        OSError / UnicodeDecodeError: If the file cannot be read.
-
-    Notes:
-        - This function does not call any external LLM APIs.
-        - Token counting uses ``tiktoken`` (``cl100k_base`` encoding).
-        - Chunk and claim counts are heuristic estimates intended for pre-run budgeting.
+        InputParseError: If any record is missing the ``generation`` field.
     """
     path = Path(path)
-    records: list[dict[str, Any]] = []
 
-    # try:
     if path.suffix == ".jsonl":
         with path.open() as f:
-            for i, line in enumerate(f):
-                # try:
-                records.append(json.loads(line))
-                # except json.JSONDecodeError as exc:
-                #     raise InputParseError(str(exc), record_index=i) from exc
+            raw_records = [json.loads(line) for line in f]
     elif path.suffix == ".json":
         with path.open() as f:
             data = json.load(f)
-        records = data if isinstance(data, list) else [data]
+        raw_records = data if isinstance(data, list) else [data]
     elif path.suffix == ".csv":
         with path.open(newline="") as f:
-            records = list(csv.DictReader(f))
+            raw_records = list(csv.DictReader(f))
     else:
-        # Treat as plain text — single record
         return scan_text(path.read_text())
-    # except (OSError, UnicodeDecodeError) as exc:
-    #     raise InputParseError(f"Cannot read {path}: {exc}") from exc
 
-    total = len(records)
-    per_record = []
-    eligible_record_count = {node: 0 for node in _NODE_ORDER}
-    eligible_chunk_count = {node: 0 for node in _NODE_ORDER}
-    eligible_claim_count = {node: 0 for node in _NODE_ORDER}
-
-    def _append_record(i: int, rec: dict[str, Any]) -> None:
-        generation = rec.get("generation")
-        if generation is None:
-            raise InputParseError(
-                f"Record at index {i} is missing required 'generation' field.",
-                record_index=i,
-            )
-        meta = _record_metadata(i, str(generation))
-
-        has_context = _has_context(rec.get("context", rec.get("contexts", rec.get("documents"))))
-        has_rubric_rules = _has_rubric_rules(rec.get("rubric_rules", rec.get("rubric")))
-        flags = _node_eligibility(
-            has_generation=_is_nonempty_text(str(generation)),
-            has_context=has_context,
-            has_rubric_rules=has_rubric_rules,
-        )
-        meta["has_context"] = has_context
-        meta["has_rubric_rules"] = has_rubric_rules
-        meta["eligible_nodes"] = [node for node, ok in flags.items() if ok]
-
-        _accumulate_node_eligibility(
-            meta,
-            flags,
-            eligible_record_count=eligible_record_count,
-            eligible_chunk_count=eligible_chunk_count,
-            eligible_claim_count=eligible_claim_count,
-        )
-        per_record.append(meta)
+    scanner = Scanner()
 
     if show_progress and progress_callback is None:
-        # Use Rich's live-rendering progress bar — updates regardless of loop speed
         with _make_rich_progress() as progress:
-            task = progress.add_task("Scanning records", total=total)
-            for i, rec in enumerate(records):
-                _append_record(i, rec)
+            task = progress.add_task("Scanning records", total=len(raw_records))
+            for i, raw in enumerate(raw_records):
+                scanner.add_raw(i, raw)
                 progress.advance(task)
     else:
-        for i, rec in enumerate(records):
+        for i, raw in enumerate(raw_records):
             if show_progress and progress_callback is not None:
-                progress_callback(i + 1, total)
-            _append_record(i, rec)
+                progress_callback(i + 1, len(raw_records))
+            scanner.add_raw(i, raw)
 
-    totals: dict[str, int] = {
-        k: sum(r[k] for r in per_record)
-        for k in ("tokens", "chars", "estimated_chunks", "estimated_claims")
-    }
-    return InputMetadata(
-        record_count=len(per_record),
-        total_tokens=totals["tokens"],
-        total_chars=totals["chars"],
-        estimated_chunk_count=totals["estimated_chunks"],
-        estimated_claim_count=totals["estimated_claims"],
-        per_record=per_record,
-        eligible_record_count=eligible_record_count,
-        eligible_chunk_count=eligible_chunk_count,
-        eligible_claim_count=eligible_claim_count,
-    )
+    return scanner.build()
+
+
+# ── Debug / manual test ───────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    import sys
+
+    sample_path = Path(__file__).parents[3] / "sample.json"
+    if not sample_path.exists():
+        print(f"sample.json not found at {sample_path}", file=sys.stderr)
+        sys.exit(1)
+
+    m = scan_file(sample_path, show_progress=True)
+    from pprint import pprint
+
+    pprint(m.cost_meta.model_dump(), sort_dicts=False)
+    print("\n\n")
+    pprint(m.records[0].model_dump(), sort_dicts=False)

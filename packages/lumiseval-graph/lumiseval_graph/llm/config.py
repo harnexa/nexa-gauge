@@ -33,6 +33,8 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
+from lumiseval_core.pipeline import NODE_ENV_KEY_SUFFIXES as _PIPELINE_ENV_KEYS
+
 
 @dataclass
 class NodeModelConfig:
@@ -43,28 +45,20 @@ class NodeModelConfig:
     fallback_model: Optional[str]
 
 
-_NODE_ENV_KEYS: dict[str, list[str]] = {
-    # Canonical one-word node names
-    "scan": ["SCAN", "METADATA_SCANNER"],
-    "estimate": ["ESTIMATE", "COST_ESTIMATOR"],
-    "approve": ["APPROVE", "CONFIRM_GATE"],
-    "chunk": ["CHUNK", "CHUNKER"],
-    "claims": ["CLAIMS", "CLAIM_EXTRACTOR"],
-    "dedupe": ["DEDUPE", "MMR_DEDUPLICATOR"],
-    "relevance": ["RELEVANCE", "RAGAS"],
-    "grounding": ["GROUNDING", "HALLUCINATION"],
-    "redteam": ["REDTEAM", "ADVERSARIAL"],
-    "rubric": ["RUBRIC", "RUBRIC_EVAL"],
-    "eval": ["EVAL", "eval"],
-    # Metric-specific keys still supported
+# Sub-metric keys not represented as top-level pipeline nodes
+_SUBMETRIC_ENV_KEYS: dict[str, list[str]] = {
     "faithfulness": ["FAITHFULNESS"],
     "answer_relevancy": ["ANSWER_RELEVANCY"],
 }
 
 
 def _candidate_env_prefixes(node_name: str) -> list[str]:
-    key = node_name.upper().replace("-", "_").replace(" ", "_")
-    return _NODE_ENV_KEYS.get(node_name, [key])
+    if node_name in _SUBMETRIC_ENV_KEYS:
+        return _SUBMETRIC_ENV_KEYS[node_name]
+    suffixes = _PIPELINE_ENV_KEYS.get(node_name)
+    if suffixes:
+        return suffixes
+    return [node_name.upper().replace("-", "_").replace(" ", "_")]
 
 
 def get_node_config(node_name: str) -> NodeModelConfig:

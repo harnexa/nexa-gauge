@@ -18,11 +18,12 @@ from pathlib import Path
 from typing import Any, Optional
 
 import typer
-from lumiseval_agent.nodes.cost_estimator import estimate as compute_estimate
-from lumiseval_agent.runners.node_runner import CachedNodeRunner, NodeRunner
 from lumiseval_core.cache import CacheStore, NoOpCacheStore
 from lumiseval_core.errors import InputParseError
+from lumiseval_core.pipeline import NODE_ORDER, NODES_BY_NAME, PREFLIGHT_NODES
 from lumiseval_core.types import EvalJobConfig
+from lumiseval_graph import CachedNodeRunner, NodeRunner
+from lumiseval_graph.nodes.cost_estimator import CostEstimator
 from lumiseval_ingest import create_dataset_adapter
 from lumiseval_ingest.scanner import scan_cases
 from rich.console import Console
@@ -53,68 +54,46 @@ def _to_jsonable(value: Any) -> Any:
 
 
 def _print_cost_table(cost) -> None:
-    table = Table(title="Cost Estimate", show_header=True)
-    table.add_column("Component", style="cyan")
-    table.add_column("Calls", justify="right")
-    table.add_column("Cost (USD)", justify="right")
-    table.add_row("Judge calls", str(cost.estimated_judge_calls), f"${cost.judge_cost_usd:.6f}")
-    table.add_row(
-        "Embedding calls", str(cost.estimated_embedding_calls), f"${cost.embedding_cost_usd:.6f}"
-    )
-    table.add_row(
-        "Tavily searches", str(cost.estimated_tavily_calls), f"${cost.tavily_cost_usd:.6f}"
-    )
-    table.add_row("[bold]Total[/bold]", "", f"[bold]${cost.total_estimated_usd:.6f}[/bold]")
-    console.print(table)
-    console.print(f"  Confidence range: ${cost.low_usd:.6f} – ${cost.high_usd:.6f} (±20%)")
-    if cost.approximate_warning:
-        console.print(f"  [yellow][ESTIMATE APPROXIMATE] {cost.approximate_warning}[/yellow]")
+    cost.print_table(title="Cost Estimate")
 
 
 def _print_scan_table(meta) -> None:
     table = Table(title="Scan Statistics", show_header=True)
     table.add_column("Metric", style="cyan")
     table.add_column("Value", justify="right")
+    table.add_column("Source", style="dim")
 
     avg_tokens = (meta.total_tokens / meta.record_count) if meta.record_count else 0
-    avg_chars = (meta.total_chars / meta.record_count) if meta.record_count else 0
 
-    table.add_row("Records scanned", f"{meta.record_count:,}")
-    table.add_row("Total tokens", f"{meta.total_tokens:,}")
-    table.add_row("Total characters", f"{meta.total_chars:,}")
-    table.add_row("Estimated chunks", f"{meta.estimated_chunk_count:,}")
-    table.add_row("Estimated claims", f"{meta.estimated_claim_count:,}")
-    table.add_row("Avg tokens / record", f"{avg_tokens:.1f}")
-    table.add_row("Avg chars / record", f"{avg_chars:.1f}")
+    table.add_row("Records scanned", f"{meta.record_count:,}", "dataset adapter")
+    table.add_row("Total tokens", f"{meta.total_tokens:,}", "tiktoken (cl100k_base)")
+    table.add_row("  Generation tokens", f"{meta.generation_tokens:,}", "generation field")
+    table.add_row("  Context tokens", f"{meta.context_tokens:,}", "context passages")
+    table.add_row("  Rubric tokens", f"{meta.rubric_tokens:,}", "rubric statements")
+    table.add_row("Generation chunks", f"{meta.generation_chunk_count:,}", "chunker output")
+    table.add_row("Avg tokens / record", f"{avg_tokens:.1f}", "total_tokens / records")
     console.print(table)
 
 
 def _print_node_eligibility_table(meta) -> None:
-    counts = meta.eligible_record_count or {}
     total = meta.record_count or 0
-    if not counts or total == 0:
+    if total == 0:
         return
+
+    cm = meta.cost_meta
+    node_eligible = {
+        "grounding": cm.grounding.eligible_records,
+        "relevance": cm.relevance.eligible_records,
+        "rubric": cm.rubric.eligible_records,
+        "redteam": cm.readteam.eligible_records,
+    }
 
     table = Table(title="Node Eligibility (By Record)", show_header=True)
     table.add_column("Node", style="cyan")
     table.add_column("Eligible Records", justify="right")
     table.add_column("Coverage", justify="right")
 
-    node_order = [
-        "scan",
-        "estimate",
-        "approve",
-        "chunk",
-        "claims",
-        "dedupe",
-        "relevance",
-        "grounding",
-        "redteam",
-        "rubric",
-        "eval",
-    ]
-    for node in node_order:
-        eligible = int(counts.get(node, 0))
+    for node, eligible in node_eligible.items():
         pct = (eligible / total * 100.0) if total else 0.0
         table.add_row(node, f"{eligible:,} / {total:,}", f"{pct:.1f}%")
     console.print(table)
@@ -151,22 +130,17 @@ def run(
     judge_model: str = typer.Option("gpt-4o-mini", "--model", "-m", help="LiteLLM judge model."),
     web_search: bool = typer.Option(False, "--web-search", help="Enable Tavily web search."),
     evidence_threshold: float = typer.Option(0.75, "--evidence-threshold"),
-    enable_hallucination: bool = typer.Option(
+    enable_grounding: bool = typer.Option(
         True,
         "--enable-hallucination/--disable-hallucination",
         help="Enable grounding node (hallucination metric).",
     ),
-    enable_faithfulness: bool = typer.Option(
-        True,
-        "--enable-faithfulness/--disable-faithfulness",
-        help="Enable faithfulness metric in relevance node.",
-    ),
-    enable_answer_relevancy: bool = typer.Option(
+    enable_relevance: bool = typer.Option(
         True,
         "--enable-answer-relevancy/--disable-answer-relevancy",
         help="Enable answer relevancy metric in relevance node.",
     ),
-    enable_adversarial: bool = typer.Option(
+    enable_redteam: bool = typer.Option(
         False,
         "--enable-adversarial/--disable-adversarial",
         help="Enable redteam node.",
@@ -195,8 +169,8 @@ def run(
     """Run selected cases up to target node, with preflight scan/cost confirmation."""
     console.print(f"[yellow]Preparing source: {input}[/yellow]")
     target_node = NodeRunner.normalize_node_name(node_name)
-    if target_node not in NodeRunner._node_fns:
-        valid = ", ".join(sorted(NodeRunner._node_fns))
+    if target_node not in NODES_BY_NAME:
+        valid = ", ".join(NODE_ORDER)
         console.print(f"[red]Unknown node '{node_name}'. Valid options: {valid}.[/red]")
         raise typer.Exit(1)
 
@@ -232,29 +206,22 @@ def run(
         judge_model=judge_model,
         web_search=web_search,
         evidence_threshold=evidence_threshold,
-        enable_hallucination=enable_hallucination,
-        enable_faithfulness=enable_faithfulness,
-        enable_answer_relevancy=enable_answer_relevancy,
-        enable_adversarial=enable_adversarial,
+        enable_grounding=enable_grounding,
+        enable_relevance=enable_relevance,
+        enable_redteam=enable_redteam,
         enable_rubric=enable_rubric,
     )
 
     console.print("\n[cyan]Estimating cost...[/cyan]")
-    rubric_rule_count = sum(len(case.rubric_rules) for case in cases)
     try:
-        cost = compute_estimate(
-            meta,
-            base_job_config,
-            target_node=target_node,
-            rubric_rule_count=rubric_rule_count,
-        )
+        cost = CostEstimator(base_job_config).estimate(meta)
     except Exception as exc:
         console.print(f"[red]Cost estimation failed: {exc}[/red]")
         raise typer.Exit(1)
     _print_cost_table(cost)
 
-    if not yes:
-        proceed = typer.confirm(f"\nEstimated cost: ${cost.total_estimated_usd:.4f}. Proceed?")
+    if not yes and target_node not in PREFLIGHT_NODES:
+        proceed = typer.confirm(f"\nEstimated cost: ${cost.row('eval').cost_usd:.4f}. Proceed?")
         if not proceed:
             console.print("[yellow]Aborted.[/yellow]")
             raise typer.Exit(0)

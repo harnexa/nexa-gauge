@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from lumiseval_core.errors import InputParseError
-from lumiseval_core.types import EvalCase, RubricRule
+from lumiseval_core.types import EvalCase, Rubric
 
 from .base import DatasetAdapter
 
@@ -31,17 +31,17 @@ def _normalize_reference_files(raw: Any) -> list[str]:
     return [str(raw)]
 
 
-def _normalize_rubric_rules(raw: Any) -> list[RubricRule]:
+def _normalize_rubric(raw: Any) -> list[Rubric]:
     if raw is None:
         return []
     if not isinstance(raw, list):
-        raise InputParseError("rubric_rules must be a list if provided.")
+        raise InputParseError("rubric must be a list if provided.")
 
-    rules: list[RubricRule] = []
+    rules: list[Rubric] = []
     for idx, item in enumerate(raw):
         if isinstance(item, str):
             rules.append(
-                RubricRule(
+                Rubric(
                     id=f"R-{idx + 1:03d}",
                     statement=item,
                     pass_condition="Rule must be satisfied.",
@@ -49,7 +49,7 @@ def _normalize_rubric_rules(raw: Any) -> list[RubricRule]:
             )
             continue
         if isinstance(item, dict):
-            rules.append(RubricRule.model_validate(item))
+            rules.append(Rubric.model_validate(item))
             continue
         raise InputParseError(f"Unsupported rubric rule type at index {idx}: {type(item).__name__}")
     return rules
@@ -77,7 +77,7 @@ def _canonical_case(record: dict[str, Any], idx: int, dataset_name: str, split: 
     reference_files = _normalize_reference_files(
         _pick_first(record, ["reference_files", "reference_paths"])
     )
-    rubric_rules = _normalize_rubric_rules(_pick_first(record, ["rubric_rules", "rubric"]))
+    rubric = _normalize_rubric(_pick_first(record, ["rubric", "rubric"]))
 
     reserved = {
         "case_id",
@@ -100,7 +100,7 @@ def _canonical_case(record: dict[str, Any], idx: int, dataset_name: str, split: 
         "documents",
         "reference_files",
         "reference_paths",
-        "rubric_rules",
+        "rubric",
         "rubric",
     }
     metadata = {k: v for k, v in record.items() if k not in reserved}
@@ -114,7 +114,7 @@ def _canonical_case(record: dict[str, Any], idx: int, dataset_name: str, split: 
         ground_truth=str(ground_truth) if ground_truth is not None else None,
         context=context,
         reference_files=reference_files,
-        rubric_rules=rubric_rules,
+        rubric=rubric,
         metadata=metadata,
     )
 

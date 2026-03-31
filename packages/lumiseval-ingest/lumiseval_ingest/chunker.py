@@ -15,13 +15,12 @@ import semchunk
 import tiktoken
 from lumiseval_core.constants import (
     CHUNK_MIN_TOKENS_FOR_SPLIT,
-    CHUNK_SIZE_TOKENS,
     TIKTOKEN_ENCODING,
 )
 from lumiseval_core.types import Chunk
 
 _ENCODING = tiktoken.get_encoding(TIKTOKEN_ENCODING)
-_CHUNK_SIZE = CHUNK_SIZE_TOKENS
+
 _MIN_TOKENS_FOR_SPLIT = CHUNK_MIN_TOKENS_FOR_SPLIT
 
 
@@ -29,7 +28,7 @@ def _token_counter(text: str) -> int:
     return len(_ENCODING.encode(text))
 
 
-def chunk_text(text: str, chunk_size: int = _CHUNK_SIZE) -> list[Chunk]:
+def chunk_text(text: str, chunk_size: int) -> list[Chunk]:
     """Split ``text`` into semantic chunks.
 
     If the text is under ``_MIN_TOKENS_FOR_SPLIT`` tokens it is returned as a

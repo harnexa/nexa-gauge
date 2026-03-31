@@ -7,11 +7,11 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "typer>=0.12.0",
     "rich>=13.0.0",
-    "lumiseval-agent",
+    "lumiseval-graph",
 ]
 
 [tool.uv.sources]
-lumiseval-agent = { workspace = true }
+lumiseval-graph = { workspace = true }
 
 [project.scripts]
 lumiseval = "lumiseval_cli.main:main"

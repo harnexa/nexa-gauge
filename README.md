@@ -6,7 +6,7 @@
 
 # LumisEval
 
-> Agentic LLM evaluation pipeline — orchestrate RAGAS, DeepEval, and Giskard from a single command, with upfront cost estimates and per-claim source citations.
+> Agentic LLM evaluation pipeline — decompose any LLM output into claims, verify each one with custom LLM judges and DeepEval, with upfront cost estimates and per-claim verdicts.
 
 ```
   ██╗     ██╗   ██╗███╗   ███╗██╗███████╗    ███████╗██╗   ██╗ █████╗ ██╗
@@ -20,10 +20,10 @@
 ## What it does
 
 LumisEval is an agentic evaluation pipeline for LLM-generated content. It decomposes any
-output into atomic claims, routes each claim to the cheapest verification source (local files →
-enterprise LanceDB → web search), and dispatches the right eval tool — RAGAS for RAG quality,
-DeepEval for LLM judges, Giskard for adversarial probes — rather than reimplementing them.
-Every run starts with a cost estimate you must acknowledge, and every verdict cites its source.
+output into atomic claims and evaluates them across four independent metric branches —
+faithfulness (grounding), answer relevancy, adversarial probes (bias + toxicity via DeepEval),
+and custom rubric rules — all via batched LLM-judge calls. Every run starts with a cost estimate
+you must acknowledge, and every verdict includes per-claim ACCEPTED/REJECTED details.
 
 ## Project structure
 
@@ -33,8 +33,8 @@ lumis-eval/
 │   ├── lumiseval-core/         # Shared types, config, errors (Pydantic)
 │   ├── lumiseval-ingest/       # Metadata scanner + semchunk chunker
 │   ├── lumiseval-evidence/     # Evidence router, LanceDB indexer, MMR dedup
-│   └── lumiseval-agent/        # LangGraph orchestration + metric nodes
-│       └── lumiseval_agent/
+│   └── lumiseval-graph/        # LangGraph orchestration + metric nodes
+│       └── lumiseval_graph/
 │           ├── graph.py
 │           └── nodes/
 │               ├── claim_extractor.py
@@ -50,7 +50,8 @@ lumis-eval/
 │   └── lumiseval-cli/          # Typer CLI
 ├── infra/                  # Placeholder for Docker / Terraform
 ├── docs/
-│   └── architecture.md
+│   ├── architecture.md
+│   └── get-started.md
 ├── .github/workflows/ci.yml
 ├── pyproject.toml          # Root workspace config
 ├── Makefile
@@ -64,7 +65,7 @@ lumis-eval/
 | `lumiseval-core` | Shared Pydantic types, pydantic-settings config, custom errors |
 | `lumiseval-ingest` | Token-accurate metadata scanner (tiktoken) + semantic chunker (semchunk) |
 | `lumiseval-evidence` | Evidence router (local LanceDB → MCP → Tavily), MMR deduplicator, LanceDB indexer |
-| `lumiseval-agent` | LangGraph orchestration graph, node runners, claim extraction, relevance/grounding/redteam/rubric metrics, estimate, and final eval |
+| `lumiseval-graph` | LangGraph orchestration graph, node runners, claim extraction, relevance/grounding/redteam/rubric metrics, estimate, and final eval |
 | `lumiseval-api` | FastAPI REST interface (`POST /jobs`, `GET /jobs/{id}/report`) |
 | `lumiseval-cli` | Typer CLI (`lumiseval run <node_name> --input <source>`) |
 
@@ -97,6 +98,7 @@ make api
 ## Development
 
 ```bash
+make ci          # full local CI: format check → lint → test
 make lint        # ruff linter
 make format      # ruff formatter
 make typecheck   # mypy
@@ -121,6 +123,7 @@ make clean       # remove build artifacts
 - [ ] SQLite persistence (SQLModel) for job records, reports, and cost actuals
 - [ ] MCP LanceDB retrieval for enterprise knowledge bases
 - [ ] Rubric Extractor agent — auto-derive rules from reference documents (UC-3)
+- [x] Langfuse observability — traces, scores, and cost tracking per run
 - [ ] OpenTelemetry trace export (Arize Phoenix compatible)
 - [ ] Cost feedback loop — estimate vs. actual tracking for improved heuristics
 

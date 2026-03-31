@@ -3,7 +3,7 @@
 This document reflects the current implementation across:
 - `apps/lumiseval-cli`
 - `apps/lumiseval-api`
-- `packages/lumiseval-agent`
+- `packages/lumiseval-graph`
 - `packages/lumiseval-ingest`
 - `packages/lumiseval-evidence`
 - `packages/lumiseval-core`
@@ -35,17 +35,13 @@ flowchart LR
   R --> O2["Outputs: API response / report"]
 
   subgraph EXT["External Engines & Services"]
-    E1["RAGAS"]
-    E2["DeepEval"]
-    E3["Giskard"]
+    E2["DeepEval (GEval, BiasMetric, ToxicityMetric)"]
     E4["LiteLLM Judge Models"]
     E5["LanceDB + SentenceTransformers"]
     E6["Tavily Web Search (optional)"]
   end
 
-  G -.uses.-> E1
   G -.uses.-> E2
-  G -.uses.-> E3
   G -.uses.-> E4
   G -.uses.-> E5
   G -.optional.-> E6
@@ -75,10 +71,10 @@ flowchart TD
   N8 --> N9["EvalReport"]
 
   subgraph CFG["Metric Activation from EvalJobConfig"]
-    C1["enable_faithfulness + enable_answer_relevancy"]
-    C2["enable_hallucination"]
-    C3["enable_adversarial"]
-    C4["enable_rubric + rubric_rules"]
+    C2["enable_grounding"]
+    C1["enable_relevance"]
+    C3["enable_redteam"]
+    C4["enable_rubric + rubric"]
   end
 
   C1 -.controls.-> M1
@@ -113,7 +109,7 @@ sequenceDiagram
   participant AD as "create_dataset_adapter()"
   participant DA as "DatasetAdapter.iter_cases()"
   participant SC as "scan_cases()"
-  participant ES as "nodes.cost_estimator.estimate()"
+  participant ES as "CostEstimator(job_config).estimate()"
   participant CN as "CachedNodeRunner.run_case()"
   participant NF as "node function map"
 
@@ -124,8 +120,8 @@ sequenceDiagram
   DA-->>CLI: EvalCase[]
   CLI->>SC: scan selected cases
   SC-->>CLI: InputMetadata
-  CLI->>ES: estimate(scan_meta, job_config)
-  ES-->>CLI: CostEstimate
+  CLI->>ES: estimate(scan_meta)
+  ES-->>CLI: CostReport (rich table printed inline)
   CLI->>User: confirm (unless --yes)
 
   loop each EvalCase
@@ -187,7 +183,7 @@ All dataset sources are normalized to `EvalCase`:
 - `ground_truth` (optional)
 - `context` (optional list)
 - `reference_files` (optional list)
-- `rubric_rules` (optional list)
+- `rubric` (optional list)
 - `metadata` (free-form)
 
 This contract is what makes both flows modular:

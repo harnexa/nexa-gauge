@@ -1,5 +1,5 @@
 [project]
-name = "lumiseval-agent"
+name = "lumiseval-graph"
 version = "0.1.0"
 description = "LangGraph orchestration graph and metric dispatch nodes for lumis-eval"
 requires-python = ">=3.10"
@@ -32,4 +32,4 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["lumiseval_agent"]
+packages = ["lumiseval_graph"]
