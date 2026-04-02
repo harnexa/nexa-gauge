@@ -34,6 +34,9 @@ class NodeSpec:
     requires_rubric: bool = False
     """Skip this node when the case has no rubric rules."""
 
+    requires_reference: bool = False
+    """Skip this node when the case has no reference reference."""
+
     is_metric: bool = False
     """Node produces metric results and participates in the parallel fan-out."""
 
@@ -160,6 +163,15 @@ PIPELINE: list[NodeSpec] = [
         skip_output={"rubric_metrics": []},
     ),
     NodeSpec(
+        name="reference",
+        prerequisites=("scan", "estimate", "approve"),
+        requires_reference=True,
+        is_metric=True,
+        color="bright_magenta",
+        env_key_suffixes=("REFERENCE",),
+        skip_output={"reference_metrics": []},
+    ),
+    NodeSpec(
         name="eval",
         prerequisites=(
             "scan",
@@ -172,6 +184,7 @@ PIPELINE: list[NodeSpec] = [
             "grounding",
             "redteam",
             "rubric",
+            "reference",
         ),
         color="gold1",
         env_key_suffixes=("EVAL",),
@@ -191,6 +204,10 @@ LEGACY_ALIASES: dict[str, str] = {alias: s.name for s in PIPELINE for alias in s
 CONTEXT_REQUIRED_NODES: frozenset[str] = frozenset(s.name for s in PIPELINE if s.requires_context)
 
 RUBRIC_REQUIRED_NODES: frozenset[str] = frozenset(s.name for s in PIPELINE if s.requires_rubric)
+
+REFERENCE_REQUIRED_NODES: frozenset[str] = frozenset(
+    s.name for s in PIPELINE if s.requires_reference
+)
 
 PREFLIGHT_NODES: frozenset[str] = frozenset(s.name for s in PIPELINE if s.is_preflight)
 

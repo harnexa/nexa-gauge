@@ -98,21 +98,21 @@ def _deserialize(node_output_raw: dict[str, Any]) -> dict[str, Any]:
 def compute_case_hash(
     generation: str,
     question: Optional[str],
-    ground_truth: Optional[str],
+    reference: Optional[str],
     rubric: list[Rubric],
     context: Optional[list[str]] = None,
     reference_files: Optional[list[str]] = None,
 ) -> str:
     """Stable SHA-256 hash of the case's input content.
 
-    Changing generation / question / ground_truth / context / rubric rules / reference_files
+    Changing generation / question / reference / context / rubric rules / reference_files
     produces a different hash, which causes a cache miss for the affected case.
     """
     rubric_text = "|".join(sorted(f"{r.id}\x1f{r.statement}\x1f{r.pass_condition}" for r in rubric))
     context_text = "|".join(context or [])
     reference_text = "|".join(sorted(reference_files or []))
     raw = (
-        f"{generation}\x00{question or ''}\x00{ground_truth or ''}\x00"
+        f"{generation}\x00{question or ''}\x00{reference or ''}\x00"
         f"{context_text}\x00{rubric_text}\x00{reference_text}"
     )
     return hashlib.sha256(raw.encode()).hexdigest()[:16]

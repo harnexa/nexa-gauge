@@ -8,7 +8,7 @@ def test_compute_case_hash_changes_when_reference_files_change() -> None:
     h1 = compute_case_hash(
         generation="answer",
         question="q",
-        ground_truth="gt",
+        reference="gt",
         rubric=[],
         context=[],
         reference_files=["docs/a.txt"],
@@ -16,7 +16,7 @@ def test_compute_case_hash_changes_when_reference_files_change() -> None:
     h2 = compute_case_hash(
         generation="answer",
         question="q",
-        ground_truth="gt",
+        reference="gt",
         rubric=[],
         context=[],
         reference_files=["docs/b.txt"],
@@ -33,7 +33,7 @@ def test_compute_case_hash_changes_when_rubric_pass_condition_changes() -> None:
     h1 = compute_case_hash(
         generation="answer",
         question="q",
-        ground_truth="gt",
+        reference="gt",
         rubric=rules_a,
         context=[],
         reference_files=[],
@@ -41,7 +41,7 @@ def test_compute_case_hash_changes_when_rubric_pass_condition_changes() -> None:
     h2 = compute_case_hash(
         generation="answer",
         question="q",
-        ground_truth="gt",
+        reference="gt",
         rubric=rules_b,
         context=[],
         reference_files=[],
@@ -53,7 +53,7 @@ def test_compute_case_hash_changes_when_context_changes() -> None:
     h1 = compute_case_hash(
         generation="answer",
         question="q",
-        ground_truth="gt",
+        reference="gt",
         rubric=[],
         context=[],
         reference_files=[],
@@ -61,7 +61,7 @@ def test_compute_case_hash_changes_when_context_changes() -> None:
     h2 = compute_case_hash(
         generation="answer",
         question="q",
-        ground_truth="gt",
+        reference="gt",
         rubric=[],
         context=["retrieval context"],
         reference_files=[],

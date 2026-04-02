@@ -136,7 +136,7 @@ Required:
 Optional:
 - `case_id`
 - `question`
-- `ground_truth`
+- `reference`
 - `context`
 - `reference_files`
 - `rubric`
@@ -147,7 +147,7 @@ Optional:
 - Generation: `generation | response | answer | output | completion`
 - Case id: `case_id | id | uuid | prompt_id`
 - Question: `question | query | prompt`
-- Ground truth: `ground_truth | reference | gold_answer`
+- Ground truth: `reference | reference | gold_answer`
 - Context: `context | contexts | documents`
 - Reference files: `reference_files | reference_paths`
 - Rubric rules: `rubric | rubric`
@@ -157,7 +157,7 @@ Optional:
 - Generation: `generation | response | answer | output | completion`
 - Case id: `case_id | id | prompt_id`
 - Question: `question | query | prompt`
-- Ground truth: `ground_truth | reference`
+- Reference: `reference | reference`
 - Context: `context | contexts | documents`
 - Reference files: `reference_files | reference_paths`
 - Rubric rules: `rubric | rubric`
@@ -174,7 +174,7 @@ Controls:
 Case hash includes:
 - `generation`
 - `question`
-- `ground_truth`
+- `reference`
 - `rubric` (`id`, `statement`, `pass_condition`)
 - `reference_files`
 
@@ -233,7 +233,7 @@ curl -X POST "http://localhost:8080/jobs" \
   -d '{
     "generation": "The Eiffel Tower is in Paris, France.",
     "question": "Where is the Eiffel Tower?",
-    "ground_truth": "The Eiffel Tower is a wrought-iron lattice tower in Paris.",
+    "reference": "The Eiffel Tower is a wrought-iron lattice tower in Paris.",
     "judge_model": "gpt-4o-mini",
     "web_search": false,
     "enable_grounding": true,
@@ -250,7 +250,7 @@ curl -X POST "http://localhost:8080/jobs" \
     {
       "generation": "The Eiffel Tower is in Paris, France.",
       "question": "Where is the Eiffel Tower?",
-      "ground_truth": "The Eiffel Tower is a wrought-iron lattice tower in Paris.",
+      "reference": "The Eiffel Tower is a wrought-iron lattice tower in Paris.",
       "judge_model": "gpt-4o-mini",
       "web_search": false
     },
@@ -270,7 +270,7 @@ Required:
 
 Optional:
 - `question: str | null`
-- `ground_truth: str | null`
+- `reference: str | null`
 - `rubric: Rubric[]`
 - `reference_files: list[str]`
 - `judge_model: str`

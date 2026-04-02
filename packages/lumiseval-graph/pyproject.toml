@@ -15,6 +15,8 @@ dependencies = [
     "lumiseval-core",
     "lumiseval-ingest",
     "lumiseval-evidence",
+    "rouge-score>=0.1.2",
+    "nltk>=3.8.0",
 ]
 
 [project.optional-dependencies]

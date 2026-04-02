@@ -17,7 +17,7 @@ def test_local_file_adapter_maps_jsonl_to_eval_cases(tmp_path) -> None:
             "question": "What is Paris?",
             "generation": "Paris is the capital of France.",
             "context": "Paris is France's capital city.",
-            "ground_truth": "Paris is the capital of France.",
+            "reference": "Paris is the capital of France.",
             "rubric": [
                 {
                     "id": "R-001",

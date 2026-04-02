@@ -25,11 +25,13 @@ from lumiseval_core.constants import (
 )
 from lumiseval_core.errors import InputParseError
 from lumiseval_core.pipeline import CONTEXT_REQUIRED_NODES as _CONTEXT_NODES
+from lumiseval_core.pipeline import REFERENCE_REQUIRED_NODES as _REFERENCE_NODES
 from lumiseval_core.pipeline import NODE_ORDER as _NODE_ORDER
 from lumiseval_core.pipeline import RUBRIC_REQUIRED_NODES as _RUBRIC_NODES
 from lumiseval_core.types import (
     CostMetadata,
     EvalCase,
+    ReferenceCostMeta,
     GorundingCostMeta,
     InputMetadata,
     Record,
@@ -90,12 +92,15 @@ def _node_eligibility(
     has_generation: bool,
     has_context: bool,
     has_rubric: bool,
+    has_reference: bool,
 ) -> dict[str, bool]:
     flags = {node: has_generation for node in _NODE_ORDER}
     for node in _CONTEXT_NODES:
         flags[node] = has_generation and has_context
     for node in _RUBRIC_NODES:
         flags[node] = has_generation and has_rubric
+    for node in _REFERENCE_NODES:
+        flags[node] = has_generation and has_reference
     return flags
 
 
@@ -110,6 +115,7 @@ def _build_record(
     generation: Optional[str],
     context: list[str],
     rubric: list[str],
+    reference: str,
 ) -> Record:
     """Compute token counts, chunk the generation, and return a typed Record."""
     question_token_count = _count_tokens(question) if question else 0
@@ -124,12 +130,14 @@ def _build_record(
 
     has_context = bool(context)
     has_rubric = bool(rubric)
+    has_reference = bool(reference)
     eligible_nodes = [
         node
         for node, ok in _node_eligibility(
             has_generation=_is_nonempty_text(generation or ""),
             has_context=has_context,
             has_rubric=has_rubric,
+            has_reference=has_reference,
         ).items()
         if ok
     ]
@@ -154,6 +162,7 @@ def _build_record(
             estimated_claim_count=generation_chunk_count * CLAIMS_PER_CHUNK,
             has_context=has_context,
             has_rubric=has_rubric,
+            has_reference=has_reference,
             eligible_nodes=eligible_nodes,
         ),
     )
@@ -203,6 +212,7 @@ class Scanner:
             generation=case.generation,
             context=_normalize_context(case.context),
             rubric=[r.statement for r in case.rubric],
+            reference=case.reference,
         )
         self._add(record)
 
@@ -227,6 +237,7 @@ class Scanner:
                 raw.get("context", raw.get("contexts", raw.get("documents")))
             ),
             rubric=_normalize_rubric(raw.get("rubric_rules", raw.get("rubric"))),
+            reference=raw.get("reference", None),
         )
         self._add(record)
 
@@ -341,6 +352,7 @@ class Scanner:
         relevance_eligible = self._eligible_record_count["relevance"]
         rubric_eligible = self._eligible_record_count["rubric"]
         redteam_eligible = self._eligible_record_count["redteam"]
+        reference_eligible = self._eligible_record_count["reference"]
 
         # ── Grounding cost meta ───────────────────────────────────────────────
         grounding_claims = self._eligible_claim_count["grounding"]
@@ -390,6 +402,9 @@ class Scanner:
                 readteam=RedTeamCostMeta(
                     eligible_records=redteam_eligible,
                 ),
+                reference=ReferenceCostMeta(
+                    eligible_records=reference_eligible,
+                ),
             ),
             records=self._records,
         )
@@ -398,10 +413,17 @@ class Scanner:
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
-def scan_text(generation: str) -> InputMetadata:
+def scan_text(
+    generation: str,
+    reference: Optional[str] = None,
+    **_ignored: Any,
+) -> InputMetadata:
     """Scan a single generation string and return metadata."""
     scanner = Scanner()
-    scanner.add_case(0, EvalCase(case_id="record-0", generation=generation))
+    scanner.add_case(
+        0,
+        EvalCase(case_id="record-0", generation=generation, reference=reference),
+    )
     return scanner.build()
 
 

@@ -97,6 +97,7 @@ class RecordMeta(BaseModel):
     estimated_claim_count: int
     has_context: bool
     has_rubric: bool
+    has_reference: bool = False
     eligible_nodes: list[str]
 
 
@@ -151,11 +152,18 @@ class RedTeamCostMeta(BaseModel):
     avg_output_tokens: float = AVG_DEEPEVAL_OUTPUT_OVERHEAD_TOKENS
 
 
+class ReferenceCostMeta(BaseModel):
+    """Cost metadata for generation metrics (ROUGE/BLEU/METEOR). No LLM calls — always $0."""
+
+    eligible_records: int
+
+
 class CostMetadata(BaseModel):
     grounding: GorundingCostMeta
     relevance: RelevanceCostMeta
     rubric: RubricCostMeta
     readteam: RedTeamCostMeta
+    reference: ReferenceCostMeta
 
 
 class InputMetadata(BaseModel):
@@ -225,7 +233,7 @@ class EvalCase(BaseModel):
     dataset: str = DEFAULT_DATASET_NAME
     split: str = DEFAULT_SPLIT
     question: Optional[str] = None
-    ground_truth: Optional[str] = None
+    reference: Optional[str] = None
     context: list[str] = Field(default_factory=list)
     reference_files: list[str] = Field(default_factory=list)
     rubric: list[Rubric] = Field(default_factory=list)
@@ -242,6 +250,7 @@ class EvalJobConfig(BaseModel):
     enable_relevance: bool = True
     enable_redteam: bool = False
     enable_rubric: bool = False
+    enable_reference: bool = True
     web_search: bool = False
     evidence_threshold: float = EVIDENCE_VERDICT_SUPPORTED_THRESHOLD
     score_weights: dict[str, float] = Field(

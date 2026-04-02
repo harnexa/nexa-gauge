@@ -40,6 +40,7 @@ def aggregate(
     relevance_metrics: list[MetricResult],
     redteam_metrics: list[MetricResult],
     rubric_metrics: list[MetricResult],
+    reference_metrics: list[MetricResult],
     cost_estimate: Optional[CostEstimate],
     cost_actual_usd: float,
     job_config: EvalJobConfig,
@@ -49,7 +50,7 @@ def aggregate(
 
     # Synthesise evidence_support_rate from claim verdicts and add to the pool
     all_metrics: list[MetricResult] = list(
-        grounding_metrics + relevance_metrics + redteam_metrics + rubric_metrics
+        grounding_metrics + relevance_metrics + redteam_metrics + rubric_metrics + reference_metrics
     )
 
     # Partition — vulnerability markers (score=0 presence flags) go to warnings, not scores

@@ -71,7 +71,7 @@ class HuggingFaceDatasetAdapter(DatasetAdapter):
             ["generation", "response", "answer", "output", "completion"],
         )
         question_keys = self._field_candidates("question", ["question", "query", "prompt"])
-        ground_truth_keys = self._field_candidates("ground_truth", ["ground_truth", "reference"])
+        reference_keys = self._field_candidates("reference", ["ground_truth", "reference", "gold_answer", "label", "answer"])
         case_id_keys = self._field_candidates("case_id", ["case_id", "id", "prompt_id"])
         context_keys = self._field_candidates("context", ["context", "contexts", "documents"])
         ref_keys = self._field_candidates("reference_files", ["reference_files", "reference_paths"])
@@ -94,7 +94,7 @@ class HuggingFaceDatasetAdapter(DatasetAdapter):
 
             case_id = _first_present(row, case_id_keys)
             question = _first_present(row, question_keys)
-            ground_truth = _first_present(row, ground_truth_keys)
+            reference = _first_present(row, reference_keys)
             context = _normalize_context(_first_present(row, context_keys))
             reference_files = _normalize_reference_files(_first_present(row, ref_keys))
             rubric = _normalize_rubric(_first_present(row, rubric_keys))
@@ -105,7 +105,7 @@ class HuggingFaceDatasetAdapter(DatasetAdapter):
                 dataset=self.dataset_id,
                 split=split,
                 question=str(question) if question is not None else None,
-                ground_truth=str(ground_truth) if ground_truth is not None else None,
+                reference=str(reference) if reference is not None else None,
                 context=context,
                 reference_files=reference_files,
                 rubric=rubric,

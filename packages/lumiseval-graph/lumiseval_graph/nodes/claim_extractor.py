@@ -148,10 +148,12 @@ class ClaimExtractorNode:
         out_claim = round(cost_meta.avg_claim_tokens)
         out_verdict = round(cost_meta.avg_output_token)
         output_t = out_claim + out_verdict
+        total_t = total_calls * (input_t + output_t)
         return (
-            f"{cost_meta.eligible_records} recs × {chunks:.1f} chunks/rec = {total_calls} calls\n"
-            f"  input_tokens  = {prompt_t} (prompt) + {gen_t} (generation_chunk) = {input_t} tok/call\n"
-            f"  output_tokens = {out_claim} (claim_text) + {out_verdict} (json_verdict) = {output_t} tok/call"
+            f"calls         = {total_calls}  ({cost_meta.eligible_records} recs × {chunks:.1f} chunks/rec)\n"
+            f"input_tokens  = {prompt_t} (prompt tokens) + {gen_t} (generation chunk tokens) = {input_t} tok/call\n"
+            f"output_tokens = {out_claim} (claim text tokens) + {out_verdict} (json verdict tokens) = {output_t} tok/call\n"
+            f"total_tokens  = {total_calls} × ({input_t} + {output_t}) = {total_t} tok"
         )
 
 

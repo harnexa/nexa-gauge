@@ -81,11 +81,16 @@ class RedteamNode(BaseMetricNode):
 
     @staticmethod
     def cost_formula(cost_meta: RedTeamCostMeta) -> str:
-        total_calls = cost_meta.eligible_records * 2
+        n = cost_meta.eligible_records
+        total_calls = n * 2
+        input_t = round(cost_meta.avg_input_tokens)
+        output_t = round(cost_meta.avg_output_tokens)
+        total_t = total_calls * (input_t + output_t)
         return (
-            f"{cost_meta.eligible_records} recs × 2 (bias + toxicity) = {total_calls} calls\n"
-            f"  input_tokens  = {round(cost_meta.avg_input_tokens)} (deepeval internal overhead) tok/call\n"
-            f"  output_tokens = {round(cost_meta.avg_output_tokens)} (deepeval internal overhead) tok/call"
+            f"calls         = {total_calls}  ({n} recs × 2 metrics: bias + toxicity)\n"
+            f"input_tokens  = {input_t} (deepeval internal overhead) tok/call\n"
+            f"output_tokens = {output_t} (deepeval internal overhead) tok/call\n"
+            f"total_tokens  = {total_calls} × ({input_t} + {output_t}) = {total_t} tok"
         )
 
 

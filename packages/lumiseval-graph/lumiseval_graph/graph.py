@@ -37,6 +37,7 @@ from lumiseval_ingest.scanner import scan_text
 from .llm import get_judge_model
 from .log import get_node_logger, print_pipeline_footer, print_pipeline_header
 from .nodes import claim_extractor, cost_estimator, eval
+from .nodes.metrics.reference import ReferenceMetricsNode
 from .nodes.metrics.grounding import GroundingNode
 from .nodes.metrics.redteam import RedteamNode
 from .nodes.metrics.relevance import RelevanceNode
@@ -56,6 +57,7 @@ _log_ragas = get_node_logger("relevance")
 _log_hallucination = get_node_logger("grounding")
 _log_adversarial = get_node_logger("redteam")
 _log_rubric = get_node_logger("rubric")
+_log_reference = get_node_logger("reference")
 _log_agg = get_node_logger("eval")
 
 
@@ -63,29 +65,37 @@ _log_agg = get_node_logger("eval")
 
 
 class EvalState(TypedDict):
-    generation: str
-    question: Optional[str]
-    ground_truth: Optional[str]
-    context: Optional[list[str]]
-    target_node: Optional[str]
-    reference_files: list[str]
-    rubric: list[Rubric]
-    job_config: EvalJobConfig
-    # Populated as nodes run
-    metadata: Optional[InputMetadata]
-    cost_estimate: Optional[CostEstimate]
-    confirmed: bool
-    chunks: list[Chunk]
-    raw_claims: list[Claim]
-    unique_claims: list[Claim]
-    # Metric results — one list per parallel node
-    grounding_metrics: list[MetricResult]
-    relevance_metrics: list[MetricResult]
-    redteam_metrics: list[MetricResult]
-    rubric_metrics: list[MetricResult]
-    cost_actual_usd: float
-    report: Optional[EvalReport]
-    error: Optional[str]
+    # ── Inputs: set at graph entry, never mutated by nodes ────────────────
+    generation: str               # LLM output being evaluated; read by scan, chunk, redteam, rubric, reference
+    question: Optional[str]       # Original query; read by relevance for answer-relevancy scoring
+    reference: Optional[str]      # Ground-truth answer; read by scan (eligibility flag) and reference node (ROUGE/BLEU/METEOR)
+    context: Optional[list[str]]  # Retrieved passages; gates chunk → claims → grounding path; read by grounding
+    rubric: list[Rubric]          # GEval rules; gates rubric node; count passed to estimate for cost
+    
+    
+    target_node: Optional[str]    # Pipeline stop point used by CachedNodeRunner; passed to estimate for per-target cost
+    reference_files: list[str]    # File paths indexed into LanceDB before the graph runs (in run_graph, not inside nodes)
+    job_config: EvalJobConfig     # Controls enable_* flags, judge_model, job_id; read by every node
+
+    # ── Intermediate: written by one node, consumed by downstream nodes ───
+    metadata: Optional[InputMetadata]      # Token/eligibility stats; written by scan, read by estimate
+    cost_estimate: Optional[CostEstimate]  # Pre-run cost breakdown; written by estimate, read by eval
+    confirmed: bool                        # Passthrough flag; written by approve (always True); not read by other nodes
+    chunks: list[Chunk]                    # Generation split into ~512-token chunks; written by chunk, read by claims
+    raw_claims: list[Claim]                # Atomic claims extracted per chunk; written by claims, read by dedupe
+    unique_claims: list[Claim]             # MMR-deduplicated claims; written by dedupe, read by relevance and grounding
+
+    # ── Metric results: written by parallel metric nodes, aggregated by eval ─
+    grounding_metrics: list[MetricResult]  # Faithfulness verdicts per claim; written by grounding
+    relevance_metrics: list[MetricResult]  # Answer-relevancy verdicts per claim; written by relevance
+    redteam_metrics: list[MetricResult]    # Bias + toxicity scores; written by redteam
+    rubric_metrics: list[MetricResult]     # GEval pass/fail per rule; written by rubric
+    reference_metrics: list[MetricResult]  # ROUGE/BLEU/METEOR scores; written by reference
+
+    # ── Output ────────────────────────────────────────────────────────────
+    cost_actual_usd: float         # Actual LLM spend (currently always 0.0 — TODO: wire up token tracking)
+    report: Optional[EvalReport]   # Final aggregated report; written by eval, returned by run_graph and written to --output-dir
+    error: Optional[str]           # Pipeline error message; checked by run_graph to raise RuntimeError (unused today)
 
 
 # ── Node implementations ───────────────────────────────────────────────────
@@ -99,6 +109,7 @@ def node_metadata_scanner(state: EvalState) -> dict:
     )
     meta = scan_text(
         gen,
+        reference=state.get("reference"),
         has_context=has_context,
         has_rubric=bool(state.get("rubric")),
     )
@@ -208,6 +219,21 @@ def node_rubric(state: EvalState) -> dict:
     return {"rubric_metrics": results}
 
 
+@observe(name="node_reference")
+def node_reference(state: EvalState) -> dict:
+    if not state["job_config"].enable_reference:
+        return {"reference_metrics": []}
+    reference = state.get("reference")
+    if not reference:
+        return {"reference_metrics": []}
+    results = ReferenceMetricsNode().run(
+        generation=state["generation"],
+        reference=reference,
+        enable_generation_metrics=True,
+    )
+    return {"reference_metrics": results}
+
+
 @observe(name="node_eval")
 def node_eval(state: EvalState) -> dict:
     report = eval.aggregate(
@@ -216,6 +242,7 @@ def node_eval(state: EvalState) -> dict:
         relevance_metrics=state.get("relevance_metrics") or [],
         redteam_metrics=state.get("redteam_metrics") or [],
         rubric_metrics=state.get("rubric_metrics") or [],
+        reference_metrics=state.get("reference_metrics") or [],
         cost_estimate=state.get("cost_estimate"),
         cost_actual_usd=state.get("cost_actual_usd", 0.0),
         job_config=state["job_config"],
@@ -239,6 +266,7 @@ def build_graph() -> StateGraph:
     g.add_node("grounding", node_grounding)
     g.add_node("redteam", node_adversarial)
     g.add_node("rubric", node_rubric)
+    g.add_node("reference", node_reference)
     g.add_node("eval", node_eval)
 
     g.set_entry_point("scan")
@@ -251,10 +279,12 @@ def build_graph() -> StateGraph:
     g.add_edge("dedupe", "grounding")
     g.add_edge("approve", "redteam")
     g.add_edge("approve", "rubric")
+    g.add_edge("approve", "reference")
     g.add_edge("relevance", "eval")
     g.add_edge("grounding", "eval")
     g.add_edge("redteam", "eval")
     g.add_edge("rubric", "eval")
+    g.add_edge("reference", "eval")
     g.add_edge("eval", END)
 
     return g
@@ -264,7 +294,7 @@ def build_initial_state(
     generation: str,
     job_config: Optional[EvalJobConfig] = None,
     question: Optional[str] = None,
-    ground_truth: Optional[str] = None,
+    reference: Optional[str] = None,
     context: Optional[list[str]] = None,
     target_node: Optional[str] = None,
     rubric: Optional[list[Rubric]] = None,
@@ -282,7 +312,7 @@ def build_initial_state(
     return EvalState(
         generation=generation,
         question=question,
-        ground_truth=ground_truth,
+        reference=reference,
         context=context or [],
         target_node=target_node,
         reference_files=reference_files or [],
@@ -298,6 +328,7 @@ def build_initial_state(
         relevance_metrics=[],
         redteam_metrics=[],
         rubric_metrics=[],
+        reference_metrics=[],
         cost_actual_usd=0.0,
         report=None,
         error=None,
@@ -309,7 +340,7 @@ def run_graph(
     generation: str,
     job_config: Optional[EvalJobConfig] = None,
     question: Optional[str] = None,
-    ground_truth: Optional[str] = None,
+    reference: Optional[str] = None,
     context: Optional[list[str]] = None,
     rubric: Optional[list[Rubric]] = None,
     reference_files: Optional[list[str]] = None,
@@ -320,7 +351,7 @@ def run_graph(
         generation: The LLM-generated text to evaluate.
         job_config: Evaluation configuration. A default config is created if not provided.
         question: Optional query that produced the generation (improves RAGAS scores).
-        ground_truth: Optional reference answer (enables context recall).
+        reference: Optional reference answer (enables context recall).
         context: Optional retrieval context passages for retrieval-path metrics.
         rubric: Optional list of rubric rules to evaluate against.
         reference_files: Optional list of file paths to index before evaluation.
@@ -332,7 +363,7 @@ def run_graph(
         generation=generation,
         job_config=job_config,
         question=question,
-        ground_truth=ground_truth,
+        reference=reference,
         context=context,
         rubric=rubric,
         reference_files=reference_files,

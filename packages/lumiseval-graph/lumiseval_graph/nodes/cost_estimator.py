@@ -24,6 +24,7 @@ from lumiseval_core.constants import GENERATION_CHUNK_SIZE_TOKENS
 from lumiseval_core.pipeline import NODE_ORDER, NODE_PREREQUISITES
 from lumiseval_core.types import (
     ClaimCostMeta,
+    CostEstimate,
     EvalJobConfig,
     InputMetadata,
     NodeCostBreakdown,
@@ -31,6 +32,7 @@ from lumiseval_core.types import (
 
 from lumiseval_graph.llm.config import get_judge_model
 from lumiseval_graph.nodes.claim_extractor import ClaimExtractorNode
+from lumiseval_graph.nodes.metrics.reference import ReferenceMetricsNode
 from lumiseval_graph.nodes.metrics.grounding import GroundingNode
 from lumiseval_graph.nodes.metrics.redteam import RedteamNode
 from lumiseval_graph.nodes.metrics.relevance import RelevanceNode
@@ -47,6 +49,8 @@ class NodeCostRow:
     model_calls: int  # cumulative across all contributing nodes
     cost_usd: float  # cumulative across all contributing nodes
     source: str  # e.g. "claims + grounding" or "—"
+    individual_cost_usd: float = 0.0  # this node's isolated cost (not cumulative)
+    eligible_records: int = 0  # records eligible for this node
 
     def __str__(self) -> str:
         source_lines = self.source.splitlines()
@@ -78,7 +82,11 @@ class CostReport:
         lines = [header, sep] + [str(r) for r in self.rows]
         return "\n".join(lines)
 
-    def print_table(self, title: Optional[str] = "Pipeline Cost Estimate") -> None:
+    def print_table(
+        self,
+        title: Optional[str] = "Pipeline Cost Estimate",
+        total_records: int = 0,
+    ) -> None:
         """Render the report as a pretty Rich table in the terminal."""
         from rich import box
         from rich.console import Console
@@ -95,7 +103,10 @@ class CostReport:
             show_lines=True,
         )
         table.add_column("Node", style="bold", min_width=10, no_wrap=True)
+        if total_records > 0:
+            table.add_column("Coverage", justify="right", min_width=14, no_wrap=True)
         table.add_column("Calls", justify="right", min_width=6, no_wrap=True)
+        table.add_column("Node Cost (USD)", justify="right", min_width=18, no_wrap=True)
         table.add_column("Cost (USD)", justify="right", min_width=12, no_wrap=True)
         table.add_column("Breakdown", min_width=55)
 
@@ -109,32 +120,49 @@ class CostReport:
             if is_eval:
                 row_style = "bold"
                 cost_str = Text(f"${r.cost_usd:.6f}", style="bold green")
+                node_cost_str = Text("—", style="dim")
                 node_text = Text(r.node_name, style="bold")
             elif is_zero:
                 row_style = "dim"
                 cost_str = Text("—", style="dim")
+                node_cost_str = Text("—", style="dim")
                 node_text = Text(r.node_name, style="dim")
             elif is_metric:
                 row_style = ""
-                pct = (r.cost_usd / total_cost * 100) if total_cost else 0
-                cost_str = Text(f"${r.cost_usd:.6f}  ({pct:.0f}%)", style="yellow")
+                cost_str = Text(f"${r.cost_usd:.6f}", style="yellow")
+                pct = (r.individual_cost_usd / total_cost * 100) if total_cost else 0
+                node_cost_str = Text(f"${r.individual_cost_usd:.6f}  ({pct:.0f}%)", style="cyan")
                 node_text = Text(r.node_name, style="cyan")
             else:
                 row_style = ""
                 cost_str = Text(f"${r.cost_usd:.6f}", style="green")
+                pct = (r.individual_cost_usd / total_cost * 100) if total_cost else 0
+                node_cost_str = (
+                    Text(f"${r.individual_cost_usd:.6f}  ({pct:.0f}%)", style="green")
+                    if r.individual_cost_usd > 0
+                    else Text("—", style="dim")
+                )
                 node_text = Text(r.node_name)
 
             calls_text = Text(
                 str(r.model_calls) if r.model_calls else "—", style="dim" if is_zero else ""
             )
 
-            table.add_row(
-                node_text,
-                calls_text,
-                cost_str,
-                r.source,
-                style=row_style,
-            )
+            row_cells: list = [node_text]
+
+            if total_records > 0:
+                if r.eligible_records > 0:
+                    cov_pct = r.eligible_records / total_records * 100
+                    coverage_text = Text(
+                        f"{r.eligible_records}/{total_records}  ({cov_pct:.0f}%)",
+                        style="dim" if is_zero else "",
+                    )
+                else:
+                    coverage_text = Text("—", style="dim")
+                row_cells.append(coverage_text)
+
+            row_cells.extend([calls_text, node_cost_str, cost_str, r.source])
+            table.add_row(*row_cells, style=row_style)
 
         Console().print(table)
 
@@ -148,6 +176,7 @@ _COST_NODES: dict[str, type] = {
     "relevance": RelevanceNode,
     "redteam": RedteamNode,
     "rubric": RubricNode,
+    "reference": ReferenceMetricsNode,
 }
 
 # Determines whether a node is active given the job config.
@@ -157,6 +186,7 @@ _NODE_ENABLED: dict[str, Callable[[EvalJobConfig], bool]] = {
     "relevance": lambda c: c.enable_relevance,
     "redteam": lambda c: c.enable_redteam,
     "rubric": lambda c: c.enable_rubric,
+    "reference": lambda c: c.enable_reference,
 }
 
 _ZERO = NodeCostBreakdown(model_calls=0, cost_usd=0.0)
@@ -196,6 +226,20 @@ class CostEstimator:
             avg_generation_tokens=avg_generation_tokens,
         )
 
+    def _eligible_records(self, node_name: str, metadata: InputMetadata) -> int:
+        """Return the number of eligible records for a given node."""
+        mapping = {
+            "chunk":  metadata.cost_meta.grounding.eligible_records,
+            "claims": metadata.cost_meta.grounding.eligible_records,
+            "dedupe": metadata.cost_meta.grounding.eligible_records,
+            "grounding": metadata.cost_meta.grounding.eligible_records,
+            "relevance": metadata.cost_meta.relevance.eligible_records,
+            "redteam": metadata.cost_meta.readteam.eligible_records,
+            "rubric": metadata.cost_meta.rubric.eligible_records,
+            "reference": metadata.cost_meta.reference.eligible_records,
+        }
+        return mapping.get(node_name, metadata.record_count)
+
     def _resolve_cost_meta(self, node_name: str, metadata: InputMetadata):
         """Return the cost_meta object for a given node."""
         if node_name == "claims":
@@ -205,6 +249,7 @@ class CostEstimator:
             "relevance": metadata.cost_meta.relevance,
             "redteam": metadata.cost_meta.readteam,
             "rubric": metadata.cost_meta.rubric,
+            "reference": metadata.cost_meta.reference,
         }[node_name]
 
     def _estimate_node(self, node_name: str, metadata: InputMetadata) -> NodeCostBreakdown:
@@ -266,7 +311,11 @@ class CostEstimator:
             parts = []
             for n in contributing:
                 formula = self._node_formula(n, metadata)
-                parts.append(f"{n}[{formula}]" if (n == node and formula) else n)
+                if n == node and formula:
+                    indented = formula.replace("\n", "\n  ")
+                    parts.append(f"{n}(\n  {indented}\n)")
+                else:
+                    parts.append(n)
 
             rows.append(
                 NodeCostRow(
@@ -274,10 +323,45 @@ class CostEstimator:
                     model_calls=sum(individual[n].model_calls for n in contributing),
                     cost_usd=sum(individual[n].cost_usd for n in contributing),
                     source=" + ".join(parts) if parts else "—",
+                    individual_cost_usd=individual[node].cost_usd,
+                    eligible_records=self._eligible_records(node, metadata),
                 )
             )
 
         return CostReport(rows=rows)
+
+
+# ── Module-level wrapper ──────────────────────────────────────────────────────
+
+
+def estimate(
+    metadata: InputMetadata,
+    job_config: EvalJobConfig,
+    target_node: Optional[str] = None,
+    rubric_rule_count: int = 0,
+) -> CostEstimate:
+    """Module-level wrapper called by graph.node_cost_estimator.
+
+    Delegates to CostEstimator and converts the CostReport to a CostEstimate
+    so the result can be stored in EvalState and used by the eval node.
+    """
+    report = CostEstimator(job_config).estimate(metadata)
+    eval_row = report.row("eval")
+    return CostEstimate(
+        estimated_judge_calls=eval_row.model_calls,
+        estimated_embedding_calls=0,
+        estimated_tavily_calls=0,
+        judge_cost_usd=eval_row.cost_usd,
+        embedding_cost_usd=0.0,
+        tavily_cost_usd=0.0,
+        total_estimated_usd=eval_row.cost_usd,
+        low_usd=eval_row.cost_usd,
+        high_usd=eval_row.cost_usd,
+        node_breakdown={
+            r.node_name: NodeCostBreakdown(model_calls=r.model_calls, cost_usd=r.cost_usd)
+            for r in report.rows
+        },
+    )
 
 
 # ── Manual experiment ──────────────────────────────────────────────────────────
@@ -312,3 +396,22 @@ if __name__ == "__main__":
 
     report = CostEstimator(cfg).estimate(metadata)
     report.print_table()
+
+"""
+    claims + relevance[3 recs, 1 call/rec (all claims batched), 3 calls                   │
+        input_tokens  = 108 (prompt) + 13 (question) + 35 (2.3 claims × 15t) = 156 tok/call │
+        output_tokens = 23 (2.3 claims × 10t json_verdict) = 23 tok/call
+    ] 
+
+    This doesn't look nice to be displayed in the terminal. Can I have something more readable
+
+    claims + relevance(
+        number_rcords = 3 recs, 1 call/rec (all claims batched), 3 calls
+        input_tokens  = 108 (prompt tokens) + 13 (question tokens) + 35 (2.3 claims/record × 15 token/claim) = 156 tok/call
+        output_tokens = 23 (2.3 claims × 10 token_json_verdict) = 23 tok/call
+        total_tokens = 3 * (156 + 23)= 179 tok/call
+    )
+│            │        │                  │   input_tokens  = 108 (prompt) + 13 (question) + 35 (2.3 claims × 15t) = 156 tok/call │
+│            │        │                  │   output_tokens = 23 (2.3 claims × 10t json_verdict) = 23 tok/call] 
+
+"""

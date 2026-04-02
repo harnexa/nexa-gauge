@@ -180,7 +180,7 @@ All dataset sources are normalized to `EvalCase`:
 - `case_id`
 - `generation` (required)
 - `question` (optional)
-- `ground_truth` (optional)
+- `reference` (optional)
 - `context` (optional list)
 - `reference_files` (optional list)
 - `rubric` (optional list)

@@ -53,8 +53,8 @@ def _to_jsonable(value: Any) -> Any:
     return value
 
 
-def _print_cost_table(cost) -> None:
-    cost.print_table(title="Cost Estimate")
+def _print_cost_table(cost, total_records: int = 0) -> None:
+    cost.print_table(title="Cost Estimate", total_records=total_records)
 
 
 def _print_scan_table(meta) -> None:
@@ -82,10 +82,12 @@ def _print_node_eligibility_table(meta) -> None:
 
     cm = meta.cost_meta
     node_eligible = {
+        "claims":    cm.grounding.eligible_records,  # same context-required set as grounding
         "grounding": cm.grounding.eligible_records,
         "relevance": cm.relevance.eligible_records,
-        "rubric": cm.rubric.eligible_records,
-        "redteam": cm.readteam.eligible_records,
+        "rubric":    cm.rubric.eligible_records,
+        "redteam":   cm.readteam.eligible_records,
+        "reference": cm.reference.eligible_records,
     }
 
     table = Table(title="Node Eligibility (By Record)", show_header=True)
@@ -130,26 +132,6 @@ def run(
     judge_model: str = typer.Option("gpt-4o-mini", "--model", "-m", help="LiteLLM judge model."),
     web_search: bool = typer.Option(False, "--web-search", help="Enable Tavily web search."),
     evidence_threshold: float = typer.Option(0.75, "--evidence-threshold"),
-    enable_grounding: bool = typer.Option(
-        True,
-        "--enable-hallucination/--disable-hallucination",
-        help="Enable grounding node (hallucination metric).",
-    ),
-    enable_relevance: bool = typer.Option(
-        True,
-        "--enable-answer-relevancy/--disable-answer-relevancy",
-        help="Enable answer relevancy metric in relevance node.",
-    ),
-    enable_redteam: bool = typer.Option(
-        False,
-        "--enable-adversarial/--disable-adversarial",
-        help="Enable redteam node.",
-    ),
-    enable_rubric: bool = typer.Option(
-        False,
-        "--enable-rubric/--disable-rubric",
-        help="Enable rubric node.",
-    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt."),
     continue_on_error: bool = typer.Option(
         True,
@@ -206,22 +188,29 @@ def run(
         judge_model=judge_model,
         web_search=web_search,
         evidence_threshold=evidence_threshold,
-        enable_grounding=enable_grounding,
-        enable_relevance=enable_relevance,
-        enable_redteam=enable_redteam,
-        enable_rubric=enable_rubric,
+        enable_grounding=True,
+        enable_relevance=True,
+        enable_redteam=True,
+        enable_rubric=True,
+        enable_reference=True,
+    )
+
+    # For cost display, enable all nodes so the table shows full potential cost.
+    # The base_job_config (with user's flags) is still used for execution.
+    estimate_job_config = base_job_config.model_copy(
+        update={"enable_redteam": True, "enable_rubric": True}
     )
 
     console.print("\n[cyan]Estimating cost...[/cyan]")
     try:
-        cost = CostEstimator(base_job_config).estimate(meta)
+        cost = CostEstimator(estimate_job_config).estimate(meta)
     except Exception as exc:
         console.print(f"[red]Cost estimation failed: {exc}[/red]")
         raise typer.Exit(1)
-    _print_cost_table(cost)
+    _print_cost_table(cost, total_records=meta.record_count)
 
     if not yes and target_node not in PREFLIGHT_NODES:
-        proceed = typer.confirm(f"\nEstimated cost: ${cost.row('eval').cost_usd:.4f}. Proceed?")
+        proceed = typer.confirm(f"\nEstimated cost: ${cost.row(target_node).cost_usd:.4f}. Proceed?")
         if not proceed:
             console.print("[yellow]Aborted.[/yellow]")
             raise typer.Exit(0)

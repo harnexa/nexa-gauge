@@ -169,15 +169,20 @@ class RelevanceNode(BaseMetricNode):
     @classmethod
     def cost_formula(cls, cost_meta: RelevanceCostMeta) -> str:
         claims = max(1.0, cost_meta.avg_claims_per_record)
+        n = cost_meta.eligible_records
         prompt_t = cls.static_prompt_tokens
         q_t = round(cost_meta.avg_question_tokens)
-        claims_t = round(claims * cost_meta.avg_claim_tokens)
+        claim_tok = round(cost_meta.avg_claim_tokens)
+        claims_t = round(claims * claim_tok)
         input_t = prompt_t + q_t + claims_t
-        output_t = round(claims * cost_meta.avg_output_token)
+        out_tok = round(cost_meta.avg_output_token)
+        output_t = round(claims * out_tok)
+        total_t = n * (input_t + output_t)
         return (
-            f"{cost_meta.eligible_records} recs, 1 call/rec (all claims batched), {cost_meta.eligible_records} calls\n"
-            f"  input_tokens  = {prompt_t} (prompt) + {q_t} (question) + {claims_t} ({claims:.1f} claims × {round(cost_meta.avg_claim_tokens)}t) = {input_t} tok/call\n"
-            f"  output_tokens = {output_t} ({claims:.1f} claims × {round(cost_meta.avg_output_token)}t json_verdict) = {output_t} tok/call"
+            f"calls         = {n}  (1 call/rec, all claims batched)\n"
+            f"input_tokens  = {prompt_t} (prompt tokens) + {q_t} (question tokens) + {claims_t} ({claims:.1f} claims × {claim_tok} tok/claim) = {input_t} tok/call\n"
+            f"output_tokens = {output_t} ({claims:.1f} claims × {out_tok} tok/json_verdict) = {output_t} tok/call\n"
+            f"total_tokens  = {n} × ({input_t} + {output_t}) = {total_t} tok"
         )
 
 

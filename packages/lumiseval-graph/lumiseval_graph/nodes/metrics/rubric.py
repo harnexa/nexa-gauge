@@ -172,9 +172,12 @@ class RubricNode(BaseMetricNode):
         steps_calls = max(0, cost_meta.rule_count - cost_meta.unique_rule_count)
         eval_calls = cost_meta.eligible_records * cost_meta.rule_count
         total_calls = steps_calls + eval_calls
+        input_t = round(cost_meta.avg_input_tokens)
+        output_t = round(cost_meta.avg_output_tokens)
+        total_t = total_calls * (input_t + output_t)
         return (
-            f"{cost_meta.unique_rule_count} unique rules (steps cached) + "
-            f"{cost_meta.eligible_records} recs × {cost_meta.rule_count} rules = {total_calls} calls\n"
-            f"  input_tokens  = {round(cost_meta.avg_input_tokens)} (geval internal overhead) tok/call\n"
-            f"  output_tokens = {round(cost_meta.avg_output_tokens)} (geval internal overhead) tok/call"
+            f"calls         = {total_calls}  ({steps_calls} step-gen + {cost_meta.eligible_records} recs × {cost_meta.rule_count} rules)\n"
+            f"input_tokens  = {input_t} (geval internal overhead) tok/call\n"
+            f"output_tokens = {output_t} (geval internal overhead) tok/call\n"
+            f"total_tokens  = {total_calls} × ({input_t} + {output_t}) = {total_t} tok"
         )

@@ -30,6 +30,7 @@ NODE_FNS: dict[str, NodeFn] = {
     "grounding": _graph.node_grounding,
     "redteam": _graph.node_adversarial,
     "rubric": _graph.node_rubric,
+    "reference": _graph.node_reference,
     "eval": _graph.node_eval,
 }
 

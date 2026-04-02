@@ -30,7 +30,7 @@ app = FastAPI(
 class EvalJobRequest(BaseModel):
     generation: str
     question: str | None = None
-    ground_truth: str | None = None
+    reference: str | None = None
     context: list[str] = []
     rubric: list[Rubric] = []
     reference_files: list[str] = []
@@ -63,7 +63,7 @@ def _run_one(request: EvalJobRequest) -> EvalReport:
         generation=request.generation,
         job_config=job_config,
         question=request.question,
-        ground_truth=request.ground_truth,
+        reference=request.reference,
         context=request.context or None,
         rubric=request.rubric or None,
         reference_files=request.reference_files or None,

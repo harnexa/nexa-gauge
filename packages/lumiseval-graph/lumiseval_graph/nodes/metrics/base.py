@@ -18,6 +18,7 @@ from typing import Any, Union
 
 from lumiseval_core.constants import DEFAULT_JUDGE_MODEL
 from lumiseval_core.types import (
+    ReferenceCostMeta,
     GorundingCostMeta,
     MetricResult,
     NodeCostBreakdown,
@@ -61,7 +62,13 @@ class BaseMetricNode(ABC):
     def cost_estimate(
         self,
         *,
-        cost_meta: Union[GorundingCostMeta, RelevanceCostMeta, RubricCostMeta, RedTeamCostMeta],
+        cost_meta: Union[
+            GorundingCostMeta,
+            RelevanceCostMeta,
+            RubricCostMeta,
+            RedTeamCostMeta,
+            ReferenceCostMeta,
+        ],
     ) -> NodeCostBreakdown:
         """Estimate cost for this node without running any LLM calls.
 

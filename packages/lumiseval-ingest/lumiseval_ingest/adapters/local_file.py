@@ -72,7 +72,7 @@ def _canonical_case(record: dict[str, Any], idx: int, dataset_name: str, split: 
 
     case_id = str(_pick_first(record, ["case_id", "id", "uuid", "prompt_id"], default=idx))
     question = _pick_first(record, ["question", "query", "prompt"])
-    ground_truth = _pick_first(record, ["ground_truth", "reference", "gold_answer"])
+    reference = _pick_first(record, ["ground_truth", "reference", "gold_answer", "label", "answer"])
     context = _normalize_context(_pick_first(record, ["context", "contexts", "documents"]))
     reference_files = _normalize_reference_files(
         _pick_first(record, ["reference_files", "reference_paths"])
@@ -92,7 +92,7 @@ def _canonical_case(record: dict[str, Any], idx: int, dataset_name: str, split: 
         "question",
         "query",
         "prompt",
-        "ground_truth",
+        "reference",
         "reference",
         "gold_answer",
         "context",
@@ -111,7 +111,7 @@ def _canonical_case(record: dict[str, Any], idx: int, dataset_name: str, split: 
         dataset=dataset_name,
         split=split,
         question=str(question) if question is not None else None,
-        ground_truth=str(ground_truth) if ground_truth is not None else None,
+        reference=str(reference) if reference is not None else None,
         context=context,
         reference_files=reference_files,
         rubric=rubric,
