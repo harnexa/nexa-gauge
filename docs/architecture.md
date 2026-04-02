@@ -52,35 +52,61 @@ flowchart LR
 ### 2.1 Graph Node Flow
 
 ```mermaid
-flowchart TD
-  N1["scan"] --> N2["estimate"]
-  N2 --> N3["approve"]
-  N3 --> N4["chunk"]
-  N4 --> N5["claims"]
-  N5 --> N6["dedupe"]
-  
-  N6 --> M1["relevance"]
-  N6 --> M2["grounding"]
-  N3 --> M3["redteam"]
-  N3 --> M4["rubric"]
+flowchart TB
+    subgraph CFG["EvalJobConfig toggles"]
+        GRD["🔒 grounding\nfaithfulness per claim"]
+        T1["enable_grounding"]
+        REL["🔄 relevance\nanswer-relevancy"]
+        T2["enable_relevance"]
+        RDT["🛡️ redteam\nbias + toxicity"]
+        T3["enable_redteam"]
+        RBC["📏 rubric\nGEval rule eval"]
+        T4["enable_rubric"]
+        REF["📚 reference\nROUGE / BLEU / METEOR"]
+        T5["enable_reference"]
+    end
 
-  M1 --> N8["eval"]
-  M2 --> N8
-  M3 --> N8
-  M4 --> N8
-  N8 --> N9["EvalReport"]
+    SCAN["🔍 scan\ntokenise · count · eligibility"] --> EST["💰 estimate\ncost forecast"]
+    EST --> APR["✅ approve\nconfirmation gate"]
+    APR -- has generation --> CHK["📄 chunk\n~100-tok windows"]
+    CHK --> CLM["🧩 claims\nextract atomic claims per chunk"]
+    CLM --> DDP["🔀 dedupe\nMMR cosine dedup"]
+    DDP -- has_question --> REL
+    DDP -- has_context --> GRD
+    APR -- has_generation --> RDT
+    APR -- has_generation and has rubric --> RBC
+    APR -- has_generation and has reference --> REF
+    REL --> EVL["⭐ eval\naggregate · score · report"]
+    GRD --> EVL
+    RDT --> EVL
+    RBC --> EVL
+    REF --> EVL
+    EVL --> RPT(["📋 EvalReport"])
+    T1 -. controls .-> GRD
+    T2 -. controls .-> REL
+    T3 -. controls .-> RDT
+    T4 -. controls .-> RBC
+    T5 -. controls .-> REF
 
-  subgraph CFG["Metric Activation from EvalJobConfig"]
-    C2["enable_grounding"]
-    C1["enable_relevance"]
-    C3["enable_redteam"]
-    C4["enable_rubric + rubric"]
-  end
+    GRD:::metric
+    REL:::metric
+    RDT:::metric
+    RBC:::metric
+    REF:::metric
+    SCAN:::preflight
+    EST:::preflight
+    APR:::preflight
+    CHK:::ctxpath
+    CLM:::ctxpath
+    DDP:::ctxpath
+    EVL:::agg
+    RPT:::terminal
 
-  C1 -.controls.-> M1
-  C2 -.controls.-> M2
-  C3 -.controls.-> M3
-  C4 -.controls.-> M4
+    classDef preflight fill:#1e3a5f,stroke:#4a9eff,color:#fff
+    classDef ctxpath  fill:#1a3a1a,stroke:#4aaf4a,color:#fff
+    classDef metric   fill:#3a1a3a,stroke:#af4aaf,color:#fff
+    classDef agg      fill:#5a4000,stroke:#d4a017,color:#fff
+    classDef terminal fill:#2a2a2a,stroke:#888,color:#fff
 ```
 
 ### 2.2 Evidence Routing Cascade
