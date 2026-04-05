@@ -5,7 +5,7 @@ Organises results into two high-level quality dimensions:
   retrieval_score — how well evidence was retrieved
                     (context_precision + context_recall + evidence_support_rate)
   answer_score    — how good the answer is
-                    (faithfulness + answer_relevancy + hallucination + rubric + privacy/bias)
+                    (faithfulness + answer_relevancy + hallucination + GEval + privacy/bias)
 
 composite_score = simple average of the two dimension scores.
 
@@ -39,7 +39,7 @@ def aggregate(
     grounding_metrics: list[MetricResult],
     relevance_metrics: list[MetricResult],
     redteam_metrics: list[MetricResult],
-    rubric_metrics: list[MetricResult],
+    geval_metrics: list[MetricResult],
     reference_metrics: list[MetricResult],
     cost_estimate: Optional[CostEstimate],
     cost_actual_usd: float,
@@ -48,9 +48,8 @@ def aggregate(
     """Assemble all metric results into a final EvalReport."""
     warnings: list[str] = []
 
-    # Synthesise evidence_support_rate from claim verdicts and add to the pool
     all_metrics: list[MetricResult] = list(
-        grounding_metrics + relevance_metrics + redteam_metrics + rubric_metrics + reference_metrics
+        grounding_metrics + relevance_metrics + redteam_metrics + geval_metrics + reference_metrics
     )
 
     # Partition — vulnerability markers (score=0 presence flags) go to warnings, not scores

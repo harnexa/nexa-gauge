@@ -92,7 +92,7 @@ def _build_job_config(
         enable_grounding=True,
         enable_relevance=True,
         enable_redteam=True,
-        enable_rubric=True,
+        enable_geval=True,
         enable_reference=True,
     )
 
@@ -127,7 +127,7 @@ def _print_scan_table(meta) -> None:
     table.add_row("  Question tokens", f"{meta.question_tokens:,}", "question field")
     table.add_row("  Generation tokens", f"{meta.generation_tokens:,}", "generation field")
     table.add_row("  Context tokens", f"{meta.context_tokens:,}", "context passages")
-    table.add_row("  Rubric tokens", f"{meta.rubric_tokens:,}", "rubric statements")
+    table.add_row("  GEval tokens", f"{meta.geval_tokens:,}", "geval criteria text")
     table.add_row("Generation chunks", f"{meta.generation_chunk_count:,}", "chunker output")
     table.add_row("Avg tokens / record", f"{avg_tokens:.1f}", "total_tokens / records")
     console.print(table)
@@ -140,10 +140,11 @@ def _print_node_eligibility_table(meta) -> None:
 
     cm = meta.cost_meta
     node_eligible = {
-        "claims": cm.grounding.eligible_records,
+        "claims": cm.claim.eligible_records,
         "grounding": cm.grounding.eligible_records,
         "relevance": cm.relevance.eligible_records,
-        "rubric": cm.rubric.eligible_records,
+        "geval_steps": cm.geval_steps.eligible_records,
+        "geval": cm.geval.eligible_records,
         "redteam": cm.readteam.eligible_records,
         "reference": cm.reference.eligible_records,
     }
@@ -224,7 +225,7 @@ def estimate(
 
     console.print(f"[yellow]Preparing source: {input}[/yellow]")
     try:
-        cases = _load_cases(
+        cases: list[EvalCase] = _load_cases(
             input_source=input,
             split=split,
             limit=limit,
@@ -340,7 +341,7 @@ def run(
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(1)
-
+        
     if yes:
         console.print(
             "[dim]`--yes` is deprecated for `run`; execution now starts immediately.[/dim]"
@@ -348,7 +349,7 @@ def run(
 
     console.print(f"[yellow]Preparing source: {input}[/yellow]")
     try:
-        cases = _load_cases(
+        cases: list[EvalCase] = _load_cases(
             input_source=input,
             split=split,
             limit=limit,

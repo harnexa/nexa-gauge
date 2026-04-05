@@ -60,8 +60,9 @@ flowchart TB
         T2["enable_relevance"]
         RDT["🛡️ redteam\nbias + toxicity"]
         T3["enable_redteam"]
-        RBC["📏 rubric\nGEval rule eval"]
-        T4["enable_rubric"]
+        GVS["🧭 geval_steps\ncriteria -> eval steps"]
+        GVT["🧠 geval\ncustom GEval metrics"]
+        T4["enable_geval"]
         REF["📚 reference\nROUGE / BLEU / METEOR"]
         T5["enable_reference"]
     end
@@ -70,26 +71,29 @@ flowchart TB
     CHK --> CLM["🧩 claims\nextract atomic claims per chunk"]
     CLM --> DDP["🔀 dedupe\nMMR cosine dedup"]
     SCAN -- has_generation --> RDT
-    SCAN -- has_generation and has rubric --> RBC
+    SCAN -- has_geval --> GVS
+    GVS --> GVT
     SCAN -- has_generation and has reference --> REF
     DDP -- has_question --> REL
     DDP -- has_context --> GRD
     REL --> EVL["⭐ eval\naggregate · score · report"]
     GRD --> EVL
     RDT --> EVL
-    RBC --> EVL
+    GVT --> EVL
     REF --> EVL
     EVL --> RPT(["📋 EvalReport"])
     T1 -. controls .-> GRD
     T2 -. controls .-> REL
     T3 -. controls .-> RDT
-    T4 -. controls .-> RBC
+    T4 -. controls .-> GVS
+    T4 -. controls .-> GVT
     T5 -. controls .-> REF
 
     GRD:::metric
     REL:::metric
     RDT:::metric
-    RBC:::metric
+    GVS:::metric
+    GVT:::metric
     REF:::metric
     SCAN:::preflight
     CHK:::ctxpath
@@ -193,7 +197,7 @@ sequenceDiagram
   - `relevance_metrics`
   - `grounding_metrics`
   - `redteam_metrics`
-  - `rubric_metrics`
+  - `geval_metrics`
   - `claim_verdicts` from evidence routing
 - Derived metric:
   - `evidence_support_rate` = proportion of claims with `SUPPORTED` verdict
@@ -214,7 +218,7 @@ All dataset sources are normalized to `EvalCase`:
 - `reference` (optional)
 - `context` (optional list)
 - `reference_files` (optional list)
-- `rubric` (optional list)
+- `geval` (optional object with `metrics[]`)
 - `metadata` (free-form)
 
 This contract is what makes both flows modular:

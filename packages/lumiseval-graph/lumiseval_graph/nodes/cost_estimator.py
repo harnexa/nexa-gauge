@@ -17,32 +17,31 @@ Usage::
 
 from __future__ import annotations
 
-from rich import box
-from rich.console import Console
-from rich.table import Table
-from rich.text import Text
+import inspect
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Any, Callable, Optional, cast
 
-from lumiseval_core.constants import GENERATION_CHUNK_SIZE_TOKENS
-from lumiseval_core.pipeline import METRIC_NODES, NODES_BY_NAME, NODE_ORDER
+from lumiseval_core.pipeline import METRIC_NODES, NODE_ORDER, NODES_BY_NAME
 from lumiseval_core.types import (
-    ClaimCostMeta,
     CostEstimate,
+    EvalCase,
     EvalJobConfig,
     InputMetadata,
     NodeCostBreakdown,
 )
+from rich import box
+from rich.console import Console
+from rich.table import Table
+from rich.text import Text
 
 from lumiseval_graph.llm.config import get_judge_model
 from lumiseval_graph.nodes.claim_extractor import ClaimExtractorNode
 from lumiseval_graph.nodes.metrics.dedupe import DedupeNode
+from lumiseval_graph.nodes.metrics.geval import GevalNode, GevalStepsNode
 from lumiseval_graph.nodes.metrics.grounding import GroundingNode
 from lumiseval_graph.nodes.metrics.redteam import RedteamNode
 from lumiseval_graph.nodes.metrics.reference import ReferenceNode
 from lumiseval_graph.nodes.metrics.relevance import RelevanceNode
-from lumiseval_graph.nodes.metrics.rubric import RubricNode
-
 
 _METRIC_NODES = set(METRIC_NODES)
 
@@ -221,10 +220,11 @@ class CostReport:
 _COST_NODES: dict[str, type] = {
     "claims": ClaimExtractorNode,
     "dedupe": DedupeNode,
+    "geval_steps": GevalStepsNode,
     "grounding": GroundingNode,
     "relevance": RelevanceNode,
     "redteam": RedteamNode,
-    "rubric": RubricNode,
+    "geval": GevalNode,
     "reference": ReferenceNode,
 }
 
@@ -232,10 +232,11 @@ _COST_NODES: dict[str, type] = {
 _NODE_ENABLED: dict[str, Callable[[EvalJobConfig], bool]] = {
     "claims": lambda c: c.enable_relevance or c.enable_grounding,
     "dedupe": lambda c: c.enable_relevance or c.enable_grounding,
+    "geval_steps": lambda c: c.enable_geval,
     "grounding": lambda c: c.enable_grounding,
     "relevance": lambda c: c.enable_relevance,
     "redteam": lambda c: c.enable_redteam,
-    "rubric": lambda c: c.enable_rubric,
+    "geval": lambda c: c.enable_geval,
     "reference": lambda c: c.enable_reference,
 }
 
@@ -257,53 +258,96 @@ class CostEstimator:
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
-    def _build_claim_cost_meta(self, metadata: InputMetadata) -> ClaimCostMeta:
-        """Derive ClaimCostMeta from InputMetadata.
-
-        Claims run on context-eligible records (same set as grounding/relevance).
-        Chunk and token averages are computed from aggregate scanner output.
-        """
-        eligible_records = metadata.cost_meta.grounding.eligible_records
-        avg_generation_chunks = metadata.generation_chunk_count / max(1, eligible_records)
-        avg_generation_tokens = (
-            metadata.generation_tokens // max(1, metadata.generation_chunk_count)
-            if metadata.generation_chunk_count
-            else GENERATION_CHUNK_SIZE_TOKENS
-        )
-        return ClaimCostMeta(
-            eligible_records=eligible_records,
-            avg_generation_chunks=avg_generation_chunks,
-            avg_generation_tokens=avg_generation_tokens,
-        )
-
     def _eligible_records(self, node_name: str, metadata: InputMetadata) -> int:
-        """Return the number of eligible records for a given node."""
-        mapping = {
-            "chunk":  metadata.cost_meta.grounding.eligible_records,
-            "claims": metadata.cost_meta.grounding.eligible_records,
-            "dedupe": metadata.cost_meta.grounding.eligible_records,
-            "grounding": metadata.cost_meta.grounding.eligible_records,
-            "relevance": metadata.cost_meta.relevance.eligible_records,
-            "redteam": metadata.cost_meta.readteam.eligible_records,
-            "rubric": metadata.cost_meta.rubric.eligible_records,
-            "reference": metadata.cost_meta.reference.eligible_records,
+        """Return the number of eligible records for a given node.
+
+        Preferred source:
+          - ``metadata.records[*].record_metadata.eligible_nodes`` from scanner output.
+
+        Fallback:
+          - synthetic metadata fixtures that omit ``records`` still use cost_meta
+            aggregates for metric nodes and record_count for shared generation
+            nodes (chunk/claims/dedupe).
+        """
+        if metadata.records:
+            return sum(
+                1
+                for record in metadata.records
+                if node_name in record.record_metadata.eligible_nodes
+            )
+
+        mapping: dict[str, int] = {
+            "chunk": int(metadata.cost_meta.claim.eligible_records),
+            "claims": int(metadata.cost_meta.claim.eligible_records),
+            "dedupe": int(metadata.cost_meta.claim.eligible_records),
+            "geval_steps": int(metadata.cost_meta.geval_steps.eligible_records),
+            "grounding": int(metadata.cost_meta.grounding.eligible_records),
+            "relevance": int(metadata.cost_meta.relevance.eligible_records),
+            "redteam": int(metadata.cost_meta.readteam.eligible_records),
+            "geval": int(metadata.cost_meta.geval.eligible_records),
+            "reference": int(metadata.cost_meta.reference.eligible_records),
         }
-        return mapping.get(node_name, metadata.record_count)
+        value = mapping.get(node_name)
+        if value is not None:
+            return value
+        return int(metadata.record_count)
 
     def _resolve_cost_meta(self, node_name: str, metadata: InputMetadata):
         """Return the cost_meta object for a given node."""
-        if node_name == "claims":
-            return self._build_claim_cost_meta(metadata)
         return {
+            "claims": metadata.cost_meta.claim,
             "dedupe": metadata.cost_meta.grounding,
+            "geval_steps": metadata.cost_meta.geval_steps,
             "grounding": metadata.cost_meta.grounding,
             "relevance": metadata.cost_meta.relevance,
             "redteam": metadata.cost_meta.readteam,
-            "rubric": metadata.cost_meta.rubric,
+            "geval": metadata.cost_meta.geval,
             "reference": metadata.cost_meta.reference,
         }[node_name]
 
-    def _estimate_node(self, node_name: str, metadata: InputMetadata) -> NodeCostBreakdown:
+    @staticmethod
+    def _resolve_runtime_cost_kwargs(
+        *,
+        node_cls: type,
+        cases: Optional[list[EvalCase]],
+        model: str,
+    ) -> dict[str, Any]:
+        """Ask the node class for runtime-only cost kwargs when available."""
+        resolver = getattr(node_cls, "resolve_cost_kwargs", None)
+        if not callable(resolver):
+            return {}
+        resolved = resolver(cases=cases, model=model)
+        return resolved if isinstance(resolved, dict) else {}
+
+    @staticmethod
+    def _call_cost_formula(
+        formula_fn: Callable[..., Any],
+        cost_meta: Any,
+        runtime_kwargs: dict[str, Any],
+    ) -> str:
+        """Call node ``cost_formula`` with only supported runtime kwargs."""
+        if not runtime_kwargs:
+            return str(formula_fn(cost_meta))
+
+        sig = inspect.signature(formula_fn)
+        params = sig.parameters.values()
+        accepts_var_kwargs = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params)
+        if accepts_var_kwargs:
+            return str(formula_fn(cost_meta, **runtime_kwargs))
+
+        accepted_keys = set(sig.parameters.keys())
+        filtered_kwargs = {k: v for k, v in runtime_kwargs.items() if k in accepted_keys}
+        if filtered_kwargs:
+            return str(formula_fn(cost_meta, **filtered_kwargs))
+        return str(formula_fn(cost_meta))
+
+    def _estimate_node(
+        self,
+        node_name: str,
+        metadata: InputMetadata,
+        *,
+        cases: Optional[list[EvalCase]] = None,
+    ) -> NodeCostBreakdown:
         """Return the isolated cost for one node (not cumulative).
 
         Returns a zero breakdown for nodes with no LLM cost or that are disabled.
@@ -318,19 +362,42 @@ class CostEstimator:
 
         model = get_judge_model(node_name, self.job_config.judge_model)
         cost_meta = self._resolve_cost_meta(node_name, metadata)
+        runtime_kwargs = self._resolve_runtime_cost_kwargs(
+            node_cls=node_cls,
+            cases=cases,
+            model=model,
+        )
 
         if node_cls is ClaimExtractorNode:
-            return node_cls(model=model).cost_estimate(cost_meta=cost_meta)
+            return cast(
+                NodeCostBreakdown,
+                node_cls(model=model).cost_estimate(cost_meta=cost_meta, **runtime_kwargs),
+            )
 
-        return node_cls(judge_model=model).cost_estimate(cost_meta=cost_meta)
+        return cast(
+            NodeCostBreakdown,
+            node_cls(judge_model=model).cost_estimate(cost_meta=cost_meta, **runtime_kwargs),
+        )
 
-    def _node_formula(self, node_name: str, metadata: InputMetadata) -> str:
+    def _node_formula(
+        self,
+        node_name: str,
+        metadata: InputMetadata,
+        *,
+        cases: Optional[list[EvalCase]] = None,
+    ) -> str:
         """Return the short cost formula string for a node, or '' if none."""
         node_cls = _COST_NODES.get(node_name)
         if node_cls is None or not hasattr(node_cls, "cost_formula"):
             return ""
+        model = get_judge_model(node_name, self.job_config.judge_model)
         cost_meta = self._resolve_cost_meta(node_name, metadata)
-        return node_cls.cost_formula(cost_meta)
+        runtime_kwargs = self._resolve_runtime_cost_kwargs(
+            node_cls=node_cls,
+            cases=cases,
+            model=model,
+        )
+        return self._call_cost_formula(node_cls.cost_formula, cost_meta, runtime_kwargs)
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -341,6 +408,7 @@ class CostEstimator:
         individual_overrides: Optional[dict[str, NodeCostBreakdown]] = None,
         eligible_overrides: Optional[dict[str, int]] = None,
         formula_overrides: Optional[dict[str, str]] = None,
+        cases: Optional[list[EvalCase]] = None,
     ) -> CostReport:
         """Compute a cumulative cost report for all pipeline nodes.
 
@@ -357,6 +425,8 @@ class CostEstimator:
                 display alongside overridden costs.
             formula_overrides: Optional per-node formula strings; keeps table
                 explanations aligned with overridden subsets.
+            cases: Optional case list used by nodes whose estimates depend on
+                artifact-cache hit/miss state (for example, geval_steps).
 
         Returns:
             CostReport with one NodeCostRow per pipeline node in order.
@@ -365,7 +435,11 @@ class CostEstimator:
         individual: dict[str, NodeCostBreakdown] = {}
         for node in NODE_ORDER:
             override = individual_overrides.get(node) if individual_overrides else None
-            individual[node] = override if override is not None else self._estimate_node(node, metadata)
+            individual[node] = (
+                override
+                if override is not None
+                else self._estimate_node(node, metadata, cases=cases)
+            )
 
         # Step 2 — cumulative cost per node
         rows: list[NodeCostRow] = []
@@ -411,14 +485,14 @@ def estimate(
     metadata: InputMetadata,
     job_config: EvalJobConfig,
     target_node: Optional[str] = None,
-    rubric_rule_count: int = 0,
+    cases: Optional[list[EvalCase]] = None,
 ) -> CostEstimate:
     """Module-level wrapper for callers that need a typed ``CostEstimate``.
 
     Delegates to CostEstimator and converts the CostReport to a CostEstimate
     so the result can be stored in EvalState and used by the eval node.
     """
-    report = CostEstimator(job_config).estimate(metadata)
+    report = CostEstimator(job_config).estimate(metadata, cases=cases)
     eval_row = report.row("eval")
     return CostEstimate(
         estimated_judge_calls=eval_row.model_calls,
@@ -464,7 +538,7 @@ if __name__ == "__main__":
         enable_grounding=True,
         enable_relevance=True,
         enable_redteam=True,
-        enable_rubric=True,
+        enable_geval=True,
     )
 
     report = CostEstimator(cfg).estimate(metadata)

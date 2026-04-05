@@ -123,10 +123,11 @@ Every node function lives in `lumiseval_graph/nodes/` and is registered in `regi
 | `chunk` | `node_chunk` | Split generation into `Chunk` objects |
 | `claims` | `node_claims` | LLM: extract factual claims from chunks |
 | `dedupe` | `node_dedupe` | MMR-based deduplication of extracted claims |
+| `geval_steps` | `node_geval_steps` | LLM: generate reusable evaluation steps for criteria-only GEval metrics |
 | `relevance` | `node_relevance` | LLM metric: answer relevancy vs. question |
 | `grounding` | `node_grounding` | LLM metric: faithfulness vs. context passages |
 | `redteam` | `node_adversarial` | LLM metric: safety / red-team evaluation |
-| `rubric` | `node_rubric` | LLM metric: rule-based rubric scoring |
+| `geval` | `node_geval` | LLM metric: custom GEval scoring |
 | `reference` | `node_reference` | ROUGE/BLEU/METEOR vs. reference answer |
 | `eval` | `node_eval` | Aggregate all metric results into `EvalReport` |
 
@@ -139,7 +140,7 @@ Every node function lives in `lumiseval_graph/nodes/` and is registered in `regi
 Single source of truth. Each `NodeSpec` declares:
 
 - `prerequisites` — which nodes must have run first
-- `requires_generation / requires_question / requires_context / requires_rubric / requires_reference` — eligibility gates
+- `requires_generation / requires_question / requires_context / requires_geval / requires_reference` — eligibility gates
 - `is_metric` — whether the node participates in the parallel fan-out
 - `skip_output` — state patch applied when a node is skipped
 - `env_key_suffixes` — env var prefixes for LLM model selection
@@ -157,7 +158,7 @@ METRIC_NODES   # list[str]           — parallel fan-out group
 `CacheStore` is a filesystem-backed key-value store:
 
 - **Key**: `(case_hash, config_hash, node_name)`
-- **case_hash**: SHA-256 of `generation + question + reference + rubric + context`
+- **case_hash**: SHA-256 of `generation + question + reference + context + geval`
 - **config_hash**: SHA-256 of `EvalJobConfig` fields
 
 Each cache entry stores `node_output` + `node_cost` (a `NodeCostBreakdown`).
@@ -215,7 +216,7 @@ plan_dataset()  ──────────────────► Datase
      ├── sequential nodes: scan → chunk → claims → dedupe
      │
      ├── parallel metric nodes for `eval` target only:
-     │     relevance ║ grounding ║ redteam ║ rubric ║ reference
+     │     relevance ║ grounding ║ redteam ║ geval ║ reference
      │
      └── eval: aggregate → EvalReport
 ```

@@ -12,10 +12,8 @@ Provides:
 import re
 
 import tiktoken
-from lumiseval_core.constants import TIKTOKEN_ENCODING
+from lumiseval_core.utils import _ENCODER
 
-# Single shared encoder — instantiated once at module load.
-_ENCODER = tiktoken.get_encoding(TIKTOKEN_ENCODING)
 
 # Matches str.format() style placeholders: {context}, {claims}, {question}, etc.
 _PLACEHOLDER_RE = re.compile(r"\{[^}]+\}")

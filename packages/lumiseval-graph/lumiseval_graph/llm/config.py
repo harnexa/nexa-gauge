@@ -17,7 +17,7 @@ Where {NODE} is the node name uppercased, with spaces/hyphens → underscores:
   grounding          LLM_GROUNDING_*
   relevance          LLM_RELEVANCE_*
   redteam            LLM_REDTEAM_*
-  rubric             LLM_RUBRIC_*
+  geval              LLM_GEVAL_*
 
 Example .env:
   # Route grounding checks through a cheaper model

@@ -18,13 +18,15 @@ def test_local_file_adapter_maps_jsonl_to_eval_cases(tmp_path) -> None:
             "generation": "Paris is the capital of France.",
             "context": "Paris is France's capital city.",
             "reference": "Paris is the capital of France.",
-            "rubric": [
-                {
-                    "id": "R-001",
-                    "statement": "Answer should be factual.",
-                    "pass_condition": "No factual errors.",
-                }
-            ],
+            "geval": {
+                "metrics": [
+                    {
+                        "name": "factuality",
+                        "record_fields": ["generation"],
+                        "criteria": "Answer should be factual.",
+                    }
+                ]
+            },
             "extra_field": "x",
         },
         {
@@ -46,7 +48,8 @@ def test_local_file_adapter_maps_jsonl_to_eval_cases(tmp_path) -> None:
     assert cases[0].question == "What is Paris?"
     assert cases[0].generation == "Paris is the capital of France."
     assert cases[0].context == ["Paris is France's capital city."]
-    assert cases[0].rubric[0].id == "R-001"
+    assert cases[0].geval is not None
+    assert len(cases[0].geval.metrics) == 1
     assert cases[0].metadata["extra_field"] == "x"
 
     assert cases[1].case_id == "row-2"
@@ -57,6 +60,60 @@ def test_local_file_adapter_maps_jsonl_to_eval_cases(tmp_path) -> None:
 def test_local_file_adapter_raises_for_missing_generation(tmp_path) -> None:
     dataset_file = tmp_path / "bad.jsonl"
     dataset_file.write_text(json.dumps({"id": "missing-gen", "question": "q"}))
+
+    adapter = LocalFileDatasetAdapter(dataset_file)
+    with pytest.raises(InputParseError):
+        list(adapter.iter_cases())
+
+
+def test_local_file_adapter_accepts_geval_contract_and_autoincludes_generation(tmp_path) -> None:
+    dataset_file = tmp_path / "geval.json"
+    dataset_file.write_text(
+        json.dumps(
+            {
+                "case_id": "g-1",
+                "generation": "Paris is in France.",
+                "geval": {
+                    "metrics": [
+                        {
+                            "name": "factuality",
+                            "record_fields": ["question"],
+                            "criteria": "Response must be factually correct.",
+                        }
+                    ]
+                },
+            }
+        )
+    )
+
+    adapter = LocalFileDatasetAdapter(dataset_file, dataset_name="demo")
+    cases = list(adapter.iter_cases(split="train"))
+
+    assert len(cases) == 1
+    assert cases[0].geval is not None
+    metric = cases[0].geval.metrics[0]
+    assert metric.record_fields == ["question", "generation"]
+
+
+def test_local_file_adapter_rejects_invalid_geval_contract(tmp_path) -> None:
+    dataset_file = tmp_path / "bad-geval.json"
+    dataset_file.write_text(
+        json.dumps(
+            {
+                "generation": "hello",
+                "geval": {
+                    "metrics": [
+                        {
+                            "name": "bad",
+                            "record_fields": ["generation", "unknown_field"],
+                            "criteria": "x",
+                            "evaluation_steps": ["y"],
+                        }
+                    ]
+                },
+            }
+        )
+    )
 
     adapter = LocalFileDatasetAdapter(dataset_file)
     with pytest.raises(InputParseError):

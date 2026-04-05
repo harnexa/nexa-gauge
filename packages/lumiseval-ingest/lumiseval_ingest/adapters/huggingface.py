@@ -1,19 +1,9 @@
 """Hugging Face dataset adapter (optional, lazy-imported)."""
 
-from typing import Any
-
 from lumiseval_core.errors import InputParseError
-from lumiseval_core.types import EvalCase
 
+from ..canonical import canonical_case_from_raw
 from .base import DatasetAdapter
-from .local_file import _normalize_context, _normalize_reference_files, _normalize_rubric
-
-
-def _first_present(record: dict[str, Any], candidates: list[str]) -> Any:
-    for key in candidates:
-        if key in record and record[key] is not None:
-            return record[key]
-    return None
 
 
 class HuggingFaceDatasetAdapter(DatasetAdapter):
@@ -75,39 +65,36 @@ class HuggingFaceDatasetAdapter(DatasetAdapter):
         case_id_keys = self._field_candidates("case_id", ["case_id", "id", "prompt_id"])
         context_keys = self._field_candidates("context", ["context", "contexts", "documents"])
         ref_keys = self._field_candidates("reference_files", ["reference_files", "reference_paths"])
-        rubric_keys = self._field_candidates("rubric", ["rubric", "rubric"])
+        geval_keys = self._field_candidates("geval", ["geval"])
 
         for idx, record in enumerate(dataset):
             if limit is not None and idx >= limit:
                 break
             row = dict(record)
-
-            generation = _first_present(row, generation_keys)
-            if generation is None or str(generation).strip() == "":
-                raise InputParseError(
-                    (
-                        f"Dataset '{self.dataset_id}' split '{split}' row {idx} has no generation-like field. "
-                        "Provide field_map={'generation': '<field>'} or precompute model outputs."
-                    ),
-                    record_index=idx,
+            try:
+                yield canonical_case_from_raw(
+                    row,
+                    idx=idx,
+                    dataset=self.dataset_id,
+                    split=split,
+                    metadata_mode="full",
+                    field_candidates={
+                        "generation": generation_keys,
+                        "question": question_keys,
+                        "reference": reference_keys,
+                        "case_id": case_id_keys,
+                        "context": context_keys,
+                        "reference_files": ref_keys,
+                        "geval": geval_keys,
+                    },
                 )
-
-            case_id = _first_present(row, case_id_keys)
-            question = _first_present(row, question_keys)
-            reference = _first_present(row, reference_keys)
-            context = _normalize_context(_first_present(row, context_keys))
-            reference_files = _normalize_reference_files(_first_present(row, ref_keys))
-            rubric = _normalize_rubric(_first_present(row, rubric_keys))
-
-            yield EvalCase(
-                case_id=str(case_id if case_id is not None else idx),
-                generation=str(generation),
-                dataset=self.dataset_id,
-                split=split,
-                question=str(question) if question is not None else None,
-                reference=str(reference) if reference is not None else None,
-                context=context,
-                reference_files=reference_files,
-                rubric=rubric,
-                metadata=row,
-            )
+            except InputParseError as exc:
+                if "missing required generation/response/answer/output/completion field." in str(exc):
+                    raise InputParseError(
+                        (
+                            f"Dataset '{self.dataset_id}' split '{split}' row {idx} has no generation-like field. "
+                            "Provide field_map={'generation': '<field>'} or precompute model outputs."
+                        ),
+                        record_index=idx,
+                    ) from exc
+                raise

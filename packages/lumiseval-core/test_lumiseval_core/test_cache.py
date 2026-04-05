@@ -1,7 +1,7 @@
 import json
 
 from lumiseval_core.cache import CacheStore, compute_case_hash
-from lumiseval_core.types import NodeCostBreakdown, Rubric
+from lumiseval_core.types import GevalConfig, GevalMetricSpec, NodeCostBreakdown
 
 
 def test_compute_case_hash_changes_when_reference_files_change() -> None:
@@ -9,7 +9,6 @@ def test_compute_case_hash_changes_when_reference_files_change() -> None:
         generation="answer",
         question="q",
         reference="gt",
-        rubric=[],
         context=[],
         reference_files=["docs/a.txt"],
     )
@@ -17,24 +16,37 @@ def test_compute_case_hash_changes_when_reference_files_change() -> None:
         generation="answer",
         question="q",
         reference="gt",
-        rubric=[],
         context=[],
         reference_files=["docs/b.txt"],
     )
     assert h1 != h2
 
 
-def test_compute_case_hash_changes_when_rubric_pass_condition_changes() -> None:
-    rules_a = [Rubric(id="R-1", statement="Mention year", pass_condition="Must include a year.")]
-    rules_b = [
-        Rubric(id="R-1", statement="Mention year", pass_condition="Must include month and year.")
-    ]
+def test_compute_case_hash_changes_when_geval_steps_change() -> None:
+    geval_a = GevalConfig(
+        metrics=[
+            GevalMetricSpec(
+                name="factuality",
+                record_fields=["generation"],
+                evaluation_steps=["Check factual correctness."],
+            )
+        ]
+    )
+    geval_b = GevalConfig(
+        metrics=[
+            GevalMetricSpec(
+                name="factuality",
+                record_fields=["generation"],
+                evaluation_steps=["Check factual correctness.", "Check conciseness."],
+            )
+        ]
+    )
 
     h1 = compute_case_hash(
         generation="answer",
         question="q",
         reference="gt",
-        rubric=rules_a,
+        geval=geval_a,
         context=[],
         reference_files=[],
     )
@@ -42,7 +54,7 @@ def test_compute_case_hash_changes_when_rubric_pass_condition_changes() -> None:
         generation="answer",
         question="q",
         reference="gt",
-        rubric=rules_b,
+        geval=geval_b,
         context=[],
         reference_files=[],
     )
@@ -54,7 +66,6 @@ def test_compute_case_hash_changes_when_context_changes() -> None:
         generation="answer",
         question="q",
         reference="gt",
-        rubric=[],
         context=[],
         reference_files=[],
     )
@@ -62,8 +73,46 @@ def test_compute_case_hash_changes_when_context_changes() -> None:
         generation="answer",
         question="q",
         reference="gt",
-        rubric=[],
         context=["retrieval context"],
+        reference_files=[],
+    )
+    assert h1 != h2
+
+
+def test_compute_case_hash_changes_when_geval_contract_changes() -> None:
+    geval_a = GevalConfig(
+        metrics=[
+            GevalMetricSpec(
+                name="factuality",
+                record_fields=["generation"],
+                criteria="Must be factual.",
+            )
+        ]
+    )
+    geval_b = GevalConfig(
+        metrics=[
+            GevalMetricSpec(
+                name="factuality",
+                record_fields=["generation"],
+                criteria="Must be concise and factual.",
+            )
+        ]
+    )
+
+    h1 = compute_case_hash(
+        generation="answer",
+        question="q",
+        reference="gt",
+        geval=geval_a,
+        context=[],
+        reference_files=[],
+    )
+    h2 = compute_case_hash(
+        generation="answer",
+        question="q",
+        reference="gt",
+        geval=geval_b,
+        context=[],
         reference_files=[],
     )
     assert h1 != h2

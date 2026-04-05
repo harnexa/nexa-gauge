@@ -15,7 +15,7 @@ def _seed_cache_for_target(
         generation=case.generation,
         question=case.question,
         reference=case.reference,
-        rubric=case.rubric or [],
+        geval=case.geval,
         context=case.context or [],
         reference_files=case.reference_files or [],
     )

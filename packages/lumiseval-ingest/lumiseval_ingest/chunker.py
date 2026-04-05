@@ -12,20 +12,13 @@ TODO: Implement overlap logic (semchunk does not natively support overlap; consi
 import hashlib
 
 import semchunk
-import tiktoken
-from lumiseval_core.constants import (
-    CHUNK_MIN_TOKENS_FOR_SPLIT,
-    TIKTOKEN_ENCODING,
-)
+from lumiseval_core.constants import CHUNK_MIN_TOKENS_FOR_SPLIT
 from lumiseval_core.types import Chunk
+from lumiseval_core.utils import _count_tokens
 
-_ENCODING = tiktoken.get_encoding(TIKTOKEN_ENCODING)
+
 
 _MIN_TOKENS_FOR_SPLIT = CHUNK_MIN_TOKENS_FOR_SPLIT
-
-
-def _token_counter(text: str) -> int:
-    return len(_ENCODING.encode(text))
 
 
 def chunk_text(text: str, chunk_size: int) -> list[Chunk]:
@@ -34,7 +27,7 @@ def chunk_text(text: str, chunk_size: int) -> list[Chunk]:
     If the text is under ``_MIN_TOKENS_FOR_SPLIT`` tokens it is returned as a
     single chunk without splitting.
     """
-    if _token_counter(text) < _MIN_TOKENS_FOR_SPLIT:
+    if _count_tokens(text) < _MIN_TOKENS_FOR_SPLIT:
         return [
             Chunk(
                 index=0,
@@ -45,7 +38,7 @@ def chunk_text(text: str, chunk_size: int) -> list[Chunk]:
             )
         ]
 
-    chunker = semchunk.chunkerify(_token_counter, chunk_size)
+    chunker = semchunk.chunkerify(_count_tokens, chunk_size)
     raw_chunks: list[str] = chunker(text)
 
     chunks: list[Chunk] = []

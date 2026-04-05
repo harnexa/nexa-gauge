@@ -47,10 +47,11 @@ Canonical target nodes:
 - `chunk`
 - `claims`
 - `dedupe`
+- `geval_steps`
+- `geval`
 - `relevance`
 - `grounding`
 - `redteam`
-- `rubric`
 - `reference`
 - `eval`
 
@@ -59,10 +60,11 @@ Strict prerequisite paths:
 - `chunk <- scan`
 - `claims <- scan, chunk`
 - `dedupe <- scan, chunk, claims`
+- `geval_steps <- scan`
+- `geval <- scan, geval_steps`
 - `relevance <- scan, chunk, claims, dedupe`
 - `grounding <- scan, chunk, claims, dedupe`
 - `redteam <- scan`
-- `rubric <- scan`
 - `reference <- scan`
 - `eval <- scan + all branches`
 
@@ -91,13 +93,15 @@ Recommended full record:
   "generation": "The Eiffel Tower is in Paris, France.",
   "context": ["The Eiffel Tower is a wrought-iron tower in Paris."],
   "reference": "The Eiffel Tower is located in Paris.",
-  "rubric": [
-    {
-      "id": "R-1",
-      "statement": "Mentions location",
-      "pass_condition": "Must mention Paris"
-    }
-  ]
+  "geval": {
+    "metrics": [
+      {
+        "name": "location_accuracy",
+        "record_fields": ["question", "generation"],
+        "criteria": "The answer must mention Paris as the location."
+      }
+    ]
+  }
 }
 ```
 
@@ -105,8 +109,13 @@ Eligibility by field:
 
 - `generation` required for all nodes
 - `context` required for: `chunk`, `claims`, `dedupe`, `relevance`, `grounding`
-- `rubric` required for: `rubric`
+- `geval.metrics` required for: `geval_steps`, `geval`
 - `reference` required for: `reference`
+
+GEval contract rules:
+- `geval.metrics[]` must include `name`, `record_fields`, and exactly one of `criteria` or `evaluation_steps`
+- `record_fields` must be from: `question`, `generation`, `reference`, `context`
+- `generation` is auto-included if omitted
 
 ## 5) CLI Usage
 
@@ -187,7 +196,7 @@ uv run lumiseval estimate relevance \
 
 Cache is node-level and keyed by:
 
-- case hash: content fields (`generation`, `question`, `reference`, `context`, `rubric`, `reference_files`)
+- case hash: content fields (`generation`, `question`, `reference`, `context`, `geval`, `reference_files`)
 - config hash: execution config (`judge_model`, enable flags, web/evidence settings)
 
 Implications:
@@ -217,7 +226,9 @@ Shared request shape:
       "generation": "The Eiffel Tower is in Paris, France.",
       "context": ["The Eiffel Tower is in Paris."],
       "reference": "The Eiffel Tower is located in Paris.",
-      "rubric": []
+      "geval": {
+        "metrics": []
+      }
     }
   ],
   "job_config": {
@@ -227,7 +238,7 @@ Shared request shape:
     "enable_grounding": true,
     "enable_relevance": true,
     "enable_redteam": true,
-    "enable_rubric": true,
+    "enable_geval": true,
     "enable_reference": true
   },
   "force": false

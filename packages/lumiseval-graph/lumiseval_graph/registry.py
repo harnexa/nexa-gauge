@@ -24,10 +24,11 @@ NODE_FNS: dict[str, NodeFn] = {
     "chunk": _graph.node_chunk,
     "claims": _graph.node_claims,
     "dedupe": _graph.node_dedupe,
+    "geval_steps": _graph.node_geval_steps,
     "relevance": _graph.node_relevance,
     "grounding": _graph.node_grounding,
     "redteam": _graph.node_adversarial,
-    "rubric": _graph.node_rubric,
+    "geval": _graph.node_geval,
     "reference": _graph.node_reference,
     "eval": _graph.node_eval,
 }

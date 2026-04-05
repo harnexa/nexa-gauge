@@ -3,7 +3,8 @@ LangGraph Orchestration Graph — the core evaluation pipeline.
 
 Node sequence:
   scan → chunk → claims → dedupe →
-  [parallel: relevance, grounding, redteam, rubric, reference] →
+  geval_steps →
+  [parallel: relevance, grounding, redteam, geval, reference] →
   eval → result
 
 TODO:
@@ -14,7 +15,7 @@ TODO:
 
 import logging
 import uuid
-from typing import Optional, TypedDict
+from typing import Any, Optional, TypedDict, cast
 
 from langgraph.graph import END, StateGraph
 from lumiseval_core.config import config as cfg
@@ -22,25 +23,26 @@ from lumiseval_core.types import (
     Chunk,
     Claim,
     CostEstimate,
+    EvalCase,
     EvalJobConfig,
     EvalReport,
+    GevalConfig,
     InputMetadata,
     MetricResult,
-    Rubric,
 )
 from lumiseval_evidence.indexer import index_file
 from lumiseval_ingest.chunker import chunk_text
-from lumiseval_ingest.scanner import scan_text
+from lumiseval_ingest.scanner import scan_cases
 
 from .llm import get_judge_model
 from .log import get_node_logger, print_pipeline_footer, print_pipeline_header
 from .nodes import claim_extractor, eval
 from .nodes.metrics.dedupe import DedupeNode
+from .nodes.metrics.geval import GevalNode, GevalStepsNode
 from .nodes.metrics.grounding import GroundingNode
 from .nodes.metrics.redteam import RedteamNode
 from .nodes.metrics.reference import ReferenceNode
 from .nodes.metrics.relevance import RelevanceNode
-from .nodes.metrics.rubric import RubricNode
 from .observability import observe, score_trace, update_trace
 
 logger = logging.getLogger(__name__)
@@ -53,7 +55,8 @@ _log_mmr = get_node_logger("dedupe")
 _log_ragas = get_node_logger("relevance")
 _log_hallucination = get_node_logger("grounding")
 _log_adversarial = get_node_logger("redteam")
-_log_rubric = get_node_logger("rubric")
+_log_geval_steps = get_node_logger("geval_steps")
+_log_geval = get_node_logger("geval")
 _log_reference = get_node_logger("reference")
 _log_agg = get_node_logger("eval")
 
@@ -63,11 +66,11 @@ _log_agg = get_node_logger("eval")
 
 class EvalState(TypedDict):
     # ── Inputs: set at graph entry, never mutated by nodes ────────────────
-    generation: str               # LLM output being evaluated; read by scan, chunk, redteam, rubric, reference
+    generation: str               # LLM output being evaluated; read by scan, chunk, redteam, reference
     question: Optional[str]       # Original query; read by relevance for answer-relevancy scoring
     reference: Optional[str]      # Ground-truth answer; read by scan (eligibility flag) and reference node (ROUGE/BLEU/METEOR)
     context: Optional[list[str]]  # Retrieved passages; gates chunk → claims → grounding path; read by grounding
-    rubric: list[Rubric]          # GEval rules; gates rubric node
+    geval: Optional[GevalConfig]  # Canonical GEval contract; gates geval_steps/geval nodes
 
 
     target_node: Optional[str]    # Pipeline stop point used by CachedNodeRunner
@@ -80,12 +83,13 @@ class EvalState(TypedDict):
     chunks: list[Chunk]                    # Generation split into ~512-token chunks; written by chunk, read by claims
     raw_claims: list[Claim]                # Atomic claims extracted per chunk; written by claims, read by dedupe
     unique_claims: list[Claim]             # MMR-deduplicated claims; written by dedupe, read by relevance and grounding
+    geval_steps_by_signature: dict[str, list[str]]  # Signature-keyed evaluation steps; written by geval_steps
 
     # ── Metric results: written by parallel metric nodes, aggregated by eval ─
     grounding_metrics: list[MetricResult]  # Faithfulness verdicts per claim; written by grounding
     relevance_metrics: list[MetricResult]  # Answer-relevancy verdicts per claim; written by relevance
     redteam_metrics: list[MetricResult]    # Bias + toxicity scores; written by redteam
-    rubric_metrics: list[MetricResult]     # GEval pass/fail per rule; written by rubric
+    geval_metrics: list[MetricResult]      # Authoritative GEval scoring branch; written by geval
     reference_metrics: list[MetricResult]  # ROUGE/BLEU/METEOR scores; written by reference
 
     # ── Output ────────────────────────────────────────────────────────────
@@ -99,25 +103,24 @@ class EvalState(TypedDict):
 
 @observe(name="node_scan")
 def node_metadata_scanner(state: EvalState) -> dict:
-    gen = state["generation"]
-    has_context = any(
-        isinstance(item, str) and item.strip() for item in (state.get("context") or [])
-    )
-    meta = scan_text(
-        gen,
+    case = EvalCase(
+        case_id="runtime-case",
+        generation=state["generation"],
+        question=state.get("question"),
         reference=state.get("reference"),
-        has_context=has_context,
-        has_rubric=bool(state.get("rubric")),
+        context=state.get("context") or [],
+        geval=state.get("geval"),
     )
+    meta = scan_cases([case], show_progress=False)
     return {"metadata": meta}
 
 
 @observe(name="node_chunk")
 def node_chunk(state: EvalState) -> dict:
-    if not state.get("context"):
+    if not state.get("generation"):
         return {"chunks": []}
     chunks = chunk_text(
-        state["generation"], 
+        state["generation"],
         chunk_size=state["job_config"].chunk_size
     )
     return {"chunks": chunks}
@@ -125,7 +128,7 @@ def node_chunk(state: EvalState) -> dict:
 
 @observe(name="node_claims")
 def node_claims(state: EvalState) -> dict:
-    if not state.get("context") or not state.get("chunks"):
+    if not state.get("generation") or not state.get("chunks"):
         return {"raw_claims": []}
     model = state["job_config"].judge_model
     claims = claim_extractor.ClaimExtractorNode(model=model).run(state["chunks"])
@@ -139,6 +142,18 @@ def node_dedupe(state: EvalState) -> dict:
         return {"unique_claims": []}
     unique = DedupeNode(strategy="mmr").run(claims=raw)
     return {"unique_claims": unique}
+
+
+@observe(name="node_geval_steps")
+def node_geval_steps(state: EvalState) -> dict:
+    geval_cfg = state["geval"]
+    metrics = geval_cfg.metrics if geval_cfg is not None else []
+    if not state["job_config"].enable_geval or not metrics:
+        return {"geval_steps_by_signature": {}}
+
+    model = get_judge_model("geval_steps", state["job_config"].judge_model)
+    steps_by_signature = GevalStepsNode(judge_model=model).run(metrics=metrics)
+    return {"geval_steps_by_signature": steps_by_signature}
 
 
 @observe(name="node_relevance")
@@ -160,14 +175,15 @@ def node_relevance(state: EvalState) -> dict:
 @observe(name="node_grounding")
 def node_grounding(state: EvalState) -> dict:
     claims = state.get("unique_claims") or []
-    if not claims or not state.get("context"):
+    context = state["context"]
+    if not claims or not context:
         return {"grounding_metrics": []}
     if not state["job_config"].enable_grounding:
         return {"grounding_metrics": []}
     model = get_judge_model("grounding", state["job_config"].judge_model)
     results = GroundingNode(judge_model=model).run(
         claims=claims,
-        context=state["context"],
+        context=context,
         enable_grounding=True,
     )
     return {"grounding_metrics": results}
@@ -182,17 +198,23 @@ def node_adversarial(state: EvalState) -> dict:
     return {"redteam_metrics": results}
 
 
-@observe(name="node_rubric")
-def node_rubric(state: EvalState) -> dict:
-    if not state["job_config"].enable_rubric or not state["rubric"]:
-        return {"rubric_metrics": []}
-    rules = state["rubric"]
-    model = get_judge_model("rubric", state["job_config"].judge_model)
-    results = RubricNode(judge_model=model).run(
+@observe(name="node_geval")
+def node_geval(state: EvalState) -> dict:
+    geval_cfg = state["geval"]
+    metrics = geval_cfg.metrics if geval_cfg is not None else []
+    if not state["job_config"].enable_geval or not metrics:
+        return {"geval_metrics": []}
+
+    model = get_judge_model("geval", state["job_config"].judge_model)
+    results = GevalNode(judge_model=model).run(
+        metrics=metrics,
         generation=state["generation"],
-        rubric=rules,
+        question=state.get("question"),
+        reference=state.get("reference"),
+        context=state.get("context"),
+        steps_by_signature=state.get("geval_steps_by_signature") or {},
     )
-    return {"rubric_metrics": results}
+    return {"geval_metrics": results}
 
 
 @observe(name="node_reference")
@@ -217,7 +239,7 @@ def node_eval(state: EvalState) -> dict:
         grounding_metrics=state.get("grounding_metrics") or [],
         relevance_metrics=state.get("relevance_metrics") or [],
         redteam_metrics=state.get("redteam_metrics") or [],
-        rubric_metrics=state.get("rubric_metrics") or [],
+        geval_metrics=state.get("geval_metrics") or [],
         reference_metrics=state.get("reference_metrics") or [],
         cost_estimate=state.get("cost_estimate"),
         cost_actual_usd=state.get("cost_actual_usd", 0.0),
@@ -236,26 +258,28 @@ def build_graph() -> StateGraph:
     g.add_node("chunk", node_chunk)
     g.add_node("claims", node_claims)
     g.add_node("dedupe", node_dedupe)
+    g.add_node("geval_steps", node_geval_steps)
     g.add_node("relevance", node_relevance)
     g.add_node("grounding", node_grounding)
     g.add_node("redteam", node_adversarial)
-    g.add_node("rubric", node_rubric)
+    g.add_node("geval", node_geval)
     g.add_node("reference", node_reference)
     g.add_node("eval", node_eval)
 
     g.set_entry_point("scan")
     g.add_edge("scan", "chunk")
+    g.add_edge("scan", "geval_steps")
     g.add_edge("scan", "redteam")
-    g.add_edge("scan", "rubric")
     g.add_edge("scan", "reference")
     g.add_edge("chunk", "claims")
     g.add_edge("claims", "dedupe")
+    g.add_edge("geval_steps", "geval")
     g.add_edge("dedupe", "relevance")
     g.add_edge("dedupe", "grounding")
     g.add_edge("relevance", "eval")
     g.add_edge("grounding", "eval")
     g.add_edge("redteam", "eval")
-    g.add_edge("rubric", "eval")
+    g.add_edge("geval", "eval")
     g.add_edge("reference", "eval")
     g.add_edge("eval", END)
 
@@ -269,7 +293,7 @@ def build_initial_state(
     reference: Optional[str] = None,
     context: Optional[list[str]] = None,
     target_node: Optional[str] = None,
-    rubric: Optional[list[Rubric]] = None,
+    geval: Optional[GevalConfig] = None,
     reference_files: Optional[list[str]] = None,
 ) -> EvalState:
     """Build the canonical graph state for one evaluation input."""
@@ -280,7 +304,6 @@ def build_initial_state(
             web_search=cfg.WEB_SEARCH_ENABLED,
             evidence_threshold=cfg.EVIDENCE_THRESHOLD,
         )
-
     return EvalState(
         generation=generation,
         question=question,
@@ -288,17 +311,18 @@ def build_initial_state(
         context=context or [],
         target_node=target_node,
         reference_files=reference_files or [],
-        rubric=rubric or [],
+        geval=geval,
         job_config=job_config,
         metadata=None,
         cost_estimate=None,
         chunks=[],
         raw_claims=[],
         unique_claims=[],
+        geval_steps_by_signature={},
         grounding_metrics=[],
         relevance_metrics=[],
         redteam_metrics=[],
-        rubric_metrics=[],
+        geval_metrics=[],
         reference_metrics=[],
         cost_actual_usd=0.0,
         report=None,
@@ -312,7 +336,7 @@ def run_graph(
     question: Optional[str] = None,
     reference: Optional[str] = None,
     context: Optional[list[str]] = None,
-    rubric: Optional[list[Rubric]] = None,
+    geval: Optional[GevalConfig] = None,
     reference_files: Optional[list[str]] = None,
     job_config: Optional[EvalJobConfig] = None,
 ) -> EvalReport:
@@ -324,7 +348,7 @@ def run_graph(
         question: Optional query that produced the generation (improves RAGAS scores).
         reference: Optional reference answer (enables context recall).
         context: Optional retrieval context passages for retrieval-path metrics.
-        rubric: Optional list of rubric rules to evaluate against.
+        geval: Optional GEval metric contract (canonical custom-judge path).
         reference_files: Optional list of file paths to index before evaluation.
 
     Returns:
@@ -336,7 +360,7 @@ def run_graph(
         question=question,
         reference=reference,
         context=context,
-        rubric=rubric,
+        geval=geval,
         reference_files=reference_files,
         target_node="eval",
     )
@@ -360,12 +384,14 @@ def run_graph(
             #     _log_scanner.warning(f"Failed to index {fpath}: {exc}")
 
     graph = build_graph().compile()
-    final_state = graph.invoke(initial_state)
+    final_state = cast(EvalState, graph.invoke(cast(Any, initial_state)))
 
     if final_state.get("error"):
         raise RuntimeError(final_state["error"])
 
-    report = final_state["report"]
+    report = final_state.get("report")
+    if report is None:
+        raise RuntimeError("Graph completed without an evaluation report.")
     print_pipeline_footer(
         composite_score=report.composite_score,
         cost_usd=report.cost_actual_usd,

@@ -3,7 +3,7 @@
 from enum import Enum
 from typing import Any, Optional, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from lumiseval_core.constants import (
     AVG_CLAIM_TOKENS,
@@ -21,8 +21,8 @@ from lumiseval_core.constants import (
     SCORE_WEIGHT_ANSWER_RELEVANCY,
     SCORE_WEIGHT_EVIDENCE_SUPPORT_RATE,
     SCORE_WEIGHT_FAITHFULNESS,
+    SCORE_WEIGHT_GEVAL,
     SCORE_WEIGHT_HALLUCINATION,
-    SCORE_WEIGHT_RUBRIC,
     SCORE_WEIGHT_SAFETY,
 )
 
@@ -65,11 +65,73 @@ class Claim(BaseModel):
     extraction_failed: bool = False
 
 
-class Rubric(BaseModel):
-    id: str
-    statement: str
-    pass_condition: str
-    low_confidence_extraction: bool = False
+_ALLOWED_GEVAL_RECORD_FIELDS = {"question", "generation", "reference", "context"}
+
+
+# ──────────────────────────────────────────────────────────────────────────────────
+# GEVAL Types
+# ──────────────────────────────────────────────────────────────────────────────────
+class GevalMetricSpec(BaseModel):
+    """Public GEval metric contract for one custom judge metric.
+
+    # TODO: handle the case where
+    "evaluation_steps": [
+        "Check whether the facts in `reference` contradicts any facts in `generation`"
+    ] make sure to change reference to GEVAL.EXPECTED_OUTPUT, and generation GEVAL.ACTUAL_OUTPUT
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    record_fields: list[str] = Field(default_factory=list)
+    criteria: Optional[str] = None
+    evaluation_steps: Optional[list[str]] = None
+
+    @model_validator(mode="after")
+    def _validate_one_of_and_fields(self) -> "GevalMetricSpec":
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("GEval metric 'name' must be non-empty.")
+
+        has_criteria = bool(self.criteria and self.criteria.strip())
+        has_steps = bool(self.evaluation_steps)
+        if has_criteria == has_steps:
+            raise ValueError("Exactly one of 'criteria' or 'evaluation_steps' must be provided.")
+
+        if self.criteria is not None:
+            self.criteria = self.criteria.strip()
+
+        if self.evaluation_steps is not None:
+            cleaned_steps = [step.strip() for step in self.evaluation_steps if step and step.strip()]
+            if not cleaned_steps:
+                raise ValueError("'evaluation_steps' must contain at least one non-empty step.")
+            self.evaluation_steps = cleaned_steps
+
+        normalized_fields: list[str] = []
+        seen: set[str] = set()
+        for field_name in self.record_fields:
+            if field_name not in _ALLOWED_GEVAL_RECORD_FIELDS:
+                allowed = ", ".join(sorted(_ALLOWED_GEVAL_RECORD_FIELDS))
+                raise ValueError(
+                    f"Unknown GEval record field '{field_name}'. Allowed: {allowed}."
+                )
+            if field_name in seen:
+                continue
+            normalized_fields.append(field_name)
+            seen.add(field_name)
+
+        # GEval scoring always needs ACTUAL_OUTPUT; auto-include generation.
+        if "generation" not in seen:
+            normalized_fields.append("generation")
+
+        self.record_fields = normalized_fields
+        return self
+
+
+class GevalConfig(BaseModel):
+    """Top-level GEval payload attached to one EvalCase."""
+    model_config = ConfigDict(extra="forbid")
+    metrics: list[GevalMetricSpec] = Field(default_factory=list)
 
 
 class EvidencePassage(BaseModel):
@@ -94,14 +156,29 @@ class RecordMeta(BaseModel):
     context_token_count: int
     question_token_count: int
     generation_token_count: int
-    rubric_token_count: int
+    geval_token_count: int
     total_token_count: int
     estimated_claim_count: int
     has_question: bool
     has_context: bool
-    has_rubric: bool
+    has_geval: bool = False
     has_reference: bool = False
     eligible_nodes: list[str]
+
+
+class RecordGeval(BaseModel):
+    """Record-level GEval projection used by scanner/debug surfaces.
+
+    Notes:
+        - Keys are deterministic per-record metric keys (for example ``factuality`` or
+          ``factuality#2`` when duplicate metric names exist).
+        - ``criteria`` and ``evaluation_steps`` are both present for every key.
+          Criteria-only metrics use empty steps; steps-only metrics use ``None``
+          criteria.
+    """
+
+    criteria: dict[str, str | None] = Field(default_factory=dict)
+    evaluation_steps: dict[str, list[str]] = Field(default_factory=dict)
 
 
 class Record(BaseModel):
@@ -110,7 +187,7 @@ class Record(BaseModel):
     question: Optional[str]
     context: Optional[list[str]]
     generation: Optional[str]
-    rubric: Optional[list[str]]
+    geval: Optional[RecordGeval] = None
     generation_chunks: Optional[list[str]]
     record_metadata: RecordMeta
 
@@ -138,8 +215,16 @@ class RelevanceCostMeta(BaseModel):
     avg_claim_tokens: float = AVG_CLAIM_TOKENS
     avg_output_token: float = AVG_OUTPUT_TOKENS_JSON_VERDICT
 
+class GevalStepsCostMeta(BaseModel):
+    eligible_records: int
+    criteria_count: int
+    unique_criteria_count: int
+    criteria_tokens: float
+    unique_criteria_tokens: float
+    avg_output_tokens: float = AVG_GEVAL_OUTPUT_OVERHEAD_TOKENS
 
-class RubricCostMeta(BaseModel):
+
+class GevalCostMeta(BaseModel):
     eligible_records: int
     rule_count: int
     unique_rule_count: int
@@ -162,25 +247,27 @@ class ReferenceCostMeta(BaseModel):
 
 
 class CostMetadata(BaseModel):
+    claim: ClaimCostMeta
     grounding: GorundingCostMeta
     relevance: RelevanceCostMeta
-    rubric: RubricCostMeta
+    geval_steps: GevalStepsCostMeta
+    geval: GevalCostMeta
     readteam: RedTeamCostMeta
     reference: ReferenceCostMeta
 
 
 class InputMetadata(BaseModel):
     record_count: int
-    total_tokens: int  # question_tokens + generation_tokens + context_tokens + rubric_tokens
+    total_tokens: int  # question_tokens + generation_tokens + context_tokens + geval_tokens
 
     question_tokens: int = 0  # tokens across all question fields
     generation_tokens: int = 0  # tokens across all generation fields
     context_tokens: int = 0  # tokens across all context passages
-    rubric_tokens: int = 0  # tokens across all rubric rule statements
-    unique_rubric_tokens: int = 0  # tokens across all unique rubric rules
+    geval_tokens: int = 0  # tokens across all GEval instructions (criteria/evaluation_steps)
+    unique_geval_tokens: int = 0  # tokens across all unique GEval instructions
 
-    rubric_rule_count: int = 0  # Total counts of rubrics
-    unique_rubric_rule_count: int = 0  # Total counts of unique rubrics
+    geval_metric_count: int = 0  # total GEval metric count across records
+    unique_geval_metric_count: int = 0  # total unique GEval metric signatures
     generation_chunk_count: int = 0  # chunks produced by chunking generation text
 
     cost_meta: CostMetadata
@@ -240,7 +327,7 @@ class EvalCase(BaseModel):
     reference: Optional[str] = None
     context: list[str] = Field(default_factory=list)
     reference_files: list[str] = Field(default_factory=list)
-    rubric: list[Rubric] = Field(default_factory=list)
+    geval: Optional[GevalConfig] = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -253,7 +340,7 @@ class EvalJobConfig(BaseModel):
     enable_grounding: bool = True
     enable_relevance: bool = True
     enable_redteam: bool = False
-    enable_rubric: bool = False
+    enable_geval: bool = False
     enable_reference: bool = True
     web_search: bool = False
     evidence_threshold: float = EVIDENCE_VERDICT_SUPPORTED_THRESHOLD
@@ -262,7 +349,7 @@ class EvalJobConfig(BaseModel):
             "faithfulness": SCORE_WEIGHT_FAITHFULNESS,
             "answer_relevancy": SCORE_WEIGHT_ANSWER_RELEVANCY,
             "hallucination": SCORE_WEIGHT_HALLUCINATION,
-            "rubric": SCORE_WEIGHT_RUBRIC,
+            "geval": SCORE_WEIGHT_GEVAL,
             "safety": SCORE_WEIGHT_SAFETY,
             "evidence_support_rate": SCORE_WEIGHT_EVIDENCE_SUPPORT_RATE,
         }

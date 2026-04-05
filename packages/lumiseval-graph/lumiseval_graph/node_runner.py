@@ -18,11 +18,11 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-from lumiseval_core.cache import CacheStore, compute_case_hash, compute_config_hash
+from lumiseval_core.cache import CacheEntry, CacheStore, compute_case_hash, compute_config_hash
 from lumiseval_core.pipeline import (
     METRIC_NODES,
-    NODES_BY_NAME,
     NODE_ORDER,
+    NODES_BY_NAME,
 )
 from lumiseval_core.types import EvalCase, EvalJobConfig, NodeCostBreakdown
 from pydantic import BaseModel
@@ -125,8 +125,8 @@ class NodeRunner:
         )
 
     @staticmethod
-    def _has_rubric(case: EvalCase) -> bool:
-        return len(case.rubric or []) > 0
+    def _has_geval(case: EvalCase) -> bool:
+        return case.geval is not None and len(case.geval.metrics) > 0
 
     @staticmethod
     def _has_reference(case: EvalCase) -> bool:
@@ -139,21 +139,22 @@ class NodeRunner:
 
         Why centralize this:
           - planners and runners must agree or preflight cost/execution diverges
-          - all route gating (context/rubric/reference) stays in one location
+          - all route gating (question/context/geval/reference) stays in one location
         """
         if not cls._has_generation(case):
             return False
         spec = NODES_BY_NAME.get(node_name)
         if spec is None:
             return True
-        if spec.requires_question:
-            return cls._has_question(case)
-        if spec.requires_context:
-            return cls._has_context(case)
-        if spec.requires_rubric:
-            return cls._has_rubric(case)
-        if spec.requires_reference:
-            return cls._has_reference(case)
+
+        if spec.requires_question and not cls._has_question(case):
+            return False
+        if spec.requires_context and not cls._has_context(case):
+            return False
+        if spec.requires_geval and not cls._has_geval(case):
+            return False
+        if spec.requires_reference and not cls._has_reference(case):
+            return False
         return True
 
     @classmethod
@@ -174,15 +175,17 @@ class NodeRunner:
             valid = ", ".join(sorted(NODE_FNS))
             raise ValueError(f"Unknown node '{node_name}'. Valid options: {valid}.")
 
-        state = graph_module.build_initial_state(
+        state: dict[str, Any] = dict(
+            graph_module.build_initial_state(
             generation=case.generation,
             job_config=job_config,
             question=case.question,
             reference=case.reference,
             context=case.context,
             target_node=node_name,
-            rubric=case.rubric,
+            geval=case.geval,
             reference_files=case.reference_files,
+            )
         )
 
         plan = list(NODES_BY_NAME[node_name].prerequisites) if include_prerequisites else []
@@ -222,7 +225,7 @@ class CachedNodeRunner:
             generation=case.generation,
             question=case.question,
             reference=case.reference,
-            rubric=case.rubric or [],
+            geval=case.geval,
             context=case.context or [],
             reference_files=case.reference_files or [],
         )
@@ -233,6 +236,16 @@ class CachedNodeRunner:
     def _plan_nodes(node_name: str) -> list[str]:
         """Return strict prerequisite chain plus target node."""
         return list(NODES_BY_NAME[node_name].prerequisites) + [node_name]
+
+    def _get_cached_entry(
+        self,
+        *,
+        case_hash: str,
+        config_hash: str,
+        step: str,
+    ) -> CacheEntry | None:
+        """Read canonical cache entry for one node step."""
+        return self._cache.get_entry(case_hash, config_hash, step)
 
     @staticmethod
     def _estimate_step_cost(
@@ -271,15 +284,17 @@ class CachedNodeRunner:
             valid = ", ".join(sorted(NODE_FNS))
             raise ValueError(f"Unknown node '{node_name}'. Valid options: {valid}.")
 
-        state = graph_module.build_initial_state(
+        state: dict[str, Any] = dict(
+            graph_module.build_initial_state(
             generation=case.generation,
             job_config=job_config,
             question=case.question,
             reference=case.reference,
             context=case.context,
             target_node=node_name,
-            rubric=case.rubric,
+            geval=case.geval,
             reference_files=case.reference_files,
+            )
         )
         case_hash, config_hash = self._compute_hashes(case, state["job_config"])
         planned_nodes = self._plan_nodes(node_name)
@@ -294,7 +309,11 @@ class CachedNodeRunner:
                 skipped_nodes.append(step)
                 node_status[step] = "skipped"
                 continue
-            if not force and self._cache.get_entry(case_hash, config_hash, step) is not None:
+            if not force and self._get_cached_entry(
+                case_hash=case_hash,
+                config_hash=config_hash,
+                step=step,
+            ) is not None:
                 cached_nodes.append(step)
                 node_status[step] = "cached"
                 continue
@@ -397,15 +416,17 @@ class CachedNodeRunner:
 
         t0 = time.monotonic()
 
-        state = graph_module.build_initial_state(
+        state: dict[str, Any] = dict(
+            graph_module.build_initial_state(
             generation=case.generation,
             job_config=job_config,
             question=case.question,
             reference=case.reference,
             context=case.context,
             target_node=node_name,
-            rubric=case.rubric,
+            geval=case.geval,
             reference_files=case.reference_files,
+            )
         )
 
         case_hash, config_hash = self._compute_hashes(case, state["job_config"])
@@ -431,10 +452,11 @@ class CachedNodeRunner:
                     state["cost_estimate"] = build_cost_estimate(
                         metadata,
                         state["job_config"],
+                        cases=[case],
                     )
 
             # For eval target, metric nodes are independent and can run in parallel.
-            if node_name == "eval" and step == "relevance":
+            if node_name == "eval" and metric_group and step == metric_group[0]:
                 cached_group_outputs: dict[str, dict[str, Any]] = {}
                 skipped_group_outputs: dict[str, dict[str, Any]] = {}
                 to_run: list[str] = []
@@ -451,8 +473,13 @@ class CachedNodeRunner:
                             node_cost=NodeCostBreakdown(model_calls=0, cost_usd=0.0),
                         )
                         continue
+
                     if not force:
-                        cached_entry = self._cache.get_entry(case_hash, config_hash, metric_step)
+                        cached_entry = self._get_cached_entry(
+                            case_hash=case_hash,
+                            config_hash=config_hash,
+                            step=metric_step,
+                        )
                         if cached_entry is not None:
                             cached_group_outputs[metric_step] = cached_entry["node_output"]
                             cached.append(metric_step)
@@ -478,13 +505,13 @@ class CachedNodeRunner:
 
                 # Merge outputs in stable node order.
                 for metric_step in metric_group:
-                    output = (
+                    merged_output = (
                         skipped_group_outputs.get(metric_step)
                         or cached_group_outputs.get(metric_step)
                         or run_group_outputs.get(metric_step)
                     )
-                    if output is not None:
-                        state.update(output)
+                    if merged_output is not None:
+                        state.update(merged_output)
 
                 i += len(metric_group)
                 continue
@@ -505,7 +532,11 @@ class CachedNodeRunner:
                 continue
 
             if not force:
-                cached_entry = self._cache.get_entry(case_hash, config_hash, step)
+                cached_entry = self._get_cached_entry(
+                    case_hash=case_hash,
+                    config_hash=config_hash,
+                    step=step,
+                )
                 if cached_entry is not None:
                     cached_output = cached_entry["node_output"]
                     state.update(cached_output)

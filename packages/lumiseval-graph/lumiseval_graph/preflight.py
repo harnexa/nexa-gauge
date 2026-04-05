@@ -67,8 +67,8 @@ def _estimate_delta_cost_report(
             continue
         subset_cases = [cases[i] for i in case_indices]
         subset_meta = scan_cases(subset_cases, show_progress=False)
-        individual[node] = estimator._estimate_node(node, subset_meta)
-        formula_overrides[node] = estimator._node_formula(node, subset_meta)
+        individual[node] = estimator._estimate_node(node, subset_meta, cases=subset_cases)
+        formula_overrides[node] = estimator._node_formula(node, subset_meta, cases=subset_cases)
 
     return estimator.estimate(
         metadata,
@@ -121,3 +121,13 @@ def estimate_preflight(
         plan=plan,
         cost_report=cost_report,
     )
+
+
+
+"""
+
+
+scan: scans all the cases
+
+
+"""

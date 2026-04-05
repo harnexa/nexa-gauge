@@ -18,13 +18,14 @@ from typing import Any, Union
 
 from lumiseval_core.constants import DEFAULT_JUDGE_MODEL
 from lumiseval_core.types import (
-    ReferenceCostMeta,
+    GevalCostMeta,
+    GevalStepsCostMeta,
     GorundingCostMeta,
     MetricResult,
     NodeCostBreakdown,
     RedTeamCostMeta,
+    ReferenceCostMeta,
     RelevanceCostMeta,
-    RubricCostMeta,
 )
 
 
@@ -65,7 +66,8 @@ class BaseMetricNode(ABC):
         cost_meta: Union[
             GorundingCostMeta,
             RelevanceCostMeta,
-            RubricCostMeta,
+            GevalCostMeta,
+            GevalStepsCostMeta,
             RedTeamCostMeta,
             ReferenceCostMeta,
         ],
@@ -82,7 +84,7 @@ class BaseMetricNode(ABC):
             avg_context_tokens:    Average retrieved-context tokens per record
                                    (grounding).
             avg_question_tokens:   Average question length in tokens (relevance).
-            rubric_rule_count:     Number of rubric rules to evaluate (rubric).
+            geval_metric_count:    Number of GEval metrics to evaluate.
 
         Returns:
             NodeCostBreakdown. Base returns zeros; subclasses override with

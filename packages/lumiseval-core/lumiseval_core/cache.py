@@ -3,7 +3,7 @@ Node-level execution cache for LumisEval.
 
 Cache keys are derived from the input content (case_hash) and the evaluation
 configuration (config_hash) so that:
-  - Changing the generation/question/rubric invalidates the cache for that case.
+  - Changing the generation/question/GEval contract invalidates the cache for that case.
   - Changing the judge model or enable_* flags invalidates only config-sensitive nodes.
   - Adding new cases to a dataset runs only the new cases.
 
@@ -19,7 +19,7 @@ import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, TypedDict
 
 from pydantic import BaseModel
 
@@ -30,10 +30,10 @@ from lumiseval_core.types import (
     CostEstimate,
     EvalJobConfig,
     EvalReport,
+    GevalConfig,
     InputMetadata,
     MetricResult,
     NodeCostBreakdown,
-    Rubric,
 )
 
 # ── Field → Pydantic type map ────────────────────────────────────────────────
@@ -50,11 +50,22 @@ _FIELD_TYPE_MAP: dict[str, Any] = {
     "grounding_metrics": (list, MetricResult),
     "relevance_metrics": (list, MetricResult),
     "redteam_metrics": (list, MetricResult),
-    "rubric_metrics": (list, MetricResult),
+    "geval_metrics": (list, MetricResult),
     "report": EvalReport,
     "job_config": EvalJobConfig,
-    "rubric": (list, Rubric),
+    "geval": GevalConfig,
 }
+
+
+class CacheEntry(TypedDict):
+    """Typed cache envelope returned by ``CacheStore.get_entry``."""
+
+    node_name: str
+    case_hash: str
+    config_hash: str
+    created_at: str | None
+    node_output: dict[str, Any]
+    node_cost: NodeCostBreakdown | None
 
 
 # ── Serialisation helpers ────────────────────────────────────────────────────
@@ -117,21 +128,30 @@ def compute_case_hash(
     generation: str,
     question: Optional[str],
     reference: Optional[str],
-    rubric: list[Rubric],
+    geval: Optional[GevalConfig] = None,
     context: Optional[list[str]] = None,
     reference_files: Optional[list[str]] = None,
 ) -> str:
     """Stable SHA-256 hash of the case's input content.
 
-    Changing generation / question / reference / context / rubric rules / reference_files
-    produces a different hash, which causes a cache miss for the affected case.
+    Changing generation / question / reference / context / GEval metrics /
+    reference_files produces a different hash, which causes
+    a cache miss for the affected case.
     """
-    rubric_text = "|".join(sorted(f"{r.id}\x1f{r.statement}\x1f{r.pass_condition}" for r in rubric))
+    geval_text = ""
+    if geval is not None:
+        parts: list[str] = []
+        for metric in geval.metrics:
+            criteria_text = metric.criteria or ""
+            steps_text = "|".join(metric.evaluation_steps or [])
+            fields_text = "|".join(metric.record_fields)
+            parts.append(f"{metric.name}\x1f{fields_text}\x1f{criteria_text}\x1f{steps_text}")
+        geval_text = "|".join(sorted(parts))
     context_text = "|".join(context or [])
     reference_text = "|".join(sorted(reference_files or []))
     raw = (
         f"{generation}\x00{question or ''}\x00{reference or ''}\x00"
-        f"{context_text}\x00{rubric_text}\x00{reference_text}"
+        f"{context_text}\x00{geval_text}\x00{reference_text}"
     )
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
@@ -146,7 +166,7 @@ def compute_config_hash(job_config: EvalJobConfig) -> str:
         f"|{job_config.enable_grounding}"
         f"|{job_config.enable_relevance}"
         f"|{job_config.enable_redteam}"
-        f"|{job_config.enable_rubric}"
+        f"|{job_config.enable_geval}"
         f"|{job_config.enable_reference}"
         f"|{job_config.web_search}"
         f"|{job_config.evidence_threshold}"
@@ -177,7 +197,9 @@ class CacheStore:
         """Return True if a valid cache entry exists for this node."""
         return self._path(case_hash, config_hash, node_name).exists()
 
-    def get_entry(self, case_hash: str, config_hash: str, node_name: str) -> Optional[dict[str, Any]]:
+    def get_entry(
+        self, case_hash: str, config_hash: str, node_name: str
+    ) -> Optional[CacheEntry]:
         """Load and deserialise a full cache envelope for one node.
 
         Envelope shape (v2):
@@ -273,7 +295,7 @@ class NoOpCacheStore(CacheStore):
     def get(self, *args: Any, **kwargs: Any) -> Optional[dict[str, Any]]:
         return None
 
-    def get_entry(self, *args: Any, **kwargs: Any) -> Optional[dict[str, Any]]:
+    def get_entry(self, *args: Any, **kwargs: Any) -> Optional[CacheEntry]:
         return None
 
     def get_node_cost(self, *args: Any, **kwargs: Any) -> Optional[NodeCostBreakdown]:

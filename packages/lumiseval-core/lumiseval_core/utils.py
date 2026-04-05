@@ -8,6 +8,15 @@ from typing import Any
 
 from pydantic import BaseModel
 
+import tiktoken
+
+from .constants import TIKTOKEN_ENCODING
+
+_ENCODER = tiktoken.get_encoding(TIKTOKEN_ENCODING)
+
+def _count_tokens(text: str) -> int:
+    return len(_ENCODER.encode(text))
+
 
 def _to_serializable(obj: Any) -> Any:
     """Recursively convert a value to a JSON-serializable structure."""

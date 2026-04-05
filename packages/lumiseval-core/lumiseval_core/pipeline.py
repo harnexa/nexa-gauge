@@ -26,7 +26,7 @@ class NodeSpec:
     prerequisites: tuple[str, ...] = ()
     """Ordered names of all nodes that must have run before this node."""
 
-     # ── Eligibility ───────────────────────────────────────────────────────
+    # ── Eligibility ───────────────────────────────────────────────────────
     requires_generation: bool = False
 
     # ── Eligibility ───────────────────────────────────────────────────────
@@ -35,13 +35,13 @@ class NodeSpec:
 
     # ── Eligibility ───────────────────────────────────────────────────────
     requires_question: bool = False
-    """Skip this node when the case has no context passages."""
+    """Skip this node when the case has no question text."""
 
-    requires_rubric: bool = False
-    """Skip this node when the case has no rubric rules."""
+    requires_geval: bool = False
+    """Skip this node when the case has no GEval metrics."""
 
     requires_reference: bool = False
-    """Skip this node when the case has no reference reference."""
+    """Skip this node when the case has no reference answer."""
 
     is_metric: bool = False
     """Node produces metric results and participates in the parallel fan-out."""
@@ -108,6 +108,17 @@ PIPELINE: list[NodeSpec] = [
         skip_output={"unique_claims": []},
     ),
     NodeSpec(
+        name="geval_steps",
+        prerequisites=("scan",),
+        requires_generation=True,
+        requires_geval=True,
+        color="dark_sea_green4",
+        env_key_suffixes=("GEVAL_STEPS",),
+        skip_output={
+            "geval_steps_by_signature": {},
+        },
+    ),
+    NodeSpec(
         name="relevance",
         prerequisites=("scan", "chunk", "claims", "dedupe"),
         requires_generation=True,
@@ -137,14 +148,14 @@ PIPELINE: list[NodeSpec] = [
         skip_output={"redteam_metrics": []},
     ),
     NodeSpec(
-        name="rubric",
-        prerequisites=("scan",),
+        name="geval",
+        prerequisites=("scan", "geval_steps"),
         requires_generation=True,
-        requires_rubric=True,
+        requires_geval=True,
         is_metric=True,
-        color="orchid",
-        env_key_suffixes=("RUBRIC",),
-        skip_output={"rubric_metrics": []},
+        color="medium_purple3",
+        env_key_suffixes=("GEVAL",),
+        skip_output={"geval_metrics": []},
     ),
     NodeSpec(
         name="reference",
@@ -163,10 +174,11 @@ PIPELINE: list[NodeSpec] = [
             "chunk",
             "claims",
             "dedupe",
+            "geval_steps",
             "relevance",
             "grounding",
             "redteam",
-            "rubric",
+            "geval",
             "reference",
         ),
         color="gold1",
@@ -184,4 +196,3 @@ NODE_ORDER: list[str] = [s.name for s in PIPELINE]
 
 METRIC_NODES: list[str] = [s.name for s in PIPELINE if s.is_metric]
 """Ordered list of metric node names (the parallel fan-out group)."""
-

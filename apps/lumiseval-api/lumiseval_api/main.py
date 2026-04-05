@@ -16,7 +16,7 @@ import uuid
 from typing import Union
 
 from fastapi import FastAPI
-from lumiseval_core.types import EvalJobConfig, EvalReport, Rubric
+from lumiseval_core.types import EvalJobConfig, EvalReport, GevalConfig
 from lumiseval_graph.graph import run_graph
 from pydantic import BaseModel
 
@@ -32,14 +32,14 @@ class EvalJobRequest(BaseModel):
     question: str | None = None
     reference: str | None = None
     context: list[str] = []
-    rubric: list[Rubric] = []
+    geval: GevalConfig | None = None
     reference_files: list[str] = []
     judge_model: str = "gpt-4o-mini"
     web_search: bool = False
     enable_grounding: bool = True
     enable_relevance: bool = True
     enable_redteam: bool = False
-    enable_rubric: bool = False
+    enable_geval: bool = False
     evidence_threshold: float = 0.75
     budget_cap_usd: float | None = None
     acknowledge_cost: bool = False
@@ -53,7 +53,7 @@ def _run_one(request: EvalJobRequest) -> EvalReport:
         enable_grounding=request.enable_grounding,
         enable_relevance=request.enable_relevance,
         enable_redteam=request.enable_redteam,
-        enable_rubric=request.enable_rubric,
+        enable_geval=request.enable_geval,
         web_search=request.web_search,
         evidence_threshold=request.evidence_threshold,
         budget_cap_usd=request.budget_cap_usd,
@@ -65,7 +65,7 @@ def _run_one(request: EvalJobRequest) -> EvalReport:
         question=request.question,
         reference=request.reference,
         context=request.context or None,
-        rubric=request.rubric or None,
+        geval=request.geval,
         reference_files=request.reference_files or None,
     )
     return report

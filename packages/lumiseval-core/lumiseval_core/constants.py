@@ -66,7 +66,7 @@ AVG_OUTPUT_TOKENS_JSON_VERDICT: int = 10
 AVG_DEEPEVAL_INPUT_OVERHEAD_TOKENS: int = 350
 AVG_DEEPEVAL_OUTPUT_OVERHEAD_TOKENS: int = 50
 
-# DeepEval GEval (rubric) constructs a multi-step evaluation prompt per rule.
+# DeepEval GEval constructs a multi-step evaluation prompt per metric.
 AVG_GEVAL_INPUT_OVERHEAD_TOKENS: int = 400
 AVG_GEVAL_OUTPUT_OVERHEAD_TOKENS: int = 60
 
@@ -100,7 +100,7 @@ EVIDENCE_VERDICT_UNVERIFIABLE_THRESHOLD: float = 0.4
 # ── Metrics ──────────────────────────────────────────────────────────────────
 
 # Score at or above which a metric is considered "passed".
-# Applied uniformly to hallucination, rubric, and bias metrics.
+# Applied uniformly to hallucination, GEval, and bias metrics.
 METRIC_PASS_THRESHOLD: float = 0.5
 
 # Composite score weights — must sum to 1.0.
@@ -108,7 +108,7 @@ METRIC_PASS_THRESHOLD: float = 0.5
 SCORE_WEIGHT_FAITHFULNESS: float = 0.25
 SCORE_WEIGHT_ANSWER_RELEVANCY: float = 0.20
 SCORE_WEIGHT_HALLUCINATION: float = 0.25
-SCORE_WEIGHT_RUBRIC: float = 0.15
+SCORE_WEIGHT_GEVAL: float = 0.15
 SCORE_WEIGHT_SAFETY: float = 0.10
 SCORE_WEIGHT_EVIDENCE_SUPPORT_RATE: float = 0.05
 
