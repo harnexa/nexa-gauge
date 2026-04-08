@@ -17,13 +17,38 @@ from abc import ABC, abstractmethod
 from typing import Any
 
 from lumiseval_core.constants import DEFAULT_JUDGE_MODEL
+from lumiseval_core.types import (
+    ChunkArtifacts,
+    ClaimArtifacts,
+    DedupArtifacts,
+    GroundingMetrics,
+    RelevanceMetrics,
+    RedteamMetrics,
+    GevalStepsResolved,
+    GevalStepsArtifacts,
+    GevalMetrics,
+    ReferenceMetrics,
+    CostEstimate
+)
 
-NodeEstimate = Any
+NodeEstimate = [
+    ChunkArtifacts,
+    ClaimArtifacts,
+    DedupArtifacts,
+    GroundingMetrics,
+    RelevanceMetrics,
+    RedteamMetrics,
+    GevalStepsResolved,
+    GevalStepsArtifacts,
+    GevalMetrics,
+    ReferenceMetrics,
+
+]
 
 
 class BaseNode(ABC):
     @abstractmethod
-    def run(self, payload: NodeEstimate) -> NodeEstimate:
+    def run(self, *args: Any, **kwargs) -> NodeEstimate:
         """Execute the metric evaluation and return results.
 
         Each subclass defines its own fully-typed signature. The base signature
@@ -33,7 +58,7 @@ class BaseNode(ABC):
         ...
 
     @abstractmethod
-    def estimate(self, *args: Any, **kwargs: Any) -> NodeEstimate:
+    def estimate(self, *args: Any, **kwargs: Any) -> CostEstimate:
         """Estimate cost for this node without running any LLM calls."""
         ...
 

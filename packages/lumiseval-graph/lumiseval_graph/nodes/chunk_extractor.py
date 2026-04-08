@@ -34,7 +34,7 @@ class ChunkExtractorNode(BaseNode):
             return ChunkArtifacts(chunks=[chunk], cost=self.estimate(0.0, 0.0))
 
         chunker = semchunk.chunkerify(_count_tokens, self.chunk_size)
-        raw_chunks: list[str] = list(chunker(text))  # type: ignore[arg-type]
+        raw_chunks: list[str] = list(chunker(text))
 
         chunks: list[Chunk] = []
         cursor = 0
@@ -57,5 +57,5 @@ class ChunkExtractorNode(BaseNode):
         log.success(f"{len(chunks)} chunk(s) produced")
         return ChunkArtifacts(chunks=chunks, cost=self.estimate(0.0, 0.0))
 
-    def estimate(self, input_tokens: float, output_tokens: float) -> CostEstimate:  # type: ignore[override]
+    def estimate(self, input_tokens: float, output_tokens: float) -> CostEstimate:
         return CostEstimate(input_tokens=0.0, output_tokens=0.0, cost=0.0)

@@ -4,30 +4,10 @@ from __future__ import annotations
 
 import hashlib
 from enum import Enum
-from typing import Any, Literal, Optional, Union
+from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 
-from lumiseval_core.constants import (
-    AVG_CLAIM_TOKENS,
-    AVG_DEEPEVAL_INPUT_OVERHEAD_TOKENS,
-    AVG_DEEPEVAL_OUTPUT_OVERHEAD_TOKENS,
-    AVG_GEVAL_INPUT_OVERHEAD_TOKENS,
-    AVG_GEVAL_OUTPUT_OVERHEAD_TOKENS,
-    AVG_OUTPUT_TOKENS_BOOLEAN_VERDICT,
-    AVG_OUTPUT_TOKENS_JSON_VERDICT,
-    DEFAULT_DATASET_NAME,
-    DEFAULT_JUDGE_MODEL,
-    DEFAULT_SPLIT,
-    EVIDENCE_VERDICT_SUPPORTED_THRESHOLD,
-    GENERATION_CHUNK_SIZE_TOKENS,
-    SCORE_WEIGHT_ANSWER_RELEVANCY,
-    SCORE_WEIGHT_EVIDENCE_SUPPORT_RATE,
-    SCORE_WEIGHT_FAITHFULNESS,
-    SCORE_WEIGHT_GEVAL,
-    SCORE_WEIGHT_HALLUCINATION,
-    SCORE_WEIGHT_SAFETY,
-)
 
 # ── Enums ──────────────────────────────────────────────────────────────────
 
@@ -185,9 +165,7 @@ class GevalMetrics(BaseModel):
     metrics: list[MetricResult] = Field(default_factory=list)
     cost: CostEstimate | None = None
 
-
-
-class ReferencePayload(BaseModel):
+class ReferenceMetrics(BaseModel):
     metrics: list[MetricResult]
     cost: CostEstimate
 

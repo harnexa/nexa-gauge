@@ -1,15 +1,15 @@
 """Dedup Node — removes near-duplicate items using MMR."""
 
-from lumiseval_core.dedupe.mmr import deduplicate
+from lumiseval_core.dedup.mmr import deduplicate
 from lumiseval_core.types import CostEstimate, DedupArtifacts, Item
 from lumiseval_graph.log import get_node_logger
 from lumiseval_graph.nodes.base import BaseNode
 
-log = get_node_logger("dedupe")
+log = get_node_logger("dedup")
 
 
 class DedupNode(BaseNode):
-    node_name = "dedupe"
+    node_name = "dedup"
 
     def run(self, items: list[Item]) -> DedupArtifacts:  # type: ignore[override]
         unique_items, dedup_map = deduplicate(items)

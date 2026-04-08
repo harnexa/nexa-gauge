@@ -88,7 +88,7 @@ def get_model_pricing(model: str) -> ModelPricing:
         return _FALLBACK_PRICING
 
 
-def cost_usd(n_tokens: int, pricing: ModelPricing, token_type: str) -> float:
+def cost_usd(n_tokens: float, pricing: ModelPricing, token_type: str) -> float:
     """Compute USD cost for *n_tokens* at the given *pricing*.
 
     Args:

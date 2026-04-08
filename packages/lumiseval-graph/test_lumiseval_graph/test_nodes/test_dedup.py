@@ -1,13 +1,13 @@
 # Debug commands:
-# uv run pytest -s packages/lumiseval-graph/test_lumiseval_graph/test_nodes/test_dedupe.py
-# uv run pytest -s packages/lumiseval-graph/test_lumiseval_graph/test_nodes/test_dedupe.py::test_run_returns_dedup_artifacts_from_mocked_deduplicate
-# uv run pytest -s -k "dedupe" packages/lumiseval-graph/test_lumiseval_graph/test_nodes/test_dedupe.py
+# uv run pytest -s packages/lumiseval-graph/test_lumiseval_graph/test_nodes/test_dedup.py
+# uv run pytest -s packages/lumiseval-graph/test_lumiseval_graph/test_nodes/test_dedup.py::test_run_returns_dedup_artifacts_from_mocked_deduplicate
+# uv run pytest -s -k "dedup" packages/lumiseval-graph/test_lumiseval_graph/test_nodes/test_dedup.py
 
 import pytest
 
 from lumiseval_core.types import Item
-from lumiseval_graph.nodes import dedupe as dedupe_module
-from lumiseval_graph.nodes.dedupe import DedupNode
+from lumiseval_graph.nodes import dedup as dedup_module
+from lumiseval_graph.nodes.dedup import DedupNode
 
 
 def test_run_returns_dedup_artifacts_from_mocked_deduplicate(
@@ -22,7 +22,7 @@ def test_run_returns_dedup_artifacts_from_mocked_deduplicate(
     def fake_deduplicate(_items):
         return [items[0], items[2]], {1: 0}
 
-    monkeypatch.setattr(dedupe_module, "deduplicate", fake_deduplicate)
+    monkeypatch.setattr(dedup_module, "deduplicate", fake_deduplicate)
 
     node = DedupNode()
     result = node.run(items)

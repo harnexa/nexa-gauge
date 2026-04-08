@@ -15,29 +15,34 @@ TODO:
 
 import logging
 import uuid
-from typing import Any, Optional, TypedDict, cast
+from typing import Any, NotRequired, Optional, TypedDict, cast
 
 from langgraph.graph import END, StateGraph
 from lumiseval_core.config import config as cfg
-from lumiseval_core.types import (
-    Chunk,
-    Claim,
+from lumiseval_core.constants import DEFAULT_DATASET_NAME, DEFAULT_SPLIT
+from lumisenoval_core.types import (
+    ChunkArtifacts,
+    ClaimArtifacts,
     CostEstimate,
-    EvalCase,
-    EvalJobConfig,
-    EvalReport,
-    GevalConfig,
-    InputMetadata,
+    DedupArtifacts,
+    Geval,
+    GevalMetrics,
+    GevalStepsArtifacts,
+    GroundingMetrics,
+    Inputs,
+    Item,
     MetricResult,
+    ReferencePayload,
+    RedteamMetrics,
+    RelevanceMetrics,
 )
 from lumiseval_evidence.indexer import index_file
-from lumiseval_ingest.scanner import scan_cases
 
 from .llm import get_judge_model
 from .log import get_node_logger, print_pipeline_footer, print_pipeline_header
 from .nodes import claim_extractor, eval
 from .nodes.chunk_extractor import ChunkExtractorNode
-from .nodes.dedup.node import DedupNode
+from .nodes.dedupe import DedupNode
 from .nodes.metrics.geval import GevalNode, GevalStepsNode
 from .nodes.metrics.grounding import GroundingNode
 from .nodes.metrics.redteam import RedteamNode
@@ -65,17 +70,20 @@ _log_agg = get_node_logger("eval")
 # ── Graph state ────────────────────────────────────────────────────────────
 class EvalCase(TypedDict):
     """Canonical dataset row used by adapters and dataset runners."""
+    # Required
     case_id: str
-    dataset: str = DEFAULT_DATASET_NAME
-    split: str = DEFAULT_SPLIT
-    job_id: str = str(uuid.uuid4())
-    reference_files: list[str] = Field(default_factory=list)
-    record: Dict[str, Any]
+    record: dict[str, Any]
 
-    # INPUTS:
+    # Optional with defaults handled at construction time
+    dataset: NotRequired[str]          # default: DEFAULT_DATASET_NAME
+    split: NotRequired[str]            # default: DEFAULT_SPLIT
+    job_id: NotRequired[str]           # default: uuid4
+    reference_files: NotRequired[list[str]]
+
+    # Pipeline inputs
     inputs: Optional[Inputs]
-    # metadata: dict[str, Any] = Field(default_factory=dict)
 
+    # Pipeline artifacts — None until the corresponding node runs
     generation_chunk: Optional[ChunkArtifacts]
     generation_claims: Optional[ClaimArtifacts]
     generation_dedup_claims: Optional[ClaimArtifacts]
@@ -84,8 +92,7 @@ class EvalCase(TypedDict):
     redteam_metrics: Optional[RedteamMetrics]
     geval_steps: Optional[GevalStepsArtifacts]
     geval_metrics: Optional[GevalMetrics]
-    reference_metrics: Optional[ReferenceMetrics]
-    # eval_metrics: list[MetricResult]
+    reference_metrics: Optional[ReferencePayload]
 
 
 @observe(name="node_scan")
@@ -145,9 +152,9 @@ def node_generation_claims(state: EvalCase) -> EvalCase:
 def node_generation_claims_dedup(state: EvalCase) -> EvalCase:
     if not state["generation_claims"]:
         return {"generation_dedup_claims": None}
-    unique_items: list[Item], dedup_map: dict[int, int] = DedupNode().run(items=state["generation_claims"].claims)
+    unique_items, dedup_map = DedupNode().run(items=state["generation_claims"].claims)
     selected_ids = set(dedup_map.values())
-    claims = [claim in for claim in claims if claim.id in selected_ids]
+    claims = [claim for claim in claims if claim.id in selected_ids]
     return {"generation_dedup_claims": claims}
 
 
@@ -209,10 +216,10 @@ def node_geval(state: EvalCase) -> EvalCase:
     model = get_judge_model("geval", state["judge_model"])
     results = GevalNode(judge_model=model).run(
         metrics=metrics,
-        generation=state["generation"],
-        question=state.get("question"),
-        reference=state.get("reference"),
-        context=state.get("context"),
+        generation=state.get("inputs").generation,
+        question=state.get("inputs").question,
+        reference=state.get("inputs").reference,
+        context=state.get("inputs").context,
         steps_by_signature=state.get("geval_steps_by_signature") or {},
     )
     return {"geval_metrics": results}
@@ -256,7 +263,7 @@ def build_graph() -> StateGraph:
     g = StateGraph(EvalCase)
 
     g.add_node("scan", node_metadata_scanner)
-    g.add_node("chunk", node_chunk)
+    g.add_node("generation_chunk", node_generation_chunk)
     g.add_node("claims", node_claims)
     g.add_node("dedup", node_dedup)
     g.add_node("geval_steps", node_geval_steps)
@@ -286,49 +293,6 @@ def build_graph() -> StateGraph:
 
     return g
 
-
-def build_initial_state(
-    generation: str,
-    job_config: Optional[EvalJobConfig] = None,
-    question: Optional[str] = None,
-    reference: Optional[str] = None,
-    context: Optional[list[str]] = None,
-    target_node: Optional[str] = None,
-    geval: Optional[GevalConfig] = None,
-    reference_files: Optional[list[str]] = None,
-) -> EvalState:
-    """Build the canonical graph state for one evaluation input."""
-    if job_config is None:
-        job_config = EvalJobConfig(
-            job_id=str(uuid.uuid4()),
-            judge_model=cfg.LLM_MODEL,
-            web_search=cfg.WEB_SEARCH_ENABLED,
-            evidence_threshold=cfg.EVIDENCE_THRESHOLD,
-        )
-    return EvalState(
-        generation=generation,
-        question=question,
-        reference=reference,
-        context=context or [],
-        target_node=target_node,
-        reference_files=reference_files or [],
-        geval=geval,
-        job_config=job_config,
-        metadata=None,
-        cost_estimate=None,
-        chunks=[],
-        raw_claims=[],
-        unique_claims=[],
-        geval_steps_by_signature={},
-        grounding_metrics=[],
-        relevance_metrics=[],
-        redteam_metrics=[],
-        geval_metrics=[],
-        reference_metrics=[],
-        cost_actual_usd=0.0,
-        report=None,
-        error=None,
-    )
 
 
 @observe(name="lumiseval_pipeline")

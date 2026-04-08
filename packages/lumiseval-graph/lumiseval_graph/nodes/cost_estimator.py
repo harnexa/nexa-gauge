@@ -35,8 +35,8 @@ from rich.table import Table
 from rich.text import Text
 
 from lumiseval_graph.llm.config import get_judge_model
+from lumiseval_graph.nodes.dedup import DedupNode
 from lumiseval_graph.nodes.claim_extractor import ClaimExtractorNode
-from lumiseval_graph.nodes.metrics.dedup import DedupNode
 from lumiseval_graph.nodes.metrics.geval import GevalNode, GevalStepsNode
 from lumiseval_graph.nodes.metrics.grounding import GroundingNode
 from lumiseval_graph.nodes.metrics.redteam import RedteamNode

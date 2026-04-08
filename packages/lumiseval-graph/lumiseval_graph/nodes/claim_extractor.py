@@ -37,7 +37,7 @@ class ClaimExtractorNode(BaseNode):
     def __init__(self, model: str = DEFAULT_JUDGE_MODEL) -> None:
         self.model = model
 
-    def run(self, chunks: list[Chunk]) -> ClaimArtifacts:  # type: ignore[override]
+    def run(self, chunks: list[Chunk]) -> ClaimArtifacts:
         llm = get_llm("claims", _ClaimList, self.model)
         pricing = get_model_pricing(self.model)
 
@@ -84,7 +84,7 @@ class ClaimExtractorNode(BaseNode):
         log.success(f"{len(valid_claims)} total claim(s) across all chunks")
         return ClaimArtifacts(claims=valid_claims, cost=costs)
 
-    def estimate(self, input_tokens: float, output_tokens: float) -> CostEstimate:  # type: ignore[override]
+    def estimate(self, input_tokens: float, output_tokens: float) -> CostEstimate:
         pricing = get_model_pricing(self.model)
         billable_input = self.static_prompt_tokens + input_tokens
         return CostEstimate(
