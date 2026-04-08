@@ -332,7 +332,7 @@ def run(
         None,
         "--output-dir",
         "-o",
-        help="Write per-case JSON output here (eval only).",
+        help="Write per-case JSON report output here when a run produces `report`.",
     ),
 ) -> None:
     """Execute selected cases up to `node_name` without preflight prompts."""
@@ -376,7 +376,7 @@ def run(
     cache_store: CacheStore = NoOpCacheStore() if no_cache else CacheStore(cache_dir)
     runner = CachedNodeRunner(cache_store=cache_store)
 
-    if output_dir and target_node == "eval":
+    if output_dir:
         output_dir.mkdir(parents=True, exist_ok=True)
 
     console.print(f"\n[cyan]Running '{target_node}' on {len(cases)} case(s)...[/cyan]\n")
@@ -409,7 +409,7 @@ def run(
         total_executed += len(result.executed_nodes)
         total_cached += len(result.cached_nodes)
 
-        if output_dir and target_node == "eval":
+        if output_dir:
             report = result.final_state.get("report")
             if report is not None:
                 out_path = output_dir / f"{_slug(result.case_id)}.json"
