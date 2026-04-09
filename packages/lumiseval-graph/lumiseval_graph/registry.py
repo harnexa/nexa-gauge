@@ -31,6 +31,7 @@ NODE_FNS: dict[str, NodeFn] = {
     "geval": _graph.node_geval,
     "reference": _graph.node_reference,
     "eval": _graph.node_eval,
+    "report": _graph.node_report,
 }
 
 # Guard: every pipeline node must have a registered function

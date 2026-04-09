@@ -234,8 +234,19 @@ class CachedNodeRunner:
 
     @staticmethod
     def _plan_nodes(node_name: str) -> list[str]:
-        """Return strict prerequisite chain plus target node."""
-        return list(NODES_BY_NAME[node_name].prerequisites) + [node_name]
+        """Return strict prerequisite chain plus target node.
+
+        Metric targets and ``eval`` always finish with ``report`` so users
+        receive an aggregated report for both partial metric branches and
+        full-eval runs.
+        """
+        plan = list(NODES_BY_NAME[node_name].prerequisites) + [node_name]
+
+        needs_report = node_name == "eval" or node_name in METRIC_NODES
+        if needs_report and node_name != "report" and "report" not in plan and "report" in NODE_FNS:
+            plan.append("report")
+
+        return plan
 
     def _get_cached_entry(
         self,
@@ -444,8 +455,8 @@ class CachedNodeRunner:
             step = plan[i]
 
             # `cost_estimate` is no longer a graph node. For eval runs we inject
-            # it here once scan metadata is available so `eval.aggregate(...)`
-            # can keep including report.cost_estimate.
+            # it here once scan metadata is available so the terminal `report`
+            # node can include report.cost_estimate.
             if node_name == "eval" and step == "eval" and state.get("cost_estimate") is None:
                 metadata = state.get("metadata")
                 if metadata is not None:

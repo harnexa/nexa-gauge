@@ -6,7 +6,7 @@ requires-python = ">=3.10"
 dependencies = [
     "python-dotenv>=1.0.0",
     "langgraph>=0.2.0",
-    "litellm>=1.82.0",
+    "litellm==1.82.6",
     "tokencost>=0.1.26",
     "ragas>=0.4.0",
     "deepeval>=1.0.0",

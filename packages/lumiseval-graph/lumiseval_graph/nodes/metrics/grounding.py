@@ -5,6 +5,7 @@ from typing import Tuple
 from pydantic import BaseModel
 
 from lumiseval_core.types import (
+    Item,
     Claim,
     CostEstimate,
     Faithfulness,
@@ -80,17 +81,13 @@ class GroundingNode(BaseMetricNode):
     def run(  # type: ignore[override]
         self,
         claims: list[Claim],
-        context: str | list[str] | None,
+        context: Item,
         enable_grounding: bool = True,
     ) -> GroundingMetrics:
         zero_cost = CostEstimate(cost=0.0, input_tokens=None, output_tokens=None)
         if not claims or not enable_grounding:
             return GroundingMetrics(metrics=[], cost=zero_cost)
-
-        if isinstance(context, list):
-            context_text = "\n\n".join([c for c in context if c])
-        else:
-            context_text = context or ""
+        context_text = context.text
 
         if not context_text.strip():
             log.info("No context passages — skipping grounding")

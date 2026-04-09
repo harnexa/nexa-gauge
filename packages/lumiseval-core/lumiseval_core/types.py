@@ -111,7 +111,7 @@ class Inputs(BaseModel):
 
     @model_validator(mode="after")
     def _set_has_flags(self) -> "Inputs":
-        self.has_generation = self.generation is not None
+        self.has_generation = bool(self.generation and self.generation.text)
         self.has_question = self.question is not None
         self.has_reference = self.reference is not None
         self.has_context = self.context is not None

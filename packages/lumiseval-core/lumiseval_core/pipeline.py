@@ -184,6 +184,12 @@ PIPELINE: list[NodeSpec] = [
         color="gold1",
         env_key_suffixes=("EVAL",),
     ),
+    NodeSpec(
+        name="report",
+        prerequisites=("eval",),
+        color="gold3",
+        env_key_suffixes=("REPORT",),
+    ),
 ]
 
 # ── Derived constants (computed once at import time) ──────────────────────────
