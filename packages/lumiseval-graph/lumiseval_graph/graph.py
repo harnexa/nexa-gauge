@@ -46,7 +46,7 @@ from .nodes.metrics.redteam import RedteamNode
 from .nodes.metrics.reference import ReferenceNode
 from .nodes.metrics.relevance import RelevanceNode
 from .observability import observe, score_trace, update_trace
-from .scanner import scan as scan_record
+from .nodes.scanner import scan as scan_record
 
 logger = logging.getLogger(__name__)
 

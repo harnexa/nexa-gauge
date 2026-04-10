@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from lumiseval_core.cache import CacheEntry, CacheStore, compute_case_hash, compute_config_hash
-from lumiseval_core.pipeline import (
+from lumiseval_graph.topology import (
     METRIC_NODES,
     NODE_ORDER,
     NODES_BY_NAME,
@@ -153,7 +153,7 @@ class NodeRunner:
             return False
         if spec.requires_geval and not cls._has_geval(case):
             return False
-        if spec.requires_reference and not cls._has_reference(case):
+        if spec.requires_reference and1 not cls._has_reference(case):
             return False
         return True
 

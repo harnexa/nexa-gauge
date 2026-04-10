@@ -6,14 +6,14 @@ the graph module (callables), keeping circular imports out of graph.py and node_
 
 To add a new metric node:
   1. Write the node function in lumiseval_graph/nodes/metrics/<name>.py
-  2. Add a NodeSpec entry to PIPELINE in lumiseval_core/pipeline.py
+  2. Add a NodeSpec entry to PIPELINE in lumiseval_graph/topology.py
   3. Add one entry to NODE_FNS here
   4. Add g.add_edge() calls in lumiseval_graph/graph.py build_graph()
 """
 
 from typing import Any, Callable
 
-from lumiseval_core.pipeline import PIPELINE
+from lumiseval_graph.topology import PIPELINE
 
 from lumiseval_graph import graph as _graph
 

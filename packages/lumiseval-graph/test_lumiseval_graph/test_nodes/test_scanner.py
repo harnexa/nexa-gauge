@@ -8,7 +8,7 @@ import json
 import pytest
 
 from lumiseval_core.constants import DEFAULT_DATASET_NAME, DEFAULT_SPLIT
-from lumiseval_graph.scanner import scan, scan_file_record
+from lumiseval_graph.nodes.scanner import scan, scan_file_record
 
 
 def test_scan_builds_inputs_with_primary_keys() -> None:

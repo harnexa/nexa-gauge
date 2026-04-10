@@ -16,7 +16,7 @@ from typing import Any, Optional
 import typer
 from lumiseval_core.cache import CacheStore, NoOpCacheStore
 from lumiseval_core.errors import InputParseError
-from lumiseval_core.pipeline import NODE_ORDER, NODES_BY_NAME
+from lumiseval_graph.topology import NODE_ORDER, NODES_BY_NAME
 from lumiseval_core.types import EvalCase, EvalJobConfig
 from lumiseval_graph import CachedNodeRunner, estimate_preflight
 from lumiseval_cli.adapters import create_dataset_adapter
