@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Mapping, Optional
 
 from pydantic import BaseModel
 
@@ -50,9 +50,10 @@ class GevalStepsNode(BaseMetricNode):
     def __init__(
         self,
         judge_model: str = "gpt-4o-mini",
+        llm_overrides: Optional[Mapping[str, Any]] = None,
         artifact_cache: Optional[GevalArtifactCache] = None,
     ) -> None:
-        super().__init__(judge_model=judge_model)
+        super().__init__(judge_model=judge_model, llm_overrides=llm_overrides)
         self._artifact_cache = artifact_cache or GevalArtifactCache()
 
     @staticmethod
@@ -81,7 +82,12 @@ class GevalStepsNode(BaseMetricNode):
         )
 
     def _generate_steps(self, criteria: str, metric_name: str) -> tuple[list[Item], CostEstimate]:
-        llm = get_llm("geval_steps", _GevalStepsResponse, self.judge_model)
+        llm = get_llm(
+            "geval_steps",
+            _GevalStepsResponse,
+            self.judge_model,
+            llm_overrides=self.llm_overrides,
+        )
         response = llm.invoke(
             [
                 {"role": "system", "content": self.SYSTEM_PROMPT},

@@ -14,7 +14,14 @@ Two entry points:
 Both respect per-node env var overrides (LLM_{NODE}_MODEL / LLM_{NODE}_FALLBACK_MODEL).
 """
 
-from lumiseval_graph.llm.config import NodeModelConfig, get_judge_model, get_node_config
+from lumiseval_graph.llm.config import (
+    NodeModelConfig,
+    RuntimeLLMOverrides,
+    get_judge_model,
+    get_node_config,
+    normalize_node_name,
+    normalize_runtime_overrides,
+)
 from lumiseval_graph.llm.gateway import StructuredLLM, get_llm
 
 __all__ = [
@@ -25,4 +32,7 @@ __all__ = [
     "get_judge_model",
     "get_node_config",
     "NodeModelConfig",
+    "RuntimeLLMOverrides",
+    "normalize_node_name",
+    "normalize_runtime_overrides",
 ]

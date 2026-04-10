@@ -17,13 +17,13 @@ Usage:
 
 import logging
 import os
-from typing import Any, Dict, List, Optional, Type, TypeVar
+from typing import Any, Dict, List, Mapping, Optional, Type, TypeVar
 
 import litellm
 from lumiseval_core.constants import LLM_CALL_TIMEOUT_SECONDS
 from pydantic import BaseModel
 
-from lumiseval_graph.llm.config import get_node_config
+from lumiseval_graph.llm.config import get_node_config, normalize_node_name
 
 logger = logging.getLogger(__name__)
 
@@ -55,14 +55,20 @@ class StructuredLLM:
         }
     """
 
-    def __init__(self, node_name: str, schema: Type[T], default_model: str):
+    def __init__(
+        self,
+        *,
+        node_name: str,
+        schema: Type[T],
+        model: str,
+        temperature: float,
+        fallback_model: Optional[str],
+    ):
         self.node_name = node_name
         self.schema = schema
-
-        cfg = get_node_config(node_name)
-        self.model = cfg.model or default_model
-        self.temperature = cfg.temperature
-        self.fallback_model = cfg.fallback_model
+        self.model = model
+        self.temperature = temperature
+        self.fallback_model = fallback_model
 
     # ── Internal helpers ───────────────────────────────────────────────────
 
@@ -125,7 +131,12 @@ class StructuredLLM:
 # ── Public factory ──────────────────────────────────────────────────────────
 
 
-def get_llm(node_name: str, schema: Type[T], default_model: str) -> StructuredLLM:
+def get_llm(
+    node_name: str,
+    schema: Type[T],
+    default_model: str,
+    llm_overrides: Optional[Mapping[str, Any]] = None,
+) -> StructuredLLM:
     """
     Return a cached StructuredLLM for ``node_name``.
 
@@ -133,11 +144,24 @@ def get_llm(node_name: str, schema: Type[T], default_model: str) -> StructuredLL
         node_name:     Node identifier (e.g. ``"claims"``).
         schema:        Pydantic model class for structured output.
         default_model: Job-level judge model used when no env var overrides the node.
+        llm_overrides: Optional per-run overrides for model/fallback/temperature.
 
     Returns:
         StructuredLLM — shared instance per (node_name, schema, default_model) triple.
     """
-    key = f"{node_name}:{schema.__name__}:{default_model}"
+    canonical_node_name = normalize_node_name(node_name, strict=True)
+    cfg = get_node_config(canonical_node_name, llm_overrides=llm_overrides)
+    resolved_model = cfg.model or default_model
+    key = (
+        f"{canonical_node_name}:{schema.__name__}:"
+        f"{resolved_model}:{cfg.fallback_model or ''}:{cfg.temperature}"
+    )
     if key not in _cache:
-        _cache[key] = StructuredLLM(node_name, schema, default_model)
+        _cache[key] = StructuredLLM(
+            node_name=canonical_node_name,
+            schema=schema,
+            model=resolved_model,
+            temperature=cfg.temperature,
+            fallback_model=cfg.fallback_model,
+        )
     return _cache[key]

@@ -49,7 +49,12 @@ class RelevanceNode(BaseMetricNode):
 
     def _answer_relevancy(self, claims: list[Claim], question: str) -> Tuple[MetricResult, CostEstimate]:
         numbered = "\n".join(f"{i + 1}. {c.item.text}" for i, c in enumerate(claims))
-        response = get_llm("relevance_answer", _RelevancyResult, self.judge_model).invoke(
+        response = get_llm(
+            "relevance",
+            _RelevancyResult,
+            self.judge_model,
+            llm_overrides=self.llm_overrides,
+        ).invoke(
             [
                 {"role": "system", "content": self.SYSTEM_PROMPT},
                 {"role": "user", "content": self.USER_PROMPT.format(question=question, claims=numbered)},

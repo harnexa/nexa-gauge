@@ -14,7 +14,7 @@ Subclass contract:
 """
 
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Mapping, Optional
 
 from lumiseval_core.constants import DEFAULT_JUDGE_MODEL
 from lumiseval_core.types import (
@@ -70,8 +70,13 @@ class BaseMetricNode(BaseNode):
     SYSTEM_PROMPT: str = ""
     USER_PROMPT: str = ""
 
-    def __init__(self, judge_model: str = DEFAULT_JUDGE_MODEL) -> None:
+    def __init__(
+        self,
+        judge_model: str = DEFAULT_JUDGE_MODEL,
+        llm_overrides: Optional[Mapping[str, Any]] = None,
+    ) -> None:
         self.judge_model = judge_model
+        self.llm_overrides = llm_overrides
 
     def __repr__(self) -> str:
         return f"<{self.__class__.__name__} judge_model={self.judge_model!r}>"

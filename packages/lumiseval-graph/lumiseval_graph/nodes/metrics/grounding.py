@@ -39,7 +39,12 @@ class GroundingNode(BaseMetricNode):
 
     def _grounding(self, claims: list[Claim], context: str) -> Tuple[MetricResult, CostEstimate]:
         numbered = "\n".join(f"{i + 1}. {c.item.text}" for i, c in enumerate(claims))
-        response = get_llm("grounding", _GroundingResult, self.judge_model).invoke(
+        response = get_llm(
+            "grounding",
+            _GroundingResult,
+            self.judge_model,
+            llm_overrides=self.llm_overrides,
+        ).invoke(
             [
                 {"role": "system", "content": self.SYSTEM_PROMPT},
                 {"role": "user", "content": self.USER_PROMPT.format(context=context, claims=numbered)},
@@ -81,13 +86,19 @@ class GroundingNode(BaseMetricNode):
     def run(  # type: ignore[override]
         self,
         claims: list[Claim],
-        context: Item,
+        context: Item | str | list[str] | None,
         enable_grounding: bool = True,
     ) -> GroundingMetrics:
         zero_cost = CostEstimate(cost=0.0, input_tokens=None, output_tokens=None)
         if not claims or not enable_grounding:
             return GroundingMetrics(metrics=[], cost=zero_cost)
-        context_text = context.text
+
+        if isinstance(context, Item):
+            context_text = context.text
+        elif isinstance(context, list):
+            context_text = "\n\n".join([c for c in context if c])
+        else:
+            context_text = context or ""
 
         if not context_text.strip():
             log.info("No context passages — skipping grounding")

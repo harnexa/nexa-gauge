@@ -1,5 +1,7 @@
 """Claim Extractor Node."""
 
+from typing import Any, Mapping, Optional
+
 from pydantic import BaseModel, Field
 
 from lumiseval_core.constants import DEFAULT_JUDGE_MODEL
@@ -34,11 +36,16 @@ class ClaimExtractorNode(BaseNode):
     )
     static_prompt_tokens: int = _count_tokens(SYSTEM_PROMPT) + template_static_tokens(USER_PROMPT)
 
-    def __init__(self, model: str = DEFAULT_JUDGE_MODEL) -> None:
+    def __init__(
+        self,
+        model: str = DEFAULT_JUDGE_MODEL,
+        llm_overrides: Optional[Mapping[str, Any]] = None,
+    ) -> None:
         self.model = model
+        self.llm_overrides = llm_overrides
 
     def run(self, chunks: list[Chunk]) -> ClaimArtifacts:
-        llm = get_llm("claims", _ClaimList, self.model)
+        llm = get_llm("claims", _ClaimList, self.model, llm_overrides=self.llm_overrides)
         pricing = get_model_pricing(self.model)
 
         all_claims: list[Claim] = []

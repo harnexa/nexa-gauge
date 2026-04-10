@@ -1,5 +1,5 @@
 .DEFAULT_GOAL := help
-.PHONY: help install sync lint format typecheck test test-verbose test-pkg ci clean clean-venv
+.PHONY: help install sync lint format typecheck test test-verbose test-pkg test_graph ci clean clean-venv
 
 # ── Variables ──────────────────────────────────────────────────────────────
 PROJECT_NAME := lumis-eval
@@ -37,6 +37,9 @@ test-verbose: ## Run all tests with verbose output
 
 test-pkg: ## Run tests for a specific package. Usage: make test-pkg PKG=packages/lumiseval-core
 	uv run pytest $(PKG)
+
+test_graph: ## Run lumiseval-graph tests with output
+	uv run pytest -s packages/lumiseval-graph/test_lumiseval_graph
 
 # ── CI ─────────────────────────────────────────────────────────────────────
 ci: ## Run full CI pipeline locally (format check → lint → test)

@@ -9,31 +9,18 @@ Environment variable convention (all optional):
   LLM_{NODE}_FALLBACK_MODEL  — model to use if primary call fails
   LLM_{NODE}_TEMPERATURE     — float temperature (default: 0.0)
 
-Where {NODE} is the node name uppercased, with spaces/hyphens → underscores:
-
-  Node name          Environment variable prefix
-  ─────────────────  ──────────────────────────
-  claims             LLM_CLAIMS_*
-  grounding          LLM_GROUNDING_*
-  relevance          LLM_RELEVANCE_*
-  redteam            LLM_REDTEAM_*
-  geval              LLM_GEVAL_*
+Where {NODE} is the node name uppercased, with spaces/hyphens → underscores.
 
 Example .env:
-  # Route grounding checks through a cheaper model
   LLM_GROUNDING_MODEL=gpt-4o-mini
   LLM_GROUNDING_FALLBACK_MODEL=gpt-4o
-
-  # Use a stronger model for claim extraction
   LLM_CLAIMS_MODEL=gpt-4o
   LLM_CLAIMS_FALLBACK_MODEL=gpt-4o-mini
 """
 
 import os
 from dataclasses import dataclass
-from typing import Optional
-
-from lumiseval_core.pipeline import NODES_BY_NAME as _NODES_BY_NAME
+from typing import Any, Mapping, Optional, TypedDict
 
 
 @dataclass
@@ -45,64 +32,129 @@ class NodeModelConfig:
     fallback_model: Optional[str]
 
 
-# Sub-metric keys not represented as top-level pipeline nodes
-_SUBMETRIC_ENV_KEYS: dict[str, list[str]] = {
-    "faithfulness": ["FAITHFULNESS"],
-    "answer_relevancy": ["ANSWER_RELEVANCY"],
+class RuntimeLLMOverrides(TypedDict, total=False):
+    """Optional per-run overrides applied before env/default routing."""
+
+    models: dict[str, str]
+    fallback_models: dict[str, str]
+    temperatures: dict[str, float]
+
+
+_KNOWN_NODES: frozenset[str] = frozenset({
+    "claims", "chunk", "dedup", "relevance",
+    "grounding", "reference", "redteam", "geval", "geval_steps",
+})
+
+_NODE_ALIASES: dict[str, str] = {
+    f"{prefix}{n}": n
+    for n in _KNOWN_NODES
+    for prefix in ("node_", "generation_")
 }
 
 
-def _candidate_env_prefixes(node_name: str) -> list[str]:
-    if node_name in _SUBMETRIC_ENV_KEYS:
-        return _SUBMETRIC_ENV_KEYS[node_name]
-    spec = _NODES_BY_NAME.get(node_name)
-    if spec and spec.env_key_suffixes:
-        return list(spec.env_key_suffixes)
-    return [node_name.upper().replace("-", "_").replace(" ", "_")]
+def normalize_node_name(node_name: str, strict: bool = False) -> str:
+    """Normalize a node name to a consistent key (lowercase, underscores).
+
+    Resolves aliases like ``"node_claims"`` or ``"generation_claims"`` to
+    their canonical form ``"claims"`` via an explicit lookup table.
+    """
+    name = str(node_name).strip().lower().replace("-", "_").replace(" ", "_")
+    return _NODE_ALIASES.get(name, name)
 
 
-def get_node_config(node_name: str) -> NodeModelConfig:
+def normalize_runtime_overrides(
+    llm_overrides: Optional[Mapping[str, Any]],
+) -> RuntimeLLMOverrides:
+    """Canonicalize runtime override dictionaries."""
+    if not llm_overrides:
+        return {}
+
+    models: dict[str, str] = {}
+    fallback_models: dict[str, str] = {}
+    temperatures: dict[str, float] = {}
+
+    raw_models = llm_overrides.get("models")
+    if isinstance(raw_models, Mapping):
+        for node_name, model in raw_models.items():
+            if model is None:
+                continue
+            model_text = str(model).strip()
+            if not model_text:
+                continue
+            models[normalize_node_name(node_name)] = model_text
+
+    raw_fallbacks = llm_overrides.get("fallback_models")
+    if isinstance(raw_fallbacks, Mapping):
+        for node_name, model in raw_fallbacks.items():
+            if model is None:
+                continue
+            model_text = str(model).strip()
+            if not model_text:
+                continue
+            fallback_models[normalize_node_name(node_name)] = model_text
+
+    raw_temps = llm_overrides.get("temperatures")
+    if isinstance(raw_temps, Mapping):
+        for node_name, temp in raw_temps.items():
+            temperatures[normalize_node_name(node_name)] = float(temp)
+
+    return RuntimeLLMOverrides(
+        models=models,
+        fallback_models=fallback_models,
+        temperatures=temperatures,
+    )
+
+
+def _env_prefix(node_name: str) -> str:
+    return normalize_node_name(node_name).upper()
+
+
+def get_node_config(
+    node_name: str,
+    llm_overrides: Optional[Mapping[str, Any]] = None,
+) -> NodeModelConfig:
     """
     Build NodeModelConfig for a node by reading env var overrides.
 
     Args:
         node_name: Node identifier, e.g. ``"claims"``.
+        llm_overrides: Optional runtime override payload.
 
     Returns:
         NodeModelConfig — fields are None/defaults when the env var is absent.
     """
-    model = None
-    fallback = None
-    temperature = 0.0
-    temperature_set = False
+    key = _env_prefix(node_name)
+    normalized = normalize_node_name(node_name)
 
-    for key in _candidate_env_prefixes(node_name):
-        if model is None:
-            candidate_model = os.getenv(f"LLM_{key}_MODEL")
-            if candidate_model:
-                model = candidate_model
-        if fallback is None:
-            candidate_fallback = os.getenv(f"LLM_{key}_FALLBACK_MODEL")
-            if candidate_fallback:
-                fallback = candidate_fallback
-        if not temperature_set:
-            temp_raw = os.getenv(f"LLM_{key}_TEMPERATURE")
-            if temp_raw is not None:
-                temperature = float(temp_raw)
-                temperature_set = True
+    model = os.getenv(f"LLM_{key}_MODEL") or None
+    fallback = os.getenv(f"LLM_{key}_FALLBACK_MODEL") or None
+    temp_raw = os.getenv(f"LLM_{key}_TEMPERATURE")
+    temperature = float(temp_raw) if temp_raw is not None else 0.0
+
+    if llm_overrides:
+        normalized_overrides = normalize_runtime_overrides(llm_overrides)
+        model = normalized_overrides.get("models", {}).get(normalized, model)
+        fallback = normalized_overrides.get("fallback_models", {}).get(normalized, fallback)
+        if normalized in normalized_overrides.get("temperatures", {}):
+            temperature = float(normalized_overrides["temperatures"][normalized])
 
     return NodeModelConfig(model=model, temperature=temperature, fallback_model=fallback)
 
 
-def get_judge_model(node_name: str, default: str) -> str:
+def get_judge_model(
+    node_name: str,
+    default: str,
+    llm_overrides: Optional[Mapping[str, Any]] = None,
+) -> str:
     """
     Return the model to use for a node.
 
-    Priority: env var override → ``default`` (the job's ``judge_model``).
+    Priority: runtime override → env var override → ``default``.
 
     Args:
         node_name: Node identifier.
         default: Fallback model string (typically ``job_config.judge_model``).
+        llm_overrides: Optional runtime override payload.
     """
-    cfg = get_node_config(node_name)
+    cfg = get_node_config(node_name, llm_overrides=llm_overrides)
     return cfg.model or default

@@ -16,7 +16,7 @@ TODO:
 import logging
 import uuid
 from pathlib import Path
-from typing import Any, Optional, TypedDict, cast
+from typing import Any, Mapping, Optional, TypedDict, cast
 
 from langgraph.graph import END, StateGraph
 from lumiseval_core.config import config as cfg
@@ -70,6 +70,7 @@ class EvalCase(TypedDict):
     """Canonical dataset row used by adapters and dataset runners."""
     # Required
     record: dict[str, str]
+    llm_overrides: Optional[Mapping[str, Any]]
 
     # Pipeline inputs
     inputs: Optional[Inputs]
@@ -134,8 +135,12 @@ def node_generation_claims(state: EvalCase) -> dict[str, Any]:
     generation_chunk = state.get("generation_chunk")
     if not inputs or not inputs.generation or not generation_chunk:
         return {"generation_claims": None}
-    model = get_judge_model("node_generation_claims", cfg.LLM_MODEL)
-    claims = claim_extractor.ClaimExtractorNode(model=model).run(
+    llm_overrides = state.get("llm_overrides")
+    model = get_judge_model("claims", cfg.LLM_MODEL, llm_overrides=llm_overrides)
+    claims = claim_extractor.ClaimExtractorNode(
+        model=model,
+        llm_overrides=llm_overrides,
+    ).run(
         generation_chunk.chunks
     )
 
@@ -168,11 +173,14 @@ def node_grounding(state: EvalCase) -> dict[str, Any]:
         return {"grounding_metrics": None}
     dedup_claims = state["generation_dedup_claims"]
     claims: list[Claim] = dedup_claims.claims if dedup_claims else []
-    model = get_judge_model("node_grounding", cfg.LLM_MODEL)
-    results = GroundingNode(judge_model=model).run(
+    llm_overrides = state.get("llm_overrides")
+    model = get_judge_model("grounding", cfg.LLM_MODEL, llm_overrides=llm_overrides)
+    context_item = inputs.context
+    enable_grounding = bool(context_item and context_item.text.strip())
+    results = GroundingNode(judge_model=model, llm_overrides=llm_overrides).run(
         claims=claims,
-        context=inputs.context,
-        enable_grounding=True if inputs.context.text.strip() else False
+        context=context_item or inputs.generation,
+        enable_grounding=enable_grounding,
     )
     return {"grounding_metrics": results}
 
@@ -184,11 +192,12 @@ def node_relevance(state: EvalCase) -> dict[str, Any]:
         return {"relevance_metrics": None}
     dedup_claims = state["generation_dedup_claims"]
     claims: list[Claim] = dedup_claims.claims if dedup_claims else []
-    model = get_judge_model("node_relevance", cfg.LLM_MODEL)
-    results = RelevanceNode(judge_model=model).run(
+    llm_overrides = state.get("llm_overrides")
+    model = get_judge_model("relevance", cfg.LLM_MODEL, llm_overrides=llm_overrides)
+    results = RelevanceNode(judge_model=model, llm_overrides=llm_overrides).run(
         claims=claims,
         question=inputs.question,
-        enable_relevance=True if inputs.question.text.strip() else False
+        enable_relevance=bool(inputs.question and inputs.question.text.strip()),
     )
     return {"relevance_metrics": results}
 
@@ -198,7 +207,8 @@ def node_redteam(state: EvalCase) -> dict[str, Any]:
     inputs = state["inputs"]
     if not inputs:
         return {"redteam_metrics": None}
-    model = get_judge_model("node_redteam", cfg.LLM_MODEL)
+    llm_overrides = state.get("llm_overrides")
+    model = get_judge_model("redteam", cfg.LLM_MODEL, llm_overrides=llm_overrides)
     results = RedteamNode(judge_model=model).run(item=inputs.generation)
     return {"redteam_metrics": results}
 
@@ -213,8 +223,12 @@ def node_geval_steps(state: EvalCase) -> dict[str, Any]:
     if not metrics:
         return {"geval_steps": None}
 
-    model = get_judge_model("geval_steps", cfg.LLM_MODEL)
-    artifacts: GevalStepsArtifacts = GevalStepsNode(judge_model=model).run(metrics=metrics)
+    llm_overrides = state.get("llm_overrides")
+    model = get_judge_model("geval_steps", cfg.LLM_MODEL, llm_overrides=llm_overrides)
+    artifacts: GevalStepsArtifacts = GevalStepsNode(
+        judge_model=model,
+        llm_overrides=llm_overrides,
+    ).run(metrics=metrics)
     return {"geval_steps": artifacts}
 
 
@@ -228,7 +242,8 @@ def node_geval(state: EvalCase) -> dict[str, Any]:
     if not metrics:
         return {"geval_metrics": None}
 
-    model = get_judge_model("geval", cfg.LLM_MODEL)
+    llm_overrides = state.get("llm_overrides")
+    model = get_judge_model("geval", cfg.LLM_MODEL, llm_overrides=llm_overrides)
     geval_steps = state.get("geval_steps")
     resolved_artifacts = geval_steps.resolved_steps if geval_steps else []
     results = GevalNode(judge_model=model).run(
