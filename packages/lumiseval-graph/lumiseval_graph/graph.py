@@ -14,11 +14,9 @@ TODO:
 """
 
 import logging
-import uuid
 from pathlib import Path
 from typing import Any, Mapping, Optional, TypedDict, cast
 
-from langgraph.graph import END, StateGraph
 from lumiseval_core.config import config as cfg
 from lumiseval_core.constants import GENERATION_CHUNK_SIZE_TOKENS
 from lumiseval_core.types import (
@@ -35,10 +33,8 @@ from lumiseval_core.types import (
     RedteamMetrics,
     RelevanceMetrics,
 )
-from lumiseval_core.utils import pprint_model
 
 from .llm import get_judge_model
-from .log import get_node_logger, print_pipeline_footer, print_pipeline_header
 from .nodes import claim_extractor, report
 from .nodes.chunk_extractor import ChunkExtractorNode
 from .nodes.dedup import DedupNode
@@ -47,7 +43,7 @@ from .nodes.metrics.grounding import GroundingNode
 from .nodes.metrics.redteam import RedteamNode
 from .nodes.metrics.reference import ReferenceNode
 from .nodes.metrics.relevance import RelevanceNode
-from .observability import observe, score_trace, update_trace
+from .observability import observe
 from .nodes.scanner import scan as scan_record
 
 logger = logging.getLogger(__name__)
@@ -380,9 +376,6 @@ def node_geval(state: EvalCase) -> dict[str, Any]:
     if not should_run:
         return {"geval_metrics": None}
     
-    geval_cfg = inputs.geval
-    metrics = geval_cfg.metrics if geval_cfg is not None else []
-
     llm_overrides = state.get("llm_overrides")
     model = get_judge_model("geval", cfg.LLM_MODEL, llm_overrides=llm_overrides)
     node = GevalNode(judge_model=model)

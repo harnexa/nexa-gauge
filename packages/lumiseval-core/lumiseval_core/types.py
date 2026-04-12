@@ -6,7 +6,7 @@ import hashlib
 from enum import Enum
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 
 ExecutionMode = Literal["run", "estimate"]
@@ -62,6 +62,7 @@ class Item(BaseModel):
     cached: bool = False
 
     def model_post_init(self, __context: Any) -> None:
+        del __context
         if not self.id:
             self.id = hashlib.sha256(self.text.encode("utf-8")).hexdigest()[:16]
 

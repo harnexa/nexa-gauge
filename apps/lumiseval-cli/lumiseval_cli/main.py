@@ -20,6 +20,18 @@ from .cli.util import (
 
 app = typer.Typer(name="lumiseval", help="Agentic LLM evaluation pipeline.")
 
+__all__ = [
+    "app",
+    "main",
+    "run",
+    "estimate",
+    "DEFAULT_PRIMARY_LLM",
+    "DEFAULT_FALLBACK_LLM",
+    "_collect_estimate_rows",
+    "_parse_model_overrides",
+    "_resolve_runtime_llm_overrides",
+]
+
 
 @app.callback()
 def cli() -> None:

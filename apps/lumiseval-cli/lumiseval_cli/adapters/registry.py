@@ -13,7 +13,6 @@ def create_dataset_adapter(
     source: str | Path,
     adapter: str = "auto",
     *,
-    field_map: dict | None = None,
     config_name: str | None = None,
     revision: str | None = None,
 ) -> DatasetAdapter:
@@ -32,7 +31,6 @@ def create_dataset_adapter(
             dataset_id=dataset_id,
             config_name=config_name,
             revision=revision,
-            field_map=field_map,
         )
 
     # auto mode
@@ -42,7 +40,6 @@ def create_dataset_adapter(
             dataset_id=dataset_id,
             config_name=config_name,
             revision=revision,
-            field_map=field_map,
         )
 
     path = Path(source_str)

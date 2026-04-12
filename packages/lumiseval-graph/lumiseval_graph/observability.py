@@ -60,6 +60,7 @@ def _noop_decorator(
     **kwargs: Any,
 ) -> Any:
     """No-op stand-in for @observe when Langfuse is unavailable."""
+    del name, as_type, kwargs
     if func is not None:
         return func
 
