@@ -24,22 +24,23 @@ from pydantic import BaseModel
 
 from lumiseval_core.constants import CACHE_DIR
 from lumiseval_core.types import (
-    ChunkArtifacts,
     Chunk,
-    ClaimArtifacts,
+    ChunkArtifacts,
     Claim,
+    ClaimArtifacts,
+    CostEstimate,
     EvalReport,
     Geval,
     GevalConfig,
     GevalMetrics,
     GevalStepsArtifacts,
+    GroundingMetrics,
     Inputs,
     MetricResult,
     Redteam,
     RedteamMetrics,
     ReferenceMetrics,
     RelevanceMetrics,
-    GroundingMetrics,
 )
 
 # ── Field → Pydantic type map ────────────────────────────────────────────────
@@ -109,16 +110,20 @@ class NodeCacheBackend(Protocol):
 
 def _serialize(node_output: dict[str, Any]) -> dict[str, Any]:
     """Convert a node output dict to a JSON-serialisable form."""
+    def _to_jsonable(value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, BaseModel):
+            return value.model_dump()
+        if isinstance(value, list):
+            return [_to_jsonable(v) for v in value]
+        if isinstance(value, dict):
+            return {k: _to_jsonable(v) for k, v in value.items()}
+        return value
+
     result: dict[str, Any] = {}
     for key, value in node_output.items():
-        if value is None:
-            result[key] = None
-        elif isinstance(value, BaseModel):
-            result[key] = value.model_dump()
-        elif isinstance(value, list) and value and isinstance(value[0], BaseModel):
-            result[key] = [v.model_dump() for v in value]
-        else:
-            result[key] = value
+        result[key] = _to_jsonable(value)
     return result
 
 
@@ -131,6 +136,9 @@ def _deserialize(node_output_raw: dict[str, Any]) -> dict[str, Any]:
             continue
         if key in _METRIC_GROUP_FIELDS and isinstance(value, list):
             result[key] = [MetricResult.model_validate(v) for v in value]
+            continue
+        if key == "estimated_costs" and isinstance(value, dict):
+            result[key] = {k: CostEstimate.model_validate(v) for k, v in value.items()}
             continue
         if key == "report" and isinstance(value, list):
             result[key] = value
@@ -149,6 +157,28 @@ def _deserialize(node_output_raw: dict[str, Any]) -> dict[str, Any]:
 # ── Hash helpers ─────────────────────────────────────────────────────────────
 
 CACHE_KEY_VERSION = "v2"
+
+# Estimate mode cache policy:
+# - Reads are always allowed so estimate can reuse run-mode cache.
+# - Writes are restricted to this hardcoded allowlist (empty by default).
+ESTIMATE_CACHE_WRITE_NODES: frozenset[str] = frozenset()
+
+
+def cache_read_allowed(*, execution_mode: str, node_name: str) -> bool:
+    del node_name
+    if execution_mode == "run":
+        return True
+    if execution_mode == "estimate":
+        return True
+    return True
+
+
+def cache_write_allowed(*, execution_mode: str, node_name: str) -> bool:
+    if execution_mode == "run":
+        return True
+    if execution_mode == "estimate":
+        return node_name in ESTIMATE_CACHE_WRITE_NODES
+    return True
 
 
 def build_node_cache_key(

@@ -15,7 +15,8 @@ from lumiseval_core.types import (
 )
 from lumiseval_core.constants import (
     AVG_CLAIM_OUTPUT_TOKENS_BOOLEAN_VERDICT,
-    AVG_CLAIM_INPUT_TOKENS
+    AVG_CLAIM_INPUT_TOKENS,
+    AVG_CLAIMS_PER_CHUNK
 )
 from lumiseval_core.utils import _count_tokens, template_static_tokens
 from lumiseval_graph.llm.gateway import get_llm
@@ -111,13 +112,18 @@ class GroundingNode(BaseMetricNode):
         result, cost = self._grounding(claims=claims, context=context_text)
         return GroundingMetrics(metrics=[result], cost=cost)
 
-    def estimate(self, claims: list[Claim], context: Item) -> CostEstimate:
-        input_tokens = (
-            self.static_prompt_tokens + 
-            context.tokens +
-            AVG_CLAIM_INPUT_TOKENS*len(claims)
+    def estimate(self, context: Item | str | None) -> CostEstimate:
+        context_tokens = (
+            float(context.tokens)
+            if isinstance(context, Item)
+            else float(_count_tokens(context or ""))
         )
-        output_tokens = AVG_CLAIM_OUTPUT_TOKENS_BOOLEAN_VERDICT + (len(claims) - 1)
+        input_tokens = (
+            self.static_prompt_tokens
+            + context_tokens
+            + AVG_CLAIM_INPUT_TOKENS * AVG_CLAIMS_PER_CHUNK
+        )
+        output_tokens = AVG_CLAIM_OUTPUT_TOKENS_BOOLEAN_VERDICT + (AVG_CLAIMS_PER_CHUNK - 1)
         pricing = get_model_pricing(self.judge_model)
         return CostEstimate(
             input_tokens=input_tokens,

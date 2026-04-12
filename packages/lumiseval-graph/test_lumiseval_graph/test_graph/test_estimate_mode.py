@@ -33,6 +33,7 @@ def test_node_generation_claims_estimate_calls_estimate_without_chunks(
     state = {
         "execution_mode": "estimate",
         "inputs": Inputs(
+            case_id="case-estimate-claims",
             generation=Item(text="Paris is in France.", tokens=4),
             has_generation=True,
         ),
@@ -71,8 +72,7 @@ def test_node_grounding_estimate_calls_estimate_without_claim_artifact(
         def run(self, claims, context, enable_grounding=True):
             raise AssertionError("run() should not be called in estimate mode")
 
-        def estimate(self, claims, context) -> CostEstimate:
-            captured["estimate_claim_count"] = len(claims)
+        def estimate(self, context) -> CostEstimate:
             captured["estimate_context"] = context
             return CostEstimate(cost=0.456, input_tokens=0.0, output_tokens=0.0)
 
@@ -83,6 +83,7 @@ def test_node_grounding_estimate_calls_estimate_without_claim_artifact(
     state = {
         "execution_mode": "estimate",
         "inputs": Inputs(
+            case_id="case-estimate-grounding",
             generation=Item(text="Paris is in France.", tokens=4),
             context=None,
             has_generation=True,
@@ -98,6 +99,55 @@ def test_node_grounding_estimate_calls_estimate_without_claim_artifact(
     assert "constructor_model" not in captured
     assert out["grounding_metrics"] is None
     assert "estimated_costs" not in out
+
+
+def test_node_relevance_estimate_calls_estimate_with_claims_and_question(
+    graph_module, monkeypatch
+) -> None:
+    captured: dict[str, object] = {}
+
+    def _fake_get_judge_model(node_name: str, default: str, llm_overrides=None) -> str:
+        captured["resolved_node_name"] = node_name
+        return "resolved-relevance-model"
+
+    class _FakeRelevanceNode:
+        def __init__(self, judge_model: str, llm_overrides=None):
+            captured["constructor_model"] = judge_model
+            captured["constructor_overrides"] = llm_overrides
+
+        def run(self, claims, question):
+            raise AssertionError("run() should not be called in estimate mode")
+
+        def estimate(self, question) -> CostEstimate:
+            captured["estimate_question"] = question
+            return CostEstimate(cost=0.234, input_tokens=0.0, output_tokens=0.0)
+
+    monkeypatch.setattr(graph_module, "get_judge_model", _fake_get_judge_model)
+    monkeypatch.setattr(graph_module, "RelevanceNode", _FakeRelevanceNode)
+
+    llm_overrides = {"models": {"relevance": "runtime-relevance-model"}}
+    state = {
+        "execution_mode": "estimate",
+        "inputs": Inputs(
+            case_id="case-estimate-relevance",
+            generation=Item(text="Paris is in France.", tokens=4),
+            question=Item(text="Where is Paris?", tokens=4),
+            has_generation=True,
+            has_question=True,
+        ),
+        "generation_dedup_claims": None,
+        "llm_overrides": llm_overrides,
+    }
+
+    out = graph_module.node_relevance(state)
+
+    assert captured["resolved_node_name"] == "relevance"
+    assert captured["constructor_model"] == "resolved-relevance-model"
+    assert captured["constructor_overrides"] == llm_overrides
+    assert captured["estimate_question"] == state["inputs"].question
+    assert out["relevance_metrics"].metrics == []
+    assert out["relevance_metrics"].cost.cost == 0.234
+    assert out["estimated_costs"]["relevance"].cost == 0.234
 
 
 def test_node_report_sets_cost_estimate_in_estimate_mode(graph_module) -> None:

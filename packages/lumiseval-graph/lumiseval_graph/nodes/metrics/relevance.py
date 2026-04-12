@@ -4,15 +4,7 @@ from typing import Tuple
 
 from pydantic import BaseModel
 
-from lumiseval_core.types import (
-    Claim,
-    CostEstimate,
-    Item,
-    MetricCategory,
-    MetricResult,
-    Relevancy,
-    RelevanceMetrics,
-)
+from lumiseval_core.types import Claim, CostEstimate, Item, MetricCategory, MetricResult, Relevancy, RelevanceMetrics
 from lumiseval_core.utils import _count_tokens, template_static_tokens
 from lumiseval_graph.llm.gateway import get_llm
 from lumiseval_graph.llm.pricing import cost_usd, get_model_pricing
@@ -21,7 +13,8 @@ from lumiseval_graph.nodes.base import BaseMetricNode
 
 from lumiseval_core.constants import (
     AVG_CLAIM_OUTPUT_TOKENS_BOOLEAN_VERDICT,
-    AVG_CLAIM_INPUT_TOKENS
+    AVG_CLAIM_INPUT_TOKENS,
+    AVG_CLAIMS_PER_CHUNK
 )
 
 log = get_node_logger("relevance")
@@ -121,21 +114,21 @@ class RelevanceNode(BaseMetricNode):
         result, cost = self._answer_relevancy(claims=claims, question=question_text)
         return RelevanceMetrics(metrics=[result], cost=cost)
 
-    def estimate(
-        self, 
-        claims: list[Claim],
-        question: Item | str | None,
-    ) -> CostEstimate:
-        input_tokens = (
-            self.static_prompt_tokens + 
-            question.tokens +
-            AVG_CLAIM_INPUT_TOKENS*len(claims)
+    def estimate(self, question: Item | str | None) -> CostEstimate:
+        question_tokens = (
+            float(question.tokens)
+            if isinstance(question, Item)
+            else float(_count_tokens(question or ""))
         )
-        output_tokens = AVG_CLAIM_OUTPUT_TOKENS_BOOLEAN_VERDICT + (len(claims) - 1)
+        input_tokens = (
+            self.static_prompt_tokens
+            + question_tokens
+            + AVG_CLAIM_INPUT_TOKENS * AVG_CLAIMS_PER_CHUNK
+        )
+        output_tokens = AVG_CLAIM_OUTPUT_TOKENS_BOOLEAN_VERDICT + (AVG_CLAIMS_PER_CHUNK - 1)
         pricing = get_model_pricing(self.judge_model)
-        billable_input = self.static_prompt_tokens + input_tokens
         return CostEstimate(
-            input_tokens=billable_input,
+            input_tokens=input_tokens,
             output_tokens=output_tokens,
-            cost=cost_usd(billable_input, pricing, "input") + cost_usd(output_tokens, pricing, "output"),
+            cost=cost_usd(input_tokens, pricing, "input") + cost_usd(output_tokens, pricing, "output"),
         )

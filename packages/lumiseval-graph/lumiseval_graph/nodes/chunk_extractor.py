@@ -22,6 +22,9 @@ class ChunkExtractorNode(BaseNode):
     def run(self, item: Item) -> ChunkArtifacts:  # type: ignore[override]
         text = item.text
         num_tokens = item.tokens if item.tokens > 0 else float(_count_tokens(text))
+        cost = CostEstimate(
+            input_tokens=0, output_tokens=0, cost=0,
+        )
 
         if num_tokens < CHUNK_MIN_TOKENS_FOR_SPLIT:
             chunk = Chunk(
@@ -31,7 +34,7 @@ class ChunkExtractorNode(BaseNode):
                 char_end=len(text),
                 sha256=hashlib.sha256(text.encode()).hexdigest(),
             )
-            return ChunkArtifacts(chunks=[chunk], cost=self.estimate(0.0, 0.0))
+            return ChunkArtifacts(chunks=[chunk], cost=cost)
 
         chunker = semchunk.chunkerify(_count_tokens, self.chunk_size)
         raw_chunks: list[str] = list(chunker(text))
@@ -54,8 +57,10 @@ class ChunkExtractorNode(BaseNode):
             )
             cursor = end
 
+       
         log.success(f"{len(chunks)} chunk(s) produced")
-        return ChunkArtifacts(chunks=chunks, cost=self.estimate(0.0, 0.0))
+        return ChunkArtifacts(chunks=chunks, cost=cost)
 
-    def estimate(self, input_tokens: float, output_tokens: float) -> CostEstimate:
-        return CostEstimate(input_tokens=0.0, output_tokens=0.0, cost=0.0)
+    def estimate(self, item: Item) -> CostEstimate:
+        chuck_artifact = self.run(item=item)
+        return chuck_artifact.cost

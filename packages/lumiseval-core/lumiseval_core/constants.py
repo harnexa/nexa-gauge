@@ -53,6 +53,7 @@ COST_FALLBACK_PER_CALL_USD: float = 0.0003
 
 # Average tokens in a single extracted claim text.
 AVG_CLAIM_INPUT_TOKENS: int = 25 + 12 # 25 claims token, and 12 structured LLM output tokens
+AVG_CLAIMS_PER_CHUNK: int = 2 # Average number of claims extracted per chunk
 
 # Average output tokens for a single boolean verdict (grounding): "true"/"false".
 AVG_CLAIM_OUTPUT_TOKENS_BOOLEAN_VERDICT: int = 7
@@ -67,9 +68,12 @@ AVG_DEEPEVAL_PROMPT_TOKENS: int = 100
 AVG_DEEPEVAL_OUTPUT_REASONING_TOKENS: int = 50
 AVG_DEEPEVAL_OUTPUT_VERDICT: int = 14
 
+
 # DeepEval GEval constructs a multi-step evaluation prompt per metric.
 AVG_GEVAL_INPUT_OVERHEAD_TOKENS: int = 400
 AVG_GEVAL_OUTPUT_OVERHEAD_TOKENS: int = 60
+AVG_DEEPEVAL_GEVAL_CRITERIA_STEPS: int = 3
+AVG_DEEPEVAL_GEVAL_CRITERIA_STEP_TOKENS: int = 40
 
 # ── MMR Claim Deduplication ──────────────────────────────────────────────────
 

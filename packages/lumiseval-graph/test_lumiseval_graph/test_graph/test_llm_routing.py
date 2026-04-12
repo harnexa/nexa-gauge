@@ -52,6 +52,7 @@ def test_node_generation_claims_uses_canonical_model_key(graph_module, monkeypat
     llm_overrides = {"models": {"claims": "runtime-claims-model"}}
     state = {
         "inputs": Inputs(
+            case_id="case-routing-claims",
             generation=Item(text="The Eiffel Tower is in Paris.", tokens=7),
             has_generation=True,
         ),
@@ -96,6 +97,7 @@ def test_node_grounding_uses_canonical_key_and_handles_missing_context(graph_mod
     llm_overrides = {"models": {"grounding": "runtime-grounding-model"}}
     state = {
         "inputs": Inputs(
+            case_id="case-routing-grounding",
             generation=Item(text="Paris is in France.", tokens=4),
             context=None,
             has_generation=True,

@@ -77,9 +77,6 @@ class EvalCase(TypedDict):
     reference_metrics: Optional[ReferenceMetrics]
     
 
-    
-
-
 def _is_estimate_mode(state: Mapping[str, Any]) -> bool:
     return state.get("execution_mode") == "estimate"
 
@@ -164,10 +161,10 @@ def node_generation_chunk(state: EvalCase) -> dict[str, Any]:
         chunk_size=GENERATION_CHUNK_SIZE_TOKENS
     )
     if estimate_mode:
-        estimated_cost = node.estimate(input_tokens=0.0, output_tokens=0.0)
+        chunk_artifact = node.run(item=inputs.generation)
         return {
-            "generation_chunk": ChunkArtifacts(chunks=[], cost=estimated_cost),
-            "estimated_costs": _record_estimated_cost(state, "chunk", estimated_cost),
+            "generation_chunk": chunk_artifact,
+            "estimated_costs": _record_estimated_cost(state, "chunk", chunk_artifact.cost),
         }
 
     chunk_artifact: ChunkArtifacts = node.run(item=inputs.generation)
@@ -254,16 +251,17 @@ def node_grounding(state: EvalCase) -> dict[str, Any]:
         return {"grounding_metrics": None}
 
     context_item = inputs.context
-    claims: list[Claim] = dedup_claims.claims if dedup_claims else []
     llm_overrides = state.get("llm_overrides")
     model = get_judge_model("grounding", cfg.LLM_MODEL, llm_overrides=llm_overrides)
     node = GroundingNode(judge_model=model, llm_overrides=llm_overrides)
+
     if estimate_mode:
-        estimated_cost = node.estimate(claims=claims, context=context_item)
+        estimated_cost = node.estimate(context=context_item)
         return {
             "grounding_metrics": GroundingMetrics(metrics=[], cost=estimated_cost),
             "estimated_costs": _record_estimated_cost(state, "grounding", estimated_cost),
         }
+    claims: list[Claim] = dedup_claims.claims if dedup_claims else []
 
     results = node.run(
         claims=claims,
@@ -276,8 +274,8 @@ def node_grounding(state: EvalCase) -> dict[str, Any]:
 @observe(name="node_relevance")
 def node_relevance(state: EvalCase) -> dict[str, Any]:
     inputs = state["inputs"]
-    dedup_claims = state["generation_dedup_claims"]
     estimate_mode = _is_estimate_mode(state)
+    dedup_claims = state["generation_dedup_claims"]
 
     should_run = bool(inputs and inputs.has_generation and inputs.has_question)
     if not estimate_mode:
@@ -286,17 +284,18 @@ def node_relevance(state: EvalCase) -> dict[str, Any]:
     if not should_run:
         return {"relevance_metrics": None}
 
-    dedup_claims = state["generation_dedup_claims"]
-    claims: list[Claim] = dedup_claims.claims if dedup_claims else []
     llm_overrides = state.get("llm_overrides")
     model = get_judge_model("relevance", cfg.LLM_MODEL, llm_overrides=llm_overrides)
     node = RelevanceNode(judge_model=model, llm_overrides=llm_overrides)
+
     if estimate_mode:
-        estimated_cost = node.estimate(input_tokens=0.0, output_tokens=0.0)
+        estimated_cost = node.estimate(question=inputs.question)
         return {
             "relevance_metrics": RelevanceMetrics(metrics=[], cost=estimated_cost),
             "estimated_costs": _record_estimated_cost(state, "relevance", estimated_cost),
         }
+
+    claims: list[Claim] = dedup_claims.claims if dedup_claims else []
 
     results = node.run(
         claims=claims,
@@ -387,20 +386,22 @@ def node_geval(state: EvalCase) -> dict[str, Any]:
     llm_overrides = state.get("llm_overrides")
     model = get_judge_model("geval", cfg.LLM_MODEL, llm_overrides=llm_overrides)
     node = GevalNode(judge_model=model)
-    geval_steps = state.get("geval_steps")
-    resolved_artifacts = geval_steps.resolved_steps if geval_steps else []
+
     if estimate_mode:
         estimated_cost = node.estimate(
-            resolved_artifacts=resolved_artifacts,
             generation=inputs.generation,
             question=inputs.question,
             reference=inputs.reference,
             context=inputs.context,
+            geval=inputs.geval,
         )
         return {
             "geval_metrics": GevalMetrics(metrics=[], cost=estimated_cost),
             "estimated_costs": _record_estimated_cost(state, "geval", estimated_cost),
         }
+
+    geval_steps = state.get("geval_steps")
+    resolved_artifacts = geval_steps.resolved_steps if geval_steps else []
 
     results = node.run(
         resolved_artifacts=resolved_artifacts,

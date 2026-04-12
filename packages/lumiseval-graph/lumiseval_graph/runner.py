@@ -12,16 +12,23 @@ from __future__ import annotations
 import hashlib
 import json
 import time
-from copy import deepcopy
+import traceback
 from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, as_completed, wait
+from copy import deepcopy
 from typing import Any, Iterable, Iterator, Mapping
 
+from lumiseval_core.cache import (
+    NodeCacheBackend,
+    build_node_cache_key,
+    cache_read_allowed,
+    cache_write_allowed,
+    compute_case_hash,
+)
+from lumiseval_core.config import config as cfg
 from pydantic import BaseModel
 
-from lumiseval_core.cache import NodeCacheBackend, build_node_cache_key, compute_case_hash
-from lumiseval_core.config import config as cfg
-from lumiseval_graph.llm.config import get_node_config
 from lumiseval_graph.graph import EvalCase
+from lumiseval_graph.llm.config import get_node_config
 from lumiseval_graph.registry import NODE_FNS
 from lumiseval_graph.topology import METRIC_NODES, NODES_BY_NAME
 
@@ -153,12 +160,51 @@ def _cache_key_for_step(
     )
 
 
+def _step_fingerprint_for_node_branch(
+    *,
+    case_fingerprint: str,
+    node_name: str,
+    state: Mapping[str, Any],
+    execution_mode: str,
+) -> str:
+    """Compute a node fingerprint from its own branch prerequisites.
+
+    This keeps cache keys stable for a node regardless of which target branch
+    triggered execution (for example `run grounding` vs `estimate eval`).
+    """
+    parent_fingerprint = case_fingerprint
+    for prereq in NODES_BY_NAME[node_name].prerequisites:
+        parent_fingerprint = _step_fingerprint(
+            parent_fingerprint=parent_fingerprint,
+            node_name=prereq,
+            state=state,
+            execution_mode=execution_mode,
+        )
+    return _step_fingerprint(
+        parent_fingerprint=parent_fingerprint,
+        node_name=node_name,
+        state=state,
+        execution_mode=execution_mode,
+    )
+
+
 def _plan_nodes(node_name: str) -> list[str]:
     plan = list(NODES_BY_NAME[node_name].prerequisites) + [node_name]
     needs_report = node_name == "eval" or node_name in METRIC_NODES
     if needs_report and node_name != "report" and "report" not in plan and "report" in NODE_FNS:
         plan.append("report")
     return plan
+
+
+def _merge_state_patch(state: dict[str, Any], patch: Mapping[str, Any]) -> None:
+    for key, value in patch.items():
+        if key == "estimated_costs" and isinstance(value, Mapping):
+            existing = state.get("estimated_costs")
+            merged = dict(existing) if isinstance(existing, Mapping) else {}
+            merged.update(dict(value))
+            state["estimated_costs"] = merged
+            continue
+        state[key] = value
 
 
 class CachedNodeRunner:
@@ -179,6 +225,45 @@ class CachedNodeRunner:
         if entry is None:
             return None
         return entry["node_output"]
+
+    def _read_step_cache_with_run_fallback(
+        self,
+        *,
+        case_fingerprint: str,
+        node_name: str,
+        estimate_step_fingerprint: str,
+        run_step_fingerprint: str | None,
+        execution_mode: str,
+        force: bool,
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        if force:
+            return None, None
+        if not cache_read_allowed(execution_mode=execution_mode, node_name=node_name):
+            return None, None
+
+        primary_key = _cache_key_for_step(
+            case_fingerprint=case_fingerprint,
+            node_name=node_name,
+            step_fingerprint=estimate_step_fingerprint,
+            execution_mode=execution_mode,
+        )
+        cached_output = self._read_step_cache(primary_key)
+        if cached_output is not None:
+            return cached_output, execution_mode
+
+        # Estimate mode can reuse prior run-mode node outputs for identical routes.
+        if execution_mode == "estimate" and run_step_fingerprint is not None:
+            run_key = _cache_key_for_step(
+                case_fingerprint=case_fingerprint,
+                node_name=node_name,
+                step_fingerprint=run_step_fingerprint,
+                execution_mode="run",
+            )
+            cached_output = self._read_step_cache(run_key)
+            if cached_output is not None:
+                return cached_output, "run"
+
+        return None, None
 
     def _write_step_cache(
         self,
@@ -213,13 +298,14 @@ class CachedNodeRunner:
             raise ValueError(f"Unknown node '{node_name}'. Valid options: {valid}.")
 
         t0 = time.monotonic()
-    
+
         state: EvalCase = _build_initial_state(case, execution_mode=execution_mode)
-        
+
         case_fingerprint = _compute_case_fingerprint(case)
 
         plan = _plan_nodes(node_name)
         path_fingerprint = case_fingerprint
+        run_path_fingerprint = case_fingerprint
 
         executed: list[str] = []
         cached: list[str] = []
@@ -232,29 +318,44 @@ class CachedNodeRunner:
             if node_name == "eval" and METRIC_NODES and step == METRIC_NODES[0]:
                 cached_group_outputs: dict[str, dict[str, Any]] = {}
                 metric_fingerprints: dict[str, str] = {}
+                run_metric_fingerprints: dict[str, str] = {}
                 to_run: list[tuple[str, str, str]] = []
                 group_parent_fingerprint = path_fingerprint
+                run_group_parent_fingerprint = run_path_fingerprint
 
                 for metric_step in METRIC_NODES:
-                    metric_fingerprint = _step_fingerprint(
-                        parent_fingerprint=group_parent_fingerprint,
+                    metric_fingerprint = _step_fingerprint_for_node_branch(
+                        case_fingerprint=case_fingerprint,
                         node_name=metric_step,
                         state=state,
                         execution_mode=execution_mode,
                     )
                     metric_fingerprints[metric_step] = metric_fingerprint
+                    run_metric_fingerprint = _step_fingerprint_for_node_branch(
+                        case_fingerprint=case_fingerprint,
+                        node_name=metric_step,
+                        state=state,
+                        execution_mode="run",
+                    )
+                    run_metric_fingerprints[metric_step] = run_metric_fingerprint
+                    cached_output, _ = self._read_step_cache_with_run_fallback(
+                        case_fingerprint=case_fingerprint,
+                        node_name=metric_step,
+                        estimate_step_fingerprint=metric_fingerprint,
+                        run_step_fingerprint=run_metric_fingerprint,
+                        execution_mode=execution_mode,
+                        force=force,
+                    )
                     metric_key = _cache_key_for_step(
                         case_fingerprint=case_fingerprint,
                         node_name=metric_step,
                         step_fingerprint=metric_fingerprint,
                         execution_mode=execution_mode,
                     )
-                    if not force:
-                        cached_output = self._read_step_cache(metric_key)
-                        if cached_output is not None:
-                            cached_group_outputs[metric_step] = cached_output
-                            cached.append(metric_step)
-                            continue
+                    if cached_output is not None:
+                        cached_group_outputs[metric_step] = cached_output
+                        cached.append(metric_step)
+                        continue
                     to_run.append((metric_step, metric_key, metric_fingerprint))
 
                 run_group_outputs: dict[str, dict[str, Any]] = {}
@@ -271,23 +372,31 @@ class CachedNodeRunner:
                             output = future.result()
                             run_group_outputs[metric_step] = output
                             executed.append(metric_step)
-                            self._write_step_cache(
-                                cache_key=metric_key,
-                                node_name=metric_step,
-                                output=output,
+                            if cache_write_allowed(
                                 execution_mode=execution_mode,
-                                case_fingerprint=case_fingerprint,
-                            )
+                                node_name=metric_step,
+                            ):
+                                self._write_step_cache(
+                                    cache_key=metric_key,
+                                    node_name=metric_step,
+                                    output=output,
+                                    execution_mode=execution_mode,
+                                    case_fingerprint=case_fingerprint,
+                                )
 
                 for metric_step in METRIC_NODES:
                     merged_output = cached_group_outputs.get(metric_step) or run_group_outputs.get(metric_step)
                     if merged_output is not None:
-                        state.update(merged_output)
+                        _merge_state_patch(state, merged_output)
 
                 group_signature_raw = "|".join(
                     [group_parent_fingerprint, "metrics", *[metric_fingerprints[n] for n in METRIC_NODES]]
                 )
                 path_fingerprint = hashlib.sha256(group_signature_raw.encode()).hexdigest()[:16]
+                run_group_signature_raw = "|".join(
+                    [run_group_parent_fingerprint, "metrics", *[run_metric_fingerprints[n] for n in METRIC_NODES]]
+                )
+                run_path_fingerprint = hashlib.sha256(run_group_signature_raw.encode()).hexdigest()[:16]
                 i += len(METRIC_NODES)
                 continue
 
@@ -297,36 +406,51 @@ class CachedNodeRunner:
                 state=state,
                 execution_mode=execution_mode,
             )
+            run_step_fingerprint = _step_fingerprint(
+                parent_fingerprint=run_path_fingerprint,
+                node_name=step,
+                state=state,
+                execution_mode="run",
+            )
+            cached_output, _ = self._read_step_cache_with_run_fallback(
+                case_fingerprint=case_fingerprint,
+                node_name=step,
+                estimate_step_fingerprint=step_fingerprint,
+                run_step_fingerprint=run_step_fingerprint,
+                execution_mode=execution_mode,
+                force=force,
+            )
             cache_key = _cache_key_for_step(
                 case_fingerprint=case_fingerprint,
                 node_name=step,
                 step_fingerprint=step_fingerprint,
                 execution_mode=execution_mode,
             )
-            if not force:
-                cached_output = self._read_step_cache(cache_key)
-                if cached_output is not None:
-                    state.update(cached_output)
-                    cached.append(step)
-                    if step == node_name:
-                        node_output = cached_output
-                    path_fingerprint = step_fingerprint
-                    i += 1
-                    continue
+            if cached_output is not None:
+                _merge_state_patch(state, cached_output)
+                cached.append(step)
+                if step == node_name:
+                    node_output = cached_output
+                path_fingerprint = step_fingerprint
+                run_path_fingerprint = run_step_fingerprint
+                i += 1
+                continue
 
             output = NODE_FNS[step](state)
-            state.update(output)
-            self._write_step_cache(
-                cache_key=cache_key,
-                node_name=step,
-                output=output,
-                execution_mode=execution_mode,
-                case_fingerprint=case_fingerprint,
-            )
+            _merge_state_patch(state, output)
+            if cache_write_allowed(execution_mode=execution_mode, node_name=step):
+                self._write_step_cache(
+                    cache_key=cache_key,
+                    node_name=step,
+                    output=output,
+                    execution_mode=execution_mode,
+                    case_fingerprint=case_fingerprint,
+                )
             executed.append(step)
             if step == node_name:
                 node_output = output
             path_fingerprint = step_fingerprint
+            run_path_fingerprint = run_step_fingerprint
             i += 1
 
         elapsed_ms = (time.monotonic() - t0) * 1000
@@ -370,7 +494,11 @@ class CachedNodeRunner:
                     )
                     yield CaseRunOutcome(index=idx, case_id=result.case_id, result=result)
                 except Exception as exc:
-                    yield CaseRunOutcome(index=idx, case_id=case_id, error=str(exc))
+                    yield CaseRunOutcome(
+                        index=idx,
+                        case_id=case_id,
+                        error=f"{exc}\n{traceback.format_exc()}",
+                    )
                     if not continue_on_error:
                         return
             return
@@ -416,7 +544,7 @@ class CachedNodeRunner:
                     try:
                         buffered_results[idx] = future.result()
                     except Exception as exc:
-                        buffered_failures[idx] = (case_id, str(exc))
+                        buffered_failures[idx] = (case_id, f"{exc}\n{traceback.format_exc()}")
                         if first_failure_index is None:
                             first_failure_index = idx
                         if not continue_on_error:

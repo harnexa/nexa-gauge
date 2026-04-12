@@ -16,10 +16,12 @@ from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 from pydantic import BaseModel
 
 from lumiseval_core.constants import (
-    METRIC_PASS_THRESHOLD, 
-    AVG_DEEPEVAL_PROMPT_TOKENS, 
+    AVG_DEEPEVAL_GEVAL_CRITERIA_STEPS,
+    AVG_DEEPEVAL_GEVAL_CRITERIA_STEP_TOKENS,
+    AVG_DEEPEVAL_OUTPUT_REASONING_TOKENS,
     AVG_DEEPEVAL_OUTPUT_VERDICT,
-    AVG_DEEPEVAL_OUTPUT_REASONING_TOKENS
+    AVG_DEEPEVAL_PROMPT_TOKENS,
+    METRIC_PASS_THRESHOLD,
 )
 from lumiseval_graph.nodes.metrics.geval.cache import (
     GEVAL_STEPS_PARSER_VERSION,
@@ -27,6 +29,7 @@ from lumiseval_graph.nodes.metrics.geval.cache import (
 )
 from lumiseval_core.types import (
     CostEstimate,
+    Geval,
     GevalMetrics,
     GevalStepsResolved,
     Item,
@@ -313,24 +316,27 @@ class GevalNode(BaseMetricNode):
         )
 
     def estimate(
-        self, 
+        self,
         generation: Item,
         question: Optional[Item],
         reference: Optional[Item],
         context: Optional[Item],
-        resolved_artifacts: list[GevalStepsResolved],
+        geval: Optional[Geval],
     ) -> CostEstimate:
-
-        if not resolved_artifacts:
+        if not geval or not geval.metrics:
             return CostEstimate(cost=0.0, input_tokens=None, output_tokens=None)
 
-        steps_tokens = sum(
-            float(step.tokens)
-            for resolved_artifact in resolved_artifacts
-            for step in resolved_artifact.evaluation_steps
-        )
+        metric_count = len(geval.metrics)
+        steps_tokens = 0.0
+        for metric in geval.metrics:
+            if metric.evaluation_steps:
+                steps_tokens += sum(float(step.tokens) for step in metric.evaluation_steps)
+            elif metric.criteria:
+                steps_tokens += float(metric.criteria.tokens)
+                steps_tokens += AVG_DEEPEVAL_GEVAL_CRITERIA_STEPS * AVG_DEEPEVAL_GEVAL_CRITERIA_STEP_TOKENS
+
         input_tokens = (
-            len(resolved_artifacts) * AVG_DEEPEVAL_PROMPT_TOKENS
+            metric_count * AVG_DEEPEVAL_PROMPT_TOKENS
             + steps_tokens
             + float(generation.tokens)
             + (float(question.tokens) if question else 0.0)
@@ -338,15 +344,15 @@ class GevalNode(BaseMetricNode):
             + (float(context.tokens) if context else 0.0)
         )
         output_tokens = (
-            len(resolved_artifacts) * 
-            (AVG_DEEPEVAL_OUTPUT_REASONING_TOKENS+AVG_DEEPEVAL_OUTPUT_VERDICT)
+            metric_count
+            * (AVG_DEEPEVAL_OUTPUT_REASONING_TOKENS + AVG_DEEPEVAL_OUTPUT_VERDICT)
         )
         pricing = get_model_pricing(self.judge_model)
-        per_call_cost = cost_usd(input_tokens, pricing, "input") + cost_usd(
+        estimated_cost = cost_usd(input_tokens, pricing, "input") + cost_usd(
             output_tokens, pricing, "output"
         )
         return CostEstimate(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
-            cost=per_call_cost,
+            cost=estimated_cost,
         )
