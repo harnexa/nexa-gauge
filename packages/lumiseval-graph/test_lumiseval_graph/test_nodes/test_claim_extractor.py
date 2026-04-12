@@ -55,10 +55,9 @@ def test_run_builds_claim_artifacts_with_mocked_llm(monkeypatch: pytest.MonkeyPa
     assert result.claims[0].source_chunk_index == 0
     assert result.claims[1].source_chunk_index == 1
 
-    assert len(result.cost) == 2
-    assert result.cost[0].input_tokens == 100
-    assert result.cost[0].output_tokens == 25
-    assert result.cost[0].cost > 0
+    assert result.cost.input_tokens == 200  # 100 per chunk * 2 chunks
+    assert result.cost.output_tokens == 50   # 25 per chunk * 2 chunks
+    assert result.cost.cost > 0
 
 
 def test_run_raises_on_parsing_error(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -6,8 +6,10 @@ import hashlib
 from enum import Enum
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+
+ExecutionMode = Literal["run", "estimate"]
 
 # ── Enums ──────────────────────────────────────────────────────────────────
 
@@ -29,23 +31,28 @@ class MetricCategory(str, Enum):
     RETRIEVAL = "retrieval"  # was evidence retrieval correct/complete?
     ANSWER = "answer"  # is the answer correct, relevant, and safe?
 
-
-# ── Core domain models ─────────────────────────────────────────────────────
-
-
-_ALLOWED_GEVAL_Item_FIELDS = {"question", "generation", "reference", "context"}
-
-
-
-
 # ------------------------------------------------------------
 # New Nodes
 # ------------------------------------------------------------
-
-
 GevalItemField = Literal["question", "generation", "reference", "context"]
 RedteamItemField = Literal["question", "generation", "reference", "context"]
-ExecutionMode = Literal["run", "estimate"]
+
+
+
+class GevalMetricSpec(BaseModel):
+    """Legacy GEval metric shape used by cache/tests/adapters."""
+
+    name: str
+    record_fields: list[GevalItemField] = Field(default_factory=lambda: ["generation"])
+    criteria: str | None = None
+    evaluation_steps: list[str] = Field(default_factory=list)
+
+
+class GevalConfig(BaseModel):
+    """Legacy GEval config shape used by cache/tests/adapters."""
+
+    metrics: list[GevalMetricSpec] = Field(default_factory=list)
+
 
 class Item(BaseModel):
     id: str = ""
@@ -122,6 +129,7 @@ class Relevancy(Claim):
     verdict: Literal["ACCEPTED", "REJECTED"]
 
 class Inputs(BaseModel):
+    case_id: str
     generation: Item
     question: Optional[Item] = None
     reference: Optional[Item] = None
@@ -161,7 +169,7 @@ class ChunkArtifacts(BaseModel):
 
 class ClaimArtifacts(BaseModel):
     claims: list[Claim]
-    cost: list[CostEstimate]
+    cost: CostEstimate
 
 class DedupArtifacts(BaseModel):
     items: list[Item]
@@ -207,3 +215,11 @@ class ReferenceMetrics(BaseModel):
 class EvalPayload(BaseModel):
     metrics: list[MetricResult]
     cost: CostEstimate
+
+
+class EvalReport(BaseModel):
+    """Compatibility report payload used by cache/API surfaces."""
+
+    metrics: list[MetricResult | dict[str, Any]] = Field(default_factory=list)
+    cost_estimate: CostEstimate | None = None
+    cost_actual_usd: float = 0.0

@@ -44,7 +44,7 @@ def test_node_generation_claims_uses_canonical_model_key(graph_module, monkeypat
             captured["constructor_overrides"] = llm_overrides
 
         def run(self, _chunks):
-            return ClaimArtifacts(claims=[], cost=[])
+            return ClaimArtifacts(claims=[], cost=CostEstimate(cost=0.0, input_tokens=None, output_tokens=None))
 
     monkeypatch.setattr(graph_module, "get_judge_model", _fake_get_judge_model)
     monkeypatch.setattr(graph_module.claim_extractor, "ClaimExtractorNode", _FakeClaimExtractorNode)
@@ -103,7 +103,7 @@ def test_node_grounding_uses_canonical_key_and_handles_missing_context(graph_mod
         ),
         "generation_dedup_claims": ClaimArtifacts(
             claims=[Claim(item=Item(text="Paris is in France.", tokens=4), source_chunk_index=0)],
-            cost=[],
+            cost=CostEstimate(cost=0.0, input_tokens=None, output_tokens=None),
         ),
         "llm_overrides": llm_overrides,
     }

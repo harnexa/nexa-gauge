@@ -88,7 +88,7 @@ PIPELINE: list[NodeSpec] = [
         cost_category="claim_extraction",
         color="blue",
         env_key_suffixes=("CHUNK",),
-        skip_output={"chunks": []},
+        skip_output={"generation_chunk": None},
     ),
     NodeSpec(
         name="claims",
@@ -97,15 +97,15 @@ PIPELINE: list[NodeSpec] = [
         cost_category="claim_extraction",
         color="magenta",
         env_key_suffixes=("CLAIMS",),
-        skip_output={"raw_claims": []},
+        skip_output={"generation_claims": None},
     ),
     NodeSpec(
         name="dedup",
         prerequisites=("scan", "chunk", "claims"),
         requires_generation=True,
         color="green",
-        env_key_suffixes=("Dedup",),
-        skip_output={"unique_claims": []},
+        env_key_suffixes=("DEDUP",),
+        skip_output={"generation_dedup_claims": None},
     ),
     NodeSpec(
         name="geval_steps",
@@ -126,7 +126,7 @@ PIPELINE: list[NodeSpec] = [
         is_metric=True,
         color="bright_green",
         env_key_suffixes=("RELEVANCE",),
-        skip_output={"relevance_metrics": []},
+        skip_output={"relevance_metrics": None},
     ),
     NodeSpec(
         name="grounding",
@@ -136,7 +136,7 @@ PIPELINE: list[NodeSpec] = [
         is_metric=True,
         color="cornflower_blue",
         env_key_suffixes=("GROUNDING",),
-        skip_output={"grounding_metrics": []},
+        skip_output={"grounding_metrics": None},
     ),
     NodeSpec(
         name="redteam",
@@ -145,7 +145,7 @@ PIPELINE: list[NodeSpec] = [
         is_metric=True,
         color="red",
         env_key_suffixes=("REDTEAM",),
-        skip_output={"redteam_metrics": []},
+        skip_output={"redteam_metrics": None},
     ),
     NodeSpec(
         name="geval",
@@ -155,7 +155,7 @@ PIPELINE: list[NodeSpec] = [
         is_metric=True,
         color="medium_purple3",
         env_key_suffixes=("GEVAL",),
-        skip_output={"geval_metrics": []},
+        skip_output={"geval_metrics": None},
     ),
     NodeSpec(
         name="reference",
@@ -165,7 +165,7 @@ PIPELINE: list[NodeSpec] = [
         is_metric=True,
         color="bright_magenta",
         env_key_suffixes=("REFERENCE",),
-        skip_output={"reference_metrics": []},
+        skip_output={"reference_metrics": None},
     ),
     NodeSpec(
         name="eval",

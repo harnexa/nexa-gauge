@@ -20,7 +20,7 @@ from typing import Any, Mapping, Optional, TypedDict, cast
 
 from langgraph.graph import END, StateGraph
 from lumiseval_core.config import config as cfg
-from lumiseval_core.constants import DEFAULT_JUDGE_MODEL, GENERATION_CHUNK_SIZE_TOKENS
+from lumiseval_core.constants import GENERATION_CHUNK_SIZE_TOKENS
 from lumiseval_core.types import (
     ChunkArtifacts,
     Claim,
@@ -59,7 +59,9 @@ class EvalCase(TypedDict):
     record: dict[str, str]
     llm_overrides: Optional[Mapping[str, Any]]
     execution_mode: ExecutionMode
-
+    estimated_costs: dict[str, CostEstimate]
+    reference_files: list[Path] = []
+    
     # Pipeline inputs
     inputs: Optional[Inputs]
 
@@ -73,7 +75,9 @@ class EvalCase(TypedDict):
     geval_steps: Optional[GevalStepsArtifacts]
     geval_metrics: Optional[GevalMetrics]
     reference_metrics: Optional[ReferenceMetrics]
-    estimated_costs: dict[str, CostEstimate]
+    
+
+    
 
 
 def _is_estimate_mode(state: Mapping[str, Any]) -> bool:
@@ -117,7 +121,7 @@ def _sum_cost_estimates(costs: Mapping[str, CostEstimate] | None) -> CostEstimat
 
 
 @observe(name="node_scan")
-def node_metadata_scanner(state: dict[str, Any]) -> dict[str, Any]:
+def node_metadata_scanner(state: EvalCase) -> dict[str, Any]:
     """
     In LangGraph, each node gets the current full state snapshot.
     So after node_metadata_scanner returns {"inputs": ...}, that patch is merged into state, and downstream nodes like node_chunk receive the same full state with
@@ -166,8 +170,8 @@ def node_generation_chunk(state: EvalCase) -> dict[str, Any]:
             "estimated_costs": _record_estimated_cost(state, "chunk", estimated_cost),
         }
 
-    chunks: ChunkArtifacts = node.run(item=inputs.generation)
-    return {"generation_chunk": chunks}
+    chunk_artifact: ChunkArtifacts = node.run(item=inputs.generation)
+    return {"generation_chunk": chunk_artifact}
 
 
 @observe(name="node_generation_claims")
@@ -190,15 +194,16 @@ def node_generation_claims(state: EvalCase) -> dict[str, Any]:
         llm_overrides=llm_overrides,
     )
     if estimate_mode:
-        estimated_cost = node.estimate(chunks=generation_chunk.chunks)
+        estimate_chunks = generation_chunk.chunks if generation_chunk else []
+        estimated_cost = node.estimate(chunks=estimate_chunks)
         return {
-            "generation_claims": ClaimArtifacts(claims=[], cost=[estimated_cost]),
+            "generation_claims": ClaimArtifacts(claims=[], cost=estimated_cost),
             "estimated_costs": _record_estimated_cost(state, "claims", estimated_cost),
         }
 
-    claims = node.run(generation_chunk.chunks)
+    claim_artifact = node.run(generation_chunk.chunks)
 
-    return {"generation_claims": claims}
+    return {"generation_claims": claim_artifact}
 
 
 @observe(name="node_generation_claims_dedup")
@@ -217,17 +222,22 @@ def node_generation_claims_dedup(state: EvalCase) -> dict[str, Any]:
     
     node = DedupNode()
     if estimate_mode:
-        estimated_cost = node.estimate(input_tokens=0.0, output_tokens=0.0)
+        dedup_cost = CostEstimate(cost=0.0, input_tokens=None, output_tokens=None)
         return {
-            "generation_dedup_claims": ClaimArtifacts(claims=[], cost=[]),
-            "estimated_costs": _record_estimated_cost(state, "dedup", estimated_cost),
+            "generation_dedup_claims": ClaimArtifacts(claims=[], cost=dedup_cost),
+            "estimated_costs": _record_estimated_cost(state, "dedup", dedup_cost),
         }
 
     dedup_result = node.run(items=[c.item for c in claims_list])
     discarded_indices = set(dedup_result.dedup_map.keys())
 
-    claims = [claim for idx, claim in enumerate(claims_list) if idx not in discarded_indices   ]
-    return {"generation_dedup_claims": ClaimArtifacts(claims=claims, cost=None)}
+    claims: list[Claim] = []
+    for idx, claim in enumerate(claims_list):
+        if idx not in discarded_indices:
+            claims.append(claim)
+
+    dedup_cost = CostEstimate(cost=0.0, input_tokens=None, output_tokens=None)
+    return {"generation_dedup_claims": ClaimArtifacts(claims=claims, cost=dedup_cost)}
 
 
 @observe(name="node_grounding")
@@ -236,13 +246,13 @@ def node_grounding(state: EvalCase) -> dict[str, Any]:
     estimate_mode = _is_estimate_mode(state)
     dedup_claims = state["generation_dedup_claims"]
     should_run = bool(inputs and inputs.has_generation and inputs.has_context)
-    
+
     if not estimate_mode:
         should_run = bool(should_run and dedup_claims)
 
     if not should_run:
         return {"grounding_metrics": None}
-    
+
     context_item = inputs.context
     claims: list[Claim] = dedup_claims.claims if dedup_claims else []
     llm_overrides = state.get("llm_overrides")
@@ -377,8 +387,11 @@ def node_geval(state: EvalCase) -> dict[str, Any]:
     llm_overrides = state.get("llm_overrides")
     model = get_judge_model("geval", cfg.LLM_MODEL, llm_overrides=llm_overrides)
     node = GevalNode(judge_model=model)
+    geval_steps = state.get("geval_steps")
+    resolved_artifacts = geval_steps.resolved_steps if geval_steps else []
     if estimate_mode:
-        estimated_cost = node.estimate(resolved_artifacts=resolved_artifacts,
+        estimated_cost = node.estimate(
+            resolved_artifacts=resolved_artifacts,
             generation=inputs.generation,
             question=inputs.question,
             reference=inputs.reference,
@@ -389,8 +402,6 @@ def node_geval(state: EvalCase) -> dict[str, Any]:
             "estimated_costs": _record_estimated_cost(state, "geval", estimated_cost),
         }
 
-    geval_steps = state.get("geval_steps")
-    resolved_artifacts = geval_steps.resolved_steps if geval_steps else []
     results = node.run(
         resolved_artifacts=resolved_artifacts,
         generation=inputs.generation,
@@ -458,76 +469,3 @@ def node_report(state: EvalCase) -> dict[str, Any]:
     if _is_estimate_mode(state):
         out["cost_estimate"] = _sum_cost_estimates(state.get("estimated_costs"))
     return out
-
-
-# ── Graph construction ─────────────────────────────────────────────────────
-
-
-def build_graph() -> StateGraph:
-    g = StateGraph(EvalCase)
-
-    g.add_node("metadata_scanner", node_metadata_scanner)
-    g.add_node("generation_chunk", node_generation_chunk)
-    g.add_node("generation_claims", node_generation_claims)
-    g.add_node("generation_claims_dedup", node_generation_claims_dedup)
-    g.add_node("geval_steps", node_geval_steps)
-    g.add_node("grounding", node_grounding)
-    g.add_node("relevance", node_relevance)
-    g.add_node("redteam", node_redteam)
-    g.add_node("geval", node_geval)
-    g.add_node("reference", node_reference)
-    g.add_node("eval", node_eval)
-    g.add_node("report", node_report)
-
-    g.set_entry_point("metadata_scanner")
-    g.add_edge("metadata_scanner", "generation_chunk")
-    g.add_edge("metadata_scanner", "geval_steps")
-    g.add_edge("metadata_scanner", "redteam")
-    g.add_edge("metadata_scanner", "reference")
-    g.add_edge("generation_chunk", "generation_claims")
-    g.add_edge("generation_claims", "generation_claims_dedup")
-    g.add_edge("geval_steps", "geval")
-    g.add_edge("generation_claims_dedup", "relevance")
-    g.add_edge("generation_claims_dedup", "grounding")
-    g.add_edge("grounding", "eval")
-    g.add_edge("relevance", "eval")
-    g.add_edge("redteam", "eval")
-    g.add_edge("geval", "eval")
-    g.add_edge("reference", "eval")
-    g.add_edge("eval", "report")
-    g.add_edge("report", END)
-
-    return g
-
-def build_initial_state(
-    generation: Optional[str] = None,
-    question: Optional[str] = None,
-    reference: Optional[str] = None,
-    context: Optional[list[str]] = None,
-    geval: Optional[Any] = None,
-    redteam: Optional[Any] = None,
-    reference_files: Optional[list[str]] = None,
-    llm_overrides: Optional[Mapping[str, Any]] = None,
-    execution_mode: ExecutionMode = "run",
-    record: Optional[dict[str, Any]] = None,
-    **_extras: Any,
-) -> dict[str, Any]:
-    resolved_record = dict(record) if record is not None else {
-        "case_id": f"record-{uuid.uuid4().hex[:8]}",
-        "generation": generation,
-        "question": question,
-        "reference": reference,
-        "context": context,
-        "geval": geval,
-        "redteam": redteam,
-    }
-
-    state: dict[str, Any] = {
-        "record": resolved_record,
-        "reference_files": reference_files or [],
-        "llm_overrides": llm_overrides,
-        "execution_mode": execution_mode,
-        "estimated_costs": {},
-    }
-    state.update(_extras)
-    return state

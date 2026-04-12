@@ -1,10 +1,7 @@
 """Dataset adapter protocol for loading canonical EvalCase rows."""
 
+from typing import Any
 from abc import ABC, abstractmethod
-from collections.abc import Iterator
-
-from lumiseval_core.types import EvalCase
-
 
 class DatasetAdapter(ABC):
     """Base adapter contract for all dataset sources."""
@@ -20,5 +17,5 @@ class DatasetAdapter(ABC):
         split: str = "train",
         limit: int | None = None,
         seed: int = 42,
-    ) -> Iterator[EvalCase]:
+    ) -> dict[str, Any]:
         """Yield canonical evaluation cases."""

@@ -318,21 +318,24 @@ class GevalNode(BaseMetricNode):
         question: Optional[Item],
         reference: Optional[Item],
         context: Optional[Item],
-        resolved_artifacts=list[GevalStepsResolved],
+        resolved_artifacts: list[GevalStepsResolved],
     ) -> CostEstimate:
 
-        # TODO: Make sure all `generation`, `question`, `reference`, and `context` 
-        # TODO items are actually used in GEVAL evaluation
+        if not resolved_artifacts:
+            return CostEstimate(cost=0.0, input_tokens=None, output_tokens=None)
+
+        steps_tokens = sum(
+            float(step.tokens)
+            for resolved_artifact in resolved_artifacts
+            for step in resolved_artifact.evaluation_steps
+        )
         input_tokens = (
-            [
-                AVG_DEEPEVAL_PROMPT_TOKENS + 
-                sum([step.tokens for step in resolved_artifact.evaluation_steps])
-                for resolved_artifact in resolved_artifacts
-            ] + 
-            generation.tokens + 
-            (question.tokens if question else 0) + 
-            (reference.tokens if reference else 0) + 
-            (context.tokens if context else 0)
+            len(resolved_artifacts) * AVG_DEEPEVAL_PROMPT_TOKENS
+            + steps_tokens
+            + float(generation.tokens)
+            + (float(question.tokens) if question else 0.0)
+            + (float(reference.tokens) if reference else 0.0)
+            + (float(context.tokens) if context else 0.0)
         )
         output_tokens = (
             len(resolved_artifacts) * 

@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from lumiseval_core.types import ClaimArtifacts
+from lumiseval_core.types import ClaimArtifacts, CostEstimate
 from lumiseval_graph.llm import normalize_runtime_overrides
 
 
@@ -30,7 +30,7 @@ def test_graph_forwards_llm_overrides_to_nodes(graph_module, monkeypatch) -> Non
     # llm_overrides they see in state, then return minimal valid output.
     def _fake_claims(state: dict) -> dict:
         captured.append(("claims", state.get("llm_overrides")))
-        return {"generation_claims": ClaimArtifacts(claims=[], cost=[])}
+        return {"generation_claims": ClaimArtifacts(claims=[], cost=CostEstimate(cost=0.0, input_tokens=None, output_tokens=None))}
 
     def _fake_grounding(state: dict) -> dict:
         captured.append(("grounding", state.get("llm_overrides")))

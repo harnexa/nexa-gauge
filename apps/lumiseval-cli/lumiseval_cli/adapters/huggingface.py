@@ -1,8 +1,9 @@
 """Hugging Face dataset adapter (optional, lazy-imported)."""
 
+from itertools import islice
+
 from lumiseval_core.errors import InputParseError
 
-from ..canonical import canonical_case_from_raw
 from .base import DatasetAdapter
 
 
@@ -67,27 +68,14 @@ class HuggingFaceDatasetAdapter(DatasetAdapter):
         ref_keys = self._field_candidates("reference_files", ["reference_files", "reference_paths"])
         geval_keys = self._field_candidates("geval", ["geval"])
 
-        for idx, record in enumerate(dataset):
-            if limit is not None and idx >= limit:
-                break
+        rows = dataset
+        if limit is not None:
+            rows = islice(dataset, limit)
+
+        for idx, record in enumerate(rows):
             row = dict(record)
             try:
-                yield canonical_case_from_raw(
-                    row,
-                    idx=idx,
-                    dataset=self.dataset_id,
-                    split=split,
-                    metadata_mode="full",
-                    field_candidates={
-                        "generation": generation_keys,
-                        "question": question_keys,
-                        "reference": reference_keys,
-                        "case_id": case_id_keys,
-                        "context": context_keys,
-                        "reference_files": ref_keys,
-                        "geval": geval_keys,
-                    },
-                )
+                yield row
             except InputParseError as exc:
                 if "missing required generation/response/answer/output/completion field." in str(exc):
                     raise InputParseError(

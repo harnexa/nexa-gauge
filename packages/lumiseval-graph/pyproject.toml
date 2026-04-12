@@ -15,6 +15,7 @@ dependencies = [
     "lumiseval-core",
     "rouge-score>=0.1.2",
     "nltk>=3.8.0",
+    "semchunk>=2.2.0",
 ]
 
 [project.optional-dependencies]

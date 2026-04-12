@@ -2,12 +2,12 @@
 
 import csv
 import json
+from itertools import islice
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from lumiseval_core.errors import InputParseError
 
-from ..canonical import canonical_case_from_raw
 from .base import DatasetAdapter
 
 
@@ -24,24 +24,9 @@ class LocalFileDatasetAdapter(DatasetAdapter):
     def name(self) -> str:
         return "local_file"
 
-    def _load_records(self) -> list[dict[str, Any]]:
+    def _load_records_eager(self) -> list[dict[str, Any]]:
+        """Eager loaders used for JSON arrays and plain text fallback."""
         suffix = self.path.suffix.lower()
-        if suffix == ".jsonl":
-            records: list[dict[str, Any]] = []
-            with self.path.open() as f:
-                for idx, line in enumerate(f):
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        item = json.loads(line)
-                    except json.JSONDecodeError as exc:
-                        raise InputParseError(f"Invalid JSONL at line {idx + 1}: {exc}") from exc
-                    if not isinstance(item, dict):
-                        raise InputParseError(f"JSONL line {idx + 1} must decode to an object.")
-                    records.append(item)
-            return records
-
         if suffix == ".json":
             with self.path.open() as f:
                 payload = json.load(f)
@@ -53,32 +38,51 @@ class LocalFileDatasetAdapter(DatasetAdapter):
                 return payload
             raise InputParseError("JSON dataset must be an object or array of objects.")
 
-        if suffix == ".csv":
-            with self.path.open(newline="") as f:
-                return list(csv.DictReader(f))
-
         # Fallback: treat as raw text single case
         return [{"generation": self.path.read_text()}]
+
+    def _iter_records(self) -> Iterator[dict[str, Any]]:
+        """Stream records when possible; fallback to eager paths when required."""
+        suffix = self.path.suffix.lower()
+
+        if suffix == ".jsonl":
+            with self.path.open() as f:
+                for line_idx, line in enumerate(f):
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        item = json.loads(line)
+                    except json.JSONDecodeError as exc:
+                        raise InputParseError(f"Invalid JSONL at line {line_idx + 1}: {exc}") from exc
+                    if not isinstance(item, dict):
+                        raise InputParseError(f"JSONL line {line_idx + 1} must decode to an object.")
+                    yield item
+            return
+
+        if suffix == ".csv":
+            with self.path.open(newline="") as f:
+                for row in csv.DictReader(f):
+                    yield dict(row)
+            return
+
+        for record in self._load_records_eager():
+            yield record
 
     def iter_cases(
         self,
         split: str = "train",
         limit: int | None = None,
         seed: int = 42,
-    ):
+    ) -> Iterator[dict[str, Any]]:
         del seed  # deterministic by file order
-        records = self._load_records()
+        records = self._iter_records()
+        if limit is not None:
+            records = islice(records, limit)
+
         for idx, record in enumerate(records):
-            if limit is not None and idx >= limit:
-                break
             try:
-                yield canonical_case_from_raw(
-                    record,
-                    idx=idx,
-                    dataset=self.dataset_name,
-                    split=split,
-                    metadata_mode="extras",
-                )
+                yield record
             except InputParseError as exc:
                 if exc.record_index is None:
                     raise InputParseError(str(exc), record_index=idx) from exc

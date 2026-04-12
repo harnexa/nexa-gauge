@@ -96,6 +96,9 @@ def _build_redteam_rubric(raw_rubric: Any) -> RedteamRubric | None:
 
 
 def _build_geval(raw_geval: Any) -> Geval | None:
+    accept_legacy_record_fields = hasattr(raw_geval, "model_dump")
+    if hasattr(raw_geval, "model_dump"):
+        raw_geval = raw_geval.model_dump()
     if not isinstance(raw_geval, dict):
         return None
 
@@ -105,6 +108,9 @@ def _build_geval(raw_geval: Any) -> Geval | None:
 
     metrics: list[GevalMetricInput] = []
     for metric_raw in metrics_raw:
+        metric_is_model = hasattr(metric_raw, "model_dump")
+        if hasattr(metric_raw, "model_dump"):
+            metric_raw = metric_raw.model_dump()
         if not isinstance(metric_raw, dict):
             continue
 
@@ -113,6 +119,10 @@ def _build_geval(raw_geval: Any) -> Geval | None:
             continue
 
         raw_item_fields = metric_raw.get("item_fields")
+        if not isinstance(raw_item_fields, list) and (
+            accept_legacy_record_fields or metric_is_model
+        ):
+            raw_item_fields = metric_raw.get("record_fields")
         item_fields: list[str] = []
         if isinstance(raw_item_fields, list):
             for field in raw_item_fields:
@@ -122,7 +132,15 @@ def _build_geval(raw_geval: Any) -> Geval | None:
         if not item_fields:
             item_fields = ["generation"]
 
-        criteria_text = _normalize_text(metric_raw.get("criteria"))
+        raw_criteria = metric_raw.get("criteria")
+        if hasattr(raw_criteria, "model_dump"):
+            raw_criteria = raw_criteria.model_dump()
+        if isinstance(raw_criteria, dict):
+            criteria_text = _normalize_text(raw_criteria.get("text"))
+        elif hasattr(raw_criteria, "text"):
+            criteria_text = _normalize_text(getattr(raw_criteria, "text"))
+        else:
+            criteria_text = _normalize_text(raw_criteria)
         criteria = (
             Item(
                 text=criteria_text,
@@ -136,7 +154,14 @@ def _build_geval(raw_geval: Any) -> Geval | None:
         steps: list[Item] = []
         if isinstance(steps_raw, list):
             for step in steps_raw:
-                step_text = _normalize_text(step)
+                if hasattr(step, "model_dump"):
+                    step = step.model_dump()
+                if isinstance(step, dict):
+                    step_text = _normalize_text(step.get("text"))
+                elif hasattr(step, "text"):
+                    step_text = _normalize_text(getattr(step, "text"))
+                else:
+                    step_text = _normalize_text(step)
                 if not step_text:
                     continue
                 steps.append(
@@ -161,6 +186,8 @@ def _build_geval(raw_geval: Any) -> Geval | None:
 
 
 def _build_redteam(raw_redteam: Any) -> Redteam | None:
+    if hasattr(raw_redteam, "model_dump"):
+        raw_redteam = raw_redteam.model_dump()
     if not isinstance(raw_redteam, dict):
         return None
 
@@ -170,6 +197,8 @@ def _build_redteam(raw_redteam: Any) -> Redteam | None:
 
     metrics: list[RedteamMetricInput] = []
     for metric_raw in metrics_raw:
+        if hasattr(metric_raw, "model_dump"):
+            metric_raw = metric_raw.model_dump()
         if not isinstance(metric_raw, dict):
             continue
 
@@ -204,7 +233,8 @@ def _build_redteam(raw_redteam: Any) -> Redteam | None:
     return Redteam(metrics=metrics)
 
 
-def _build_inputs(record: Mapping[str, Any]) -> Inputs:
+def _build_inputs(record: Mapping[str, Any], *, idx: int = 0) -> Inputs:
+    case_id = _normalize_text(_pick_first(record, ["case_id", "id"], f"record-{idx}"))
     generation_text = _normalize_text(
         _pick_first(record, ["generation", "response", "answer", "output", "completion"])
     )
@@ -217,6 +247,7 @@ def _build_inputs(record: Mapping[str, Any]) -> Inputs:
     redteam = _build_redteam(_pick_first(record, ["redteam"]))
 
     return Inputs(
+        case_id=case_id,
         generation=Item(text=generation_text, tokens=float(_count_tokens(generation_text))),
         question=(
             Item(text=question_text, tokens=float(_count_tokens(question_text)))
@@ -256,7 +287,7 @@ def scan(
     result.setdefault("dataset", DEFAULT_DATASET_NAME)
     result.setdefault("split", DEFAULT_SPLIT)
     result.setdefault("reference_files", [])
-    result["inputs"] = _build_inputs(record)
+    result["inputs"] = _build_inputs(record, idx=idx)
     return result
 
 

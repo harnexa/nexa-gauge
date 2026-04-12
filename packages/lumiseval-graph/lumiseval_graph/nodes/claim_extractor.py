@@ -89,10 +89,14 @@ class ClaimExtractorNode(BaseNode):
                         confidence=confidence,
                     )
                 )
-
+        cumulative_cost = CostEstimate(
+            input_tokens=sum(c.input_tokens or 0.0 for c in costs),
+            output_tokens=sum(c.output_tokens or 0.0 for c in costs),
+            cost=sum(c.cost for c in costs),
+        )
         valid_claims = [c for c in all_claims if (not c.extraction_failed and c.item.text.strip())]
         log.success(f"{len(valid_claims)} total claim(s) across all chunks")
-        return ClaimArtifacts(claims=valid_claims, cost=costs)
+        return ClaimArtifacts(claims=valid_claims, cost=cumulative_cost)
 
     def estimate(self, chunks: list[Chunk]) -> CostEstimate:
 

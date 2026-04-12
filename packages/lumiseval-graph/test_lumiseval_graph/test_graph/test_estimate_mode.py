@@ -50,7 +50,7 @@ def test_node_generation_claims_estimate_calls_estimate_without_chunks(
     assert captured["constructor_overrides"] == llm_overrides
     assert captured["estimate_chunk_count"] == 0
     assert out["generation_claims"].claims == []
-    assert out["generation_claims"].cost[0].cost == 0.123
+    assert out["generation_claims"].cost.cost == 0.123
     assert out["estimated_costs"]["claims"].cost == 0.123
 
 

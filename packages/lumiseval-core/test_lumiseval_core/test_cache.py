@@ -1,7 +1,13 @@
+import hashlib
 import json
 
 from lumiseval_core.cache import CacheStore, compute_case_hash
-from lumiseval_core.types import GevalConfig, GevalMetricSpec, NodeCostBreakdown
+from lumiseval_core.types import GevalConfig, GevalMetricSpec
+
+
+def _kv_path(tmp_path, cache_key: str):
+    digest = hashlib.sha256(cache_key.encode()).hexdigest()
+    return tmp_path / "kv" / digest[:2] / f"{digest}.json"
 
 
 def test_compute_case_hash_changes_when_reference_files_change() -> None:
@@ -120,57 +126,79 @@ def test_compute_case_hash_changes_when_geval_contract_changes() -> None:
 
 def test_cache_get_returns_none_for_corrupt_json(tmp_path) -> None:
     store = CacheStore(tmp_path)
-    path = tmp_path / "case" / "cfg" / "scan.json"
+    cache_key = "v2:run:scan:case:route"
+    path = _kv_path(tmp_path, cache_key)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{not-json")
 
-    assert store.get("case", "cfg", "scan") is None
+    assert store.get_by_key(cache_key) is None
 
 
 def test_cache_get_returns_none_for_invalid_envelope(tmp_path) -> None:
     store = CacheStore(tmp_path)
-    path = tmp_path / "case" / "cfg" / "scan.json"
+    cache_key = "v2:run:scan:case:route"
+    path = _kv_path(tmp_path, cache_key)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"unexpected": "shape"}))
 
-    assert store.get("case", "cfg", "scan") is None
+    assert store.get_by_key(cache_key) is None
 
 
-def test_cache_entry_round_trip_includes_node_cost(tmp_path) -> None:
+def test_cache_entry_round_trip_includes_metadata(tmp_path) -> None:
     store = CacheStore(tmp_path)
-    store.put(
-        "case",
-        "cfg",
+    cache_key = "v2:run:claims:case:route"
+    store.put_by_key(
+        cache_key,
         "claims",
         {"raw_claims": []},
-        node_cost=NodeCostBreakdown(model_calls=3, cost_usd=0.0123),
+        metadata={"execution_mode": "run"},
     )
 
-    entry = store.get_entry("case", "cfg", "claims")
+    entry = store.get_entry_by_key(cache_key)
     assert entry is not None
+    assert entry["cache_key"] == cache_key
+    assert entry["node_name"] == "claims"
     assert entry["node_output"] == {"raw_claims": []}
-    assert entry["node_cost"] is not None
-    assert entry["node_cost"].model_calls == 3
-    assert entry["node_cost"].cost_usd == 0.0123
+    assert entry["metadata"] == {"execution_mode": "run"}
 
 
-def test_cache_get_entry_backward_compatible_without_node_cost(tmp_path) -> None:
+def test_cache_get_entry_defaults_metadata_to_empty_dict(tmp_path) -> None:
     store = CacheStore(tmp_path)
-    path = tmp_path / "case" / "cfg" / "scan.json"
+    cache_key = "v2:run:scan:case:route"
+    path = _kv_path(tmp_path, cache_key)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
             {
+                "cache_key": cache_key,
                 "node_name": "scan",
-                "case_hash": "case",
-                "config_hash": "cfg",
                 "created_at": "2026-04-01T00:00:00+00:00",
                 "node_output": {"metadata": None},
             }
         )
     )
 
-    entry = store.get_entry("case", "cfg", "scan")
+    entry = store.get_entry_by_key(cache_key)
     assert entry is not None
     assert entry["node_output"] == {"metadata": None}
-    assert entry["node_cost"] is None
+    assert entry["metadata"] == {}
+
+
+def test_cache_get_entry_returns_none_when_cache_key_mismatch(tmp_path) -> None:
+    store = CacheStore(tmp_path)
+    expected_key = "v2:run:scan:case:route"
+    actual_key = "v2:run:scan:case:other-route"
+    path = _kv_path(tmp_path, expected_key)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "cache_key": actual_key,
+                "node_name": "scan",
+                "created_at": "2026-04-01T00:00:00+00:00",
+                "node_output": {"inputs": None},
+            }
+        )
+    )
+
+    assert store.get_entry_by_key(expected_key) is None

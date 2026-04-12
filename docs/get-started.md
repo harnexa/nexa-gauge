@@ -139,7 +139,9 @@ Output includes:
 ```bash
 uv run lumiseval run grounding \
   --input sample.json \
-  --limit 10
+  --limit 10 \
+  --llm-model grounding=openai/gpt-4o \
+  --llm-fallback grounding=openai/gpt-4o-mini
 ```
 
 Behavior:
@@ -160,6 +162,36 @@ uv run lumiseval run eval \
 ```
 
 For `eval` runs, `report.cost_estimate` is still populated by runner-level pre-eval estimation.
+
+### 5.5 Per-node LLM routing
+
+`--llm-model` and `--llm-fallback` are repeatable and accept:
+
+- `MODEL` (global default for current branch)
+- `NODE=MODEL` (per-node override)
+
+Examples:
+
+```bash
+# All branch nodes use gpt-4o; grounding node uses gpt-4o-mini
+uv run lumiseval run grounding \
+  --input sample.json \
+  --llm-model openai/gpt-4o \
+  --llm-model grounding=openai/gpt-4o-mini
+```
+
+```bash
+# Explicit primary + fallback for grounding only
+uv run lumiseval run grounding \
+  --input sample.json \
+  --llm-model grounding=openai/gpt-4o \
+  --llm-fallback grounding=openai/gpt-4o-mini
+```
+
+Defaults when no flags are provided:
+
+- primary: `openai/gpt-4o-mini`
+- fallback: `openai/gpt-4o`
 
 ### 5.4 Hugging Face dataset source
 
@@ -183,6 +215,8 @@ uv run lumiseval estimate relevance \
   - `--hf-revision`
 - model/runtime:
   - `--model`
+  - `--llm-model` (repeatable, accepts `MODEL` or `NODE=MODEL`)
+  - `--llm-fallback` (repeatable, accepts `MODEL` or `NODE=MODEL`)
   - `--web-search`
   - `--evidence-threshold`
 - execution controls:
