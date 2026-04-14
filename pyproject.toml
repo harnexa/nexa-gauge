@@ -73,13 +73,13 @@ Documentation = "https://github.com/Sardhendu/lumis-eval/tree/main/docs"
 Security = "https://github.com/Sardhendu/lumis-eval/security/policy"
 
 [project.scripts]
-lumiseval = "lumiseval_cli.main:main"
+lumiseval = "lumoseval_api.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = [
-    "apps/lumiseval-cli/lumiseval_cli",
-    "packages/lumiseval-core/lumiseval_core",
-    "packages/lumiseval-graph/lumiseval_graph",
+    "apps/lumoseval-api/lumoseval_api",
+    "packages/lumoseval-core/lumoseval_core",
+    "packages/lumoseval-graph/lumoseval_graph",
 ]
 
 [tool.hatch.build.targets.sdist]
@@ -130,6 +130,6 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = [
-    "packages/lumiseval-core/test_lumiseval_core",
-    "packages/lumiseval-graph/test_lumiseval_graph",
+    "packages/lumoseval-core/test_lumoseval_core",
+    "packages/lumoseval-graph/test_lumoseval_graph",
 ]
