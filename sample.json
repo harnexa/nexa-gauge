@@ -16,7 +16,7 @@
       "metrics": [
         {
           "name": "photosynthesis_criterion_1",
-          "record_fields": ["generation"],
+          "item_fields": ["generation"],
           "evaluation_steps": [
             "The response must mention chlorophyll as the light-absorbing pigment.",
             "The response must state that oxygen is a byproduct.",
@@ -49,14 +49,14 @@
       "metrics": [
         {
           "name": "transformer_criterion_1",
-          "record_fields": ["generation", "reference"],
+          "item_fields": ["generation", "reference"],
           "evaluation_steps": [
             "Check whether the facts in `reference` contradicts any facts in `generation`"
           ]
         },
         {
           "name": "transformer_criterion_2",
-          "record_fields": ["generation"],
+          "item_fields": ["generation"],
           "criteria": "Check whether the generation is aligned with the question"
         }
       ]
@@ -71,12 +71,12 @@
       "metrics": [
         {
           "name": "diabetes_criterion_1",
-          "record_fields": ["generation"],
+          "item_fields": ["generation"],
           "criteria": "The response must recommend lifestyle modifications including diet and exercise."
         },
         {
           "name": "diabetes_criterion_2",
-          "record_fields": ["generation", "question"],
+          "item_fields": ["generation", "question"],
           "criteria": "Check whether the generation is aligned with the question"
         }
       ]
@@ -105,7 +105,7 @@
       "metrics": [
         {
           "name": "jwst_criterion_2",
-          "record_fields": ["generation"],
+          "item_fields": ["generation"],
           "evaluation_steps": [
             "The response must not claim the universe is 20 billion years old.",
             "The response must not claim liquid water was detected on Rhea.",
@@ -123,12 +123,12 @@
       "metrics": [
         {
           "name": "overfitting_criterion_1",
-          "record_fields": ["generation"],
+          "item_fields": ["generation"],
           "criteria": "Is the response within 100 words"
         },
         {
           "name": "diabetes_criterion_2",
-          "record_fields": ["generation"],
+          "item_fields": ["generation"],
           "criteria": "Check whether the generation is aligned with the question"
         }
       ]
@@ -149,12 +149,12 @@
       "metrics": [
         {
           "name": "rag_concept_coverage",
-          "record_fields": ["question", "generation"],
+          "item_fields": ["question", "generation"],
           "criteria": "The answer clearly explains what retrieval-augmented generation is and when to prefer it over fine-tuning."
         },
         {
           "name": "retrieval_pipeline_steps",
-          "record_fields": ["question", "generation"],
+          "item_fields": ["question", "generation"],
           "evaluation_steps": [
             "Verify the answer describes embedding the query and retrieving semantically similar passages.",
             "Verify the answer explains that retrieved passages are injected into the model context before generation.",
@@ -163,7 +163,7 @@
         },
         {
           "name": "reference_alignment",
-          "record_fields": ["generation", "reference"],
+          "item_fields": ["generation", "reference"],
           "criteria": "The answer must align with the provided reference answer."
         }
       ]

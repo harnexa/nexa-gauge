@@ -237,7 +237,7 @@ def compute_case_hash(
         return "|".join([p for p in parts if p])
 
     def _metric_fields_text(metric: Any) -> str:
-        fields = _value(metric, "item_fields") or _value(metric, "record_fields") or []
+        fields = _value(metric, "item_fields") or _value(metric, "item_fields") or []
         if not isinstance(fields, list):
             return ""
         return "|".join([_text(field) for field in fields if _text(field)])

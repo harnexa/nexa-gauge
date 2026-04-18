@@ -38,7 +38,7 @@ def test_compute_case_hash_changes_when_geval_steps_change() -> None:
         metrics=[
             GevalMetricSpec(
                 name="factuality",
-                record_fields=["generation"],
+                item_fields=["generation"],
                 evaluation_steps=["Check factual correctness."],
             )
         ]
@@ -47,7 +47,7 @@ def test_compute_case_hash_changes_when_geval_steps_change() -> None:
         metrics=[
             GevalMetricSpec(
                 name="factuality",
-                record_fields=["generation"],
+                item_fields=["generation"],
                 evaluation_steps=["Check factual correctness.", "Check conciseness."],
             )
         ]
@@ -95,7 +95,7 @@ def test_compute_case_hash_changes_when_geval_contract_changes() -> None:
         metrics=[
             GevalMetricSpec(
                 name="factuality",
-                record_fields=["generation"],
+                item_fields=["generation"],
                 criteria="Must be factual.",
             )
         ]
@@ -104,7 +104,7 @@ def test_compute_case_hash_changes_when_geval_contract_changes() -> None:
         metrics=[
             GevalMetricSpec(
                 name="factuality",
-                record_fields=["generation"],
+                item_fields=["generation"],
                 criteria="Must be concise and factual.",
             )
         ]

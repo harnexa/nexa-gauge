@@ -43,7 +43,7 @@ class GevalMetricSpec(BaseModel):
     """Legacy GEval metric shape used by cache/tests/adapters."""
 
     name: str
-    record_fields: list[GevalItemField] = Field(default_factory=lambda: ["generation"])
+    item_fields: list[GevalItemField] = Field(default_factory=lambda: ["generation"])
     criteria: str | None = None
     evaluation_steps: list[str] = Field(default_factory=list)
 

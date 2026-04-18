@@ -35,7 +35,7 @@ def test_geval_artifact_cache_reads_canonical_artifacts(tmp_path) -> None:
 def test_collect_geval_signatures_deduplicates_across_cases() -> None:
     metric = GevalMetricSpec(
         name="factuality",
-        record_fields=["generation"],
+        item_fields=["generation"],
         criteria="Must be factual.",
     )
     cases = [

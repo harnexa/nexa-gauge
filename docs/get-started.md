@@ -128,7 +128,7 @@ LumisEval accepts JSON input with various field formats.
     "metrics": [
       {
         "name": "location_accuracy",
-        "record_fields": ["question", "generation"],
+        "item_fields": ["question", "generation"],
         "criteria": "Answer should mention Paris as location."
       }
     ]

@@ -96,7 +96,7 @@ def _build_redteam_rubric(raw_rubric: Any) -> RedteamRubric | None:
 
 
 def _build_geval(raw_geval: Any) -> Geval | None:
-    accept_legacy_record_fields = hasattr(raw_geval, "model_dump")
+    accept_legacy_item_fields = hasattr(raw_geval, "model_dump")
     if hasattr(raw_geval, "model_dump"):
         raw_geval = raw_geval.model_dump()
     if not isinstance(raw_geval, dict):
@@ -120,9 +120,9 @@ def _build_geval(raw_geval: Any) -> Geval | None:
 
         raw_item_fields = metric_raw.get("item_fields")
         if not isinstance(raw_item_fields, list) and (
-            accept_legacy_record_fields or metric_is_model
+            accept_legacy_item_fields or metric_is_model
         ):
-            raw_item_fields = metric_raw.get("record_fields")
+            raw_item_fields = metric_raw.get("item_fields")
         item_fields: list[str] = []
         if isinstance(raw_item_fields, list):
             for field in raw_item_fields:
