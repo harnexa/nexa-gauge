@@ -1,150 +1,75 @@
 # CLI Code Flow
 
-This document describes the actual command flow for:
+This document maps the current CLI behavior to implementation.
+
+Primary source files:
+- `apps/nexagauge-apps/ng_cli/main.py`
+- `apps/nexagauge-apps/ng_cli/run.py`
+- `apps/nexagauge-apps/ng_cli/estimate.py`
+- `packages/nexagauge-graph/ng_graph/runner.py`
+
+## Command Entry
+
+`nexagauge` exposes two commands:
 - `nexagauge run <node_name>`
 - `nexagauge estimate <node_name>`
 
-Source files:
-- `apps/nexagauge-cli/ng_cli/main.py`
-- `apps/nexagauge-cli/ng_cli/cli/run.py`
-- `apps/nexagauge-cli/ng_cli/cli/estimate.py`
-- `apps/nexagauge-cli/ng_cli/cli/util.py`
+Shared setup in both commands:
+1. Validate target node name against topology.
+2. Resolve global/per-node model routing.
+3. Build cache store (`CacheStore` or `NoOpCacheStore`).
+4. Resolve dataset adapter and stream selected rows.
+5. Inject per-case LLM overrides.
 
-## 1) Command Entry
+## `run` Flow
 
-`main.py` registers two Typer commands:
-- `run`
-- `estimate`
+`run()` calls `CachedNodeRunner.run_cases_iter(..., execution_mode="run")`.
 
-```text
-nexagauge
-  ├── run <node_name> ...
-  └── estimate <node_name> ...
-```
+Per outcome:
+- success: accumulate executed/cached step counters.
+- success + `--output-dir`: write one `<case_id>.json` report file when `final_state["report"]` is present.
+- failure: collect `(case_id, error)` and continue or exit based on `--continue-on-error`.
 
-Both commands share helper utilities for:
-- target node validation
-- branch planning
-- model override parsing
-- routing summary rendering
+Behavior notes:
+- `--debug` enables per-node debug logs.
+- When `--debug` is off, a CLI progress bar is shown.
+- `--yes` is accepted but deprecated.
+- `--web-search` and `--evidence-threshold` are currently accepted for compatibility but not used by current `run` implementation.
 
-## 2) Shared Pre-Execution Steps
+## `estimate` Flow
 
-Both commands execute this setup sequence:
+`estimate()` calls `CachedNodeRunner.run_cases_iter(..., execution_mode="estimate")`.
 
-1. Validate target node (`_resolve_target_node`) against `NODES_BY_NAME`.
-2. Parse and normalize model/fallback overrides (`_resolve_runtime_llm_overrides`).
-3. Print branch LLM routing table (`_print_llm_routing_summary`).
-4. Build cache store:
-   - `CacheStore` (default)
-   - `NoOpCacheStore` when `--no-cache`
-5. Build `CachedNodeRunner`.
-6. Resolve adapter and iterate selected rows:
-   - `create_dataset_adapter(source, adapter, config_name, revision)`
-   - `iter_cases(split=..., limit=...)`
-   - apply `start/end/limit` slicing
-   - inject per-case `llm_overrides`
+Per outcome:
+- aggregate `estimated_costs` by node.
+- aggregate node stats (executed, cached, estimated, uncached-eligible).
+- render branch table + total estimate.
 
-## 3) `nexagauge run` Flow
+Behavior notes:
+- `--debug` enables per-node debug logs.
+- When `--debug` is off, a CLI progress bar is shown.
 
-File: `cli/run.py`
+## Runner Responsibilities
 
-```text
-run()
-  ├─ resolve target + model routing
-  ├─ adapter.iter_cases(...)
-  └─ runner.run_cases_iter(... execution_mode="run")
-       ├─ per case success:
-       │    - accumulate executed/cached counters
-       │    - if --output-dir and final_state has "report": write JSON
-       └─ per case failure:
-            - capture case_id + error
-```
+`CachedNodeRunner` is the CLI-to-graph bridge.
 
-### run output behavior
-- Always prints final summary counts:
-  - total cases
-  - succeeded / failed
-  - executed steps / cached steps
-- If `--output-dir` is provided, one JSON file is written per case **only when** `final_state["report"]` exists.
+Key responsibilities:
+- Build initial `EvalCase` state from each input row.
+- Expand target plan from topology prerequisites.
+- Read/write node-level cache entries.
+- Reuse `run` cache entries from `estimate` mode when route matches.
+- Execute metric nodes in parallel for `target=eval`.
+- Stream outcomes in submission order.
 
-Practical implication:
-- Targets like `grounding`, `relevance`, `redteam`, `geval`, `reference`, and `eval` usually produce `report`.
-- Intermediate targets like `scan`, `chunk`, `claims`, `dedup` typically do not.
+Planning note:
+- For non-`report` targets, runner appends `report` to the execution plan so final state can emit report JSON consistently.
 
-## 4) `nexagauge estimate` Flow
+## Adapter Resolution
 
-File: `cli/estimate.py`
-
-```text
-estimate()
-  ├─ resolve target + model routing
-  ├─ adapter.iter_cases(...)
-  └─ runner.run_cases_iter(... execution_mode="estimate")
-       ├─ aggregate per-node estimated_costs
-       ├─ aggregate per-node stats (executed/cached/estimated/eligible)
-       └─ render estimate summary table + total estimate
-```
-
-### estimate output columns
-Rendered table includes per branch node:
-- node_name
-- model
-- status
-- cached / uncached counts
-- uncached eligible count and percent
-- cost_estimate
-
-Status is derived from node cost and execution stats:
-- `billable`
-- `zero_cost`
-- `cached_only`
-- `skipped/ineligible`
-- `not_reached`
-- `failed`
-
-## 5) Adapter Resolution Details
-
-File: `adapters/registry.py`
-
-`create_dataset_adapter(...)` rules:
-- `adapter=local` -> local file adapter
-- `adapter=huggingface` -> hf adapter
+`create_dataset_adapter(...)` behavior:
+- `adapter=local` -> local file adapter.
+- `adapter=huggingface` -> Hugging Face adapter.
 - `adapter=auto`:
-  - `hf://...` source -> hf adapter
-  - existing path -> local adapter
-  - else -> input parse error
-
-Local adapter supports:
-- `.json` (object or array of objects)
-- `.jsonl`
-- `.csv`
-- fallback to plain text single-case (`{"generation": <file text>}`)
-
-HF adapter requires `datasets` package.
-
-## 6) CLI Flags That Matter Most
-
-Common flags:
-- target/data: `node_name`, `--input`, `--adapter`, `--split`, `--start`, `--end`, `--limit`
-- model routing: `--model`, `--llm-model`, `--llm-fallback`
-- cache/execution: `--force`, `--no-cache`, `--cache-dir`, `--max-workers`, `--max-in-flight`, `--continue-on-error`
-
-Run-only:
-- `--output-dir`
-- `--yes` (deprecated no-op)
-- `--web-search`, `--evidence-threshold` are currently accepted but not used in `run` implementation.
-
-## 7) Where CLI Meets Graph Execution
-
-`CachedNodeRunner` is the bridge from CLI to graph nodes.
-
-It is responsible for:
-- initial `EvalCase` state construction
-- prerequisite planning
-- cache reads/writes
-- estimate-mode run-cache fallback
-- parallel metric execution for eval target
-- ordered streaming outcomes
-
-For deeper runner semantics, see `docs/execution-model.md`.
+  - `hf://...` input -> Hugging Face adapter.
+  - existing local path -> local adapter.
+  - otherwise -> input parse error.

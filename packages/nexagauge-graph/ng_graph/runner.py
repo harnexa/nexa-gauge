@@ -31,7 +31,11 @@ from pydantic import BaseModel
 from ng_graph.llm.config import get_node_config
 from ng_graph.log import get_node_logger
 from ng_graph.registry import NODE_FNS
-from ng_graph.topology import DEBUG_SKIP_NODES, METRIC_NODES, NODES_BY_NAME
+from ng_graph.topology import (
+    DEBUG_SKIP_NODES,
+    METRIC_NODES,
+    transitive_prerequisites,
+)
 
 
 def _debug_log_running(node_name: str, case_id: str) -> None:
@@ -276,7 +280,7 @@ def _step_fingerprint_for_node_branch(
     hit the same cache entry for grounding.
     """
     parent_fingerprint = case_fingerprint
-    for prereq in NODES_BY_NAME[node_name].prerequisites:
+    for prereq in transitive_prerequisites(node_name):
         parent_fingerprint = _step_fingerprint(
             parent_fingerprint=parent_fingerprint,
             node_name=prereq,
@@ -294,18 +298,16 @@ def _step_fingerprint_for_node_branch(
 def _plan_nodes(node_name: str) -> list[str]:
     """Build the ordered list of nodes to execute for a requested target.
 
-    Returns ``[*prerequisites, target, "report"?]``. ``report`` is appended
-    unconditionally (unless the target *is* report) so intermediate targets
-    like ``geval_steps`` / ``chunk`` / ``claims`` still emit per-case JSON for
-    ``--output-dir``. Report aggregation is declarative and section-gated, so
-    missing upstream artifacts are just omitted — never an error.
+    Returns ``[*prerequisites, target, "eval", "report"]``. Every plan funnels
+    through ``eval`` before ``report``: utility and metric nodes never reach
+    ``report`` directly — ``eval`` is the sole subscriber of ``report``. This
+    keeps the invariant that ``report.prerequisites == ("eval",)`` holds at
+    runtime regardless of which target the CLI was invoked with.
     """
-    plan = list(NODES_BY_NAME[node_name].prerequisites) + [node_name]
-    # Always append report so intermediate targets (geval_steps, chunk, claims, dedup)
-    # still produce per-case JSON for --output-dir. Report is declarative aggregation
-    # over final_state with gated sections, so missing upstream artifacts are simply
-    # omitted rather than errored.
-    if node_name != "report" and "report" not in plan and "report" in NODE_FNS:
+    plan = list(transitive_prerequisites(node_name)) + [node_name]
+    if node_name not in ("eval", "report") and "eval" in NODE_FNS and "eval" not in plan:
+        plan.append("eval")
+    if node_name != "report" and "report" in NODE_FNS and "report" not in plan:
         plan.append("report")
     return plan
 

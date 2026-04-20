@@ -28,7 +28,8 @@ make ci
 
 ```bash
 uv run pytest -s packages/nexagauge-graph/test_ng_graph
-uv run pytest -s apps/nexagauge-cli/test_ng_cli
+uv run pytest -s apps/nexagauge-apps/ng_cli/test_llm_cli_interface.py
+uv run pytest -s apps/nexagauge-apps/adapters/test_local_adapter_streaming.py
 ```
 
 ## Reporting Bugs / Requesting Features

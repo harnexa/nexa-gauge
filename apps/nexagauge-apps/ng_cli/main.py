@@ -5,13 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 import typer
+from adapters import create_dataset_adapter
 from ng_graph.runner import CachedNodeRunner
 
-from ng_api.adapters import create_dataset_adapter
-
-from .cli.estimate import estimate as estimate_command
-from .cli.run import run as run_command
-from .cli.util import (
+from .estimate import estimate as estimate_command
+from .run import run as run_command
+from .util import (
     DEFAULT_FALLBACK_LLM,
     DEFAULT_PRIMARY_LLM,
     _collect_estimate_rows,
@@ -47,7 +46,7 @@ app.command(name="estimate")(estimate_command)
 
 def run(*args: Any, **kwargs: Any) -> None:
     """Backward-compatible callable used by tests and programmatic callers."""
-    import ng_api.cli.run as run_module
+    import ng_cli.run as run_module
 
     run_module.CachedNodeRunner = CachedNodeRunner
     run_module.create_dataset_adapter = create_dataset_adapter
@@ -56,7 +55,7 @@ def run(*args: Any, **kwargs: Any) -> None:
 
 def estimate(*args: Any, **kwargs: Any) -> None:
     """Backward-compatible callable used by tests and programmatic callers."""
-    import ng_api.cli.estimate as estimate_module
+    import ng_cli.estimate as estimate_module
 
     estimate_module.CachedNodeRunner = CachedNodeRunner
     estimate_module.create_dataset_adapter = create_dataset_adapter

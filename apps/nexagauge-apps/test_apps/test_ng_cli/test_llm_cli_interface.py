@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import ng_api.main as main_module
+import ng_cli.main as main_module
 import pytest
-from ng_api.main import (
+from ng_cli.main import (
     DEFAULT_FALLBACK_LLM,
     DEFAULT_PRIMARY_LLM,
     _collect_estimate_rows,
@@ -12,6 +12,7 @@ from ng_api.main import (
     _parse_model_overrides,
     _resolve_runtime_llm_overrides,
 )
+from ng_cli.util import _resolve_target_node
 from ng_core.types import CostEstimate
 
 
@@ -172,6 +173,15 @@ def test_is_case_eligible_for_eval_keeps_non_intersection_records() -> None:
     )
 
 
+def test_resolve_target_node_allows_eval() -> None:
+    assert _resolve_target_node("eval") == "eval"
+
+
+def test_resolve_target_node_rejects_report() -> None:
+    with pytest.raises(ValueError, match="not directly invocable"):
+        _resolve_target_node("report")
+
+
 def test_estimate_command_uses_estimate_execution_mode(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
@@ -187,6 +197,7 @@ def test_estimate_command_uses_estimate_execution_mode(monkeypatch: pytest.Monke
         def run_cases_iter(self, **kwargs):
             captured["execution_mode"] = kwargs.get("execution_mode")
             captured["node_name"] = kwargs.get("node_name")
+            captured["debug"] = kwargs.get("debug")
             yield SimpleNamespace(
                 case_id="c1",
                 error=None,
@@ -221,10 +232,12 @@ def test_estimate_command_uses_estimate_execution_mode(monkeypatch: pytest.Monke
         force=False,
         no_cache=True,
         cache_dir=None,
+        debug=True,
     )
 
     assert captured["execution_mode"] == "estimate"
     assert captured["node_name"] == "grounding"
+    assert captured["debug"] is True
 
 
 def test_estimate_command_filters_ineligible_cases_for_grounding(
@@ -314,7 +327,7 @@ def test_estimate_command_uses_all_selected_records_as_denominator(
 
     monkeypatch.setattr(main_module, "create_dataset_adapter", lambda **kwargs: _Adapter())
     monkeypatch.setattr(main_module, "CachedNodeRunner", _Runner)
-    monkeypatch.setattr("ng_api.cli.estimate._collect_estimate_rows", _fake_collect_estimate_rows)
+    monkeypatch.setattr("ng_cli.estimate._collect_estimate_rows", _fake_collect_estimate_rows)
 
     main_module.estimate(
         node_name="grounding",

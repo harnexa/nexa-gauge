@@ -1,26 +1,30 @@
 <p align="center">
-  <img src="nexagauge-banner.svg" alt="Nexa Gauge" width="760" />
+  <img src="nexagauge-banner.svg" alt="neXa-gauge" width="760" />
 </p>
 
-# NexaGauge
+# neXa-gauge
 
 [![CI](https://img.shields.io/github/actions/workflow/status/Sardhendu/nexa-gauge/ci.yml?branch=main&label=CI)](https://github.com/Sardhendu/nexa-gauge/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](pyproject.toml)
 
-Agentic LLM evaluation pipeline with cache-aware graph execution, branch-level cost estimation, and declarative reporting.
+Cache-aware LLM evaluation CLI with topology-based execution and branch-level cost estimation.
 
-## Why NexaGauge
+## Install
 
-- Graph-based evaluation nodes (`scan -> chunk -> claims -> metrics -> eval -> report`)
-- Per-node cache reuse across runs and estimates
-- CLI-first workflow for local files and Hugging Face datasets
-- Declarative report projection via `REPORT_VISIBILITY`
-- Model routing with global and per-node primary/fallback overrides
+### PyPI (recommended)
 
-## Installation
+```bash
+pip install nexa-gauge
+```
 
-### Option 1: from local source (recommended for development)
+With Hugging Face adapter support:
+
+```bash
+pip install "nexa-gauge[huggingface]"
+```
+
+### From source (development)
 
 ```bash
 git clone git@github.com:Sardhendu/nexa-gauge.git
@@ -28,49 +32,34 @@ cd nexa-gauge
 pip install -e .
 ```
 
-### Option 2: from GitHub
-
-```bash
-pip install "git+https://github.com/Sardhendu/nexa-gauge.git"
-```
-
-### Option 3: from PyPI (after publish)
-
-```bash
-pip install nexa-gauge
-```
-
 ## Quick Start
 
 ```bash
-cp .env.example .env
-# set OPENAI_API_KEY in .env
+# set your provider key
+export OPENAI_API_KEY="<your-key>"
 
+# inspect CLI
 nexagauge --help
+
+# estimate first
 nexagauge estimate grounding --input sample.json --limit 5
+
+# run and write reports
 nexagauge run eval --input sample.json --limit 5 --output-dir ./report
 ```
 
-## CLI Commands
+## CLI Overview
 
-### Estimate uncached branch cost
+- `nexagauge run <target_node> --input <source> [flags]`
+- `nexagauge estimate <target_node> --input <source> [flags]`
 
-```bash
-nexagauge estimate <target_node> --input <source> [options]
-```
-
-### Execute a branch
-
-```bash
-nexagauge run <target_node> --input <source> [options]
-```
-
-Most used options:
+Most-used flags:
 - data: `--input`, `--adapter`, `--split`, `--start`, `--end`, `--limit`
-- routing: `--model`, `--llm-model`, `--llm-fallback`
+- model routing: `--model`, `--llm-model`, `--llm-fallback`
 - cache: `--force`, `--no-cache`, `--cache-dir`
 - execution: `--max-workers`, `--max-in-flight`, `--continue-on-error`
-- output: `--output-dir` (`run`)
+- debug: `--debug` (enables node logs; hides progress bar)
+- output (`run`): `--output-dir`
 
 ## Node Topology
 
@@ -88,38 +77,26 @@ Canonical nodes:
 - `eval`
 - `report`
 
-Dependency highlights:
+Typical paths:
 - `grounding`: `scan -> chunk -> claims -> dedup -> grounding`
 - `relevance`: `scan -> chunk -> claims -> dedup -> relevance`
 - `geval`: `scan -> geval_steps -> geval`
-- `eval`: all prerequisite branches + metric fan-out
-
-## Report Contract
-
-Report is built by `ng_graph.nodes.report.aggregate` using `REPORT_VISIBILITY`.
-
-Always present keys:
-- `target_node`
-- `input`
-
-Conditionally present keys (omitted if source artifact is `None`):
-- `chunks`, `claims`, `claims_unique`, `geval_steps`
-- `grounding`, `relevance`, `redteam`, `geval`, `reference`
+- `eval`: full graph execution and aggregation
 
 ## Configuration
 
-See `.env.example` for all knobs.
+See `.env.example` for environment settings.
 
-Minimum required for LLM-backed runs:
-- `OPENAI_API_KEY`
-- `LLM_MODEL` (defaults allowed)
+Minimum for LLM-backed runs:
+- `OPENAI_API_KEY` (or alternative provider key)
+- `LLM_MODEL` (default available)
 
-Per-node env overrides are supported:
+Per-node overrides are supported:
 - `LLM_{NODE}_MODEL`
 - `LLM_{NODE}_FALLBACK_MODEL`
 - `LLM_{NODE}_TEMPERATURE`
 
-## Development
+## For Maintainers
 
 ```bash
 uv sync
@@ -128,26 +105,15 @@ make test
 make ci
 ```
 
-## Packaging and Release
-
-Build artifacts:
+Build distributions:
 
 ```bash
 uv build
 ```
 
-You should get:
+Expected artifacts:
 - `dist/nexa_gauge-<version>-py3-none-any.whl`
 - `dist/nexa_gauge-<version>.tar.gz`
-
-Basic wheel smoke test:
-
-```bash
-python -m venv /tmp/nexagauge-venv
-source /tmp/nexagauge-venv/bin/activate
-pip install dist/*.whl
-nexagauge --help
-```
 
 ## Project Standards
 
@@ -161,4 +127,4 @@ nexagauge --help
 - [docs/get-started.md](docs/get-started.md)
 - [docs/architecture.md](docs/architecture.md)
 - [docs/cli-code-flow.md](docs/cli-code-flow.md)
-- [docs/execution-model.md](docs/execution-model.md)
+- [docs/PRODUCT_SUMMARY.md](docs/PRODUCT_SUMMARY.md)

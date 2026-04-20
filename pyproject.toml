@@ -63,11 +63,13 @@ Documentation = "https://github.com/Sardhendu/nexa-gauge/tree/main/docs"
 Security = "https://github.com/Sardhendu/nexa-gauge/security/policy"
 
 [project.scripts]
-nexagauge = "ng_api.main:main"
+nexagauge = "ng_cli.main:main"
 
 [tool.hatch.build.targets.wheel]
 packages = [
-    "apps/nexagauge-api/ng_api",
+    "apps/nexagauge-apps/ng_api",
+    "apps/nexagauge-apps/ng_cli",
+    "apps/nexagauge-apps/adapters",
     "packages/nexagauge-core/ng_core",
     "packages/nexagauge-graph/ng_graph",
 ]

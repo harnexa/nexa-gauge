@@ -293,7 +293,7 @@ def test_estimate_mode_only_executes_for_uncached_new_records(monkeypatch, tmp_p
 
     first = outcomes[0].result
     assert first is not None
-    assert first.executed_nodes == ["report"]
+    assert first.executed_nodes == ["eval", "report"]
     assert "grounding" in first.cached_nodes
     assert first.final_state.get("estimated_costs", {}) == {}
 

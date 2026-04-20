@@ -14,6 +14,18 @@ from rich.text import Text
 from ng_graph.topology import NODES_BY_NAME
 
 _console = Console(highlight=False)
+_NODE_LOGGING_ENABLED = False
+
+
+def set_node_logging_enabled(enabled: bool) -> None:
+    """Globally enable/disable node-level logging output."""
+    global _NODE_LOGGING_ENABLED
+    _NODE_LOGGING_ENABLED = bool(enabled)
+
+
+def is_node_logging_enabled() -> bool:
+    """Return whether node-level logging is currently enabled."""
+    return _NODE_LOGGING_ENABLED
 
 
 class NodeLogger:
@@ -40,30 +52,40 @@ class NodeLogger:
         return t
 
     def start(self, msg: str) -> None:
+        if not is_node_logging_enabled():
+            return
         t = self._prefix()
         t.append("▶  ", style=f"bold {self.color}")
         t.append(msg)
         _console.print(t)
 
     def info(self, msg: str) -> None:
+        if not is_node_logging_enabled():
+            return
         t = self._prefix()
         t.append("   ", style="dim")
         t.append(msg, style="dim")
         _console.print(t)
 
     def success(self, msg: str) -> None:
+        if not is_node_logging_enabled():
+            return
         t = self._prefix()
         t.append("✓  ", style="bold green")
         t.append(msg)
         _console.print(t)
 
     def warning(self, msg: str) -> None:
+        if not is_node_logging_enabled():
+            return
         t = self._prefix()
         t.append("⚠  ", style="bold yellow")
         t.append(msg, style="yellow")
         _console.print(t)
 
     def error(self, msg: str) -> None:
+        if not is_node_logging_enabled():
+            return
         t = self._prefix()
         t.append("✗  ", style="bold red")
         t.append(msg, style="red")
@@ -77,6 +99,8 @@ def get_node_logger(node_name: str) -> NodeLogger:
 
 def print_pipeline_header(job_id: str, model: str, web_search: bool) -> None:
     """Print a banner at the start of a pipeline run."""
+    if not is_node_logging_enabled():
+        return
     web = "[green]on[/green]" if web_search else "[dim]off[/dim]"
     _console.print()
     _console.print(
@@ -94,6 +118,8 @@ def print_pipeline_header(job_id: str, model: str, web_search: bool) -> None:
 
 def print_pipeline_footer(composite_score: float | None, cost_usd: float) -> None:
     """Print a summary banner at the end of a pipeline run."""
+    if not is_node_logging_enabled():
+        return
     score_str = (
         f"[bold green]{composite_score:.4f}[/bold green]"
         if composite_score is not None

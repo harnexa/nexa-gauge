@@ -1,159 +1,113 @@
-# NexaGauge Architecture
+# neXa-gauge Architecture
 
-This document reflects the current implementation in:
-- `apps/nexagauge-cli`
-- `packages/nexagauge-core`
-- `packages/nexagauge-graph`
+neXa-gauge is a CLI-first evaluation engine for LLM outputs. Execution is driven by a typed node topology, a cache-aware runner, and declarative report projection.
 
-## 1) System Overview
+Source of truth for node dependencies and input gating: `packages/nexagauge-graph/ng_graph/topology.py`.
 
-NexaGauge is a CLI-first evaluation system that executes a typed graph pipeline over dataset rows.
+## Runtime Components
+
+- `ng_cli` - command entrypoint (`run`, `estimate`), dataset selection, model routing overrides.
+- `adapters` - input ingestion from local files and Hugging Face datasets.
+- `ng_graph.runner` - ordered/parallel execution, node-level caching, streaming outcomes.
+- `ng_graph.graph` + `ng_graph.nodes.*` - node implementations.
+- `ng_graph.nodes.report` - declarative report projection from final state.
+
+## Top-Down Pipeline Diagram
+
+- Built from `PIPELINE` in `topology.py`, with a layout close to the original design style.
+- Solid edges show primary graph flow.
+- Dashed edges show gating and extra eval prerequisites.
+
+Shape key:
+
+- Circle — utility node (`is_utility`)
+- Rounded rectangle — metric node (`is_metric`)
+- Hexagon — `eval` (the single join every branch funnels through)
+- Stadium — `report` (terminal aggregation)
+- Rectangle — `scan` (preflight)
+
+Edge labels encode the target node's `requires_*` input gates. Edges into `eval` are unlabeled because `eval` itself has no input requirements.
 
 ```mermaid
-flowchart LR
-  U[User] --> CLI[Typer CLI]
-  CLI --> AD[Dataset Adapter\nlocal | huggingface]
-  AD --> R[CachedNodeRunner]
-  R --> G[Graph Node Functions]
-  G --> S[EvalCase State]
-  S --> REP[report.aggregate]
-  REP --> OUT[Per-case JSON report]
+flowchart TD
+    scan[scan]
 
-  subgraph EXT[External dependencies]
-    LLM[LiteLLM]
-    DE[DeepEval]
-    NLTK[ROUGE/BLEU/METEOR]
-  end
+    %% Utility nodes (circles)
+    chunk((chunk))
+    claims((claims))
+    dedup((dedup))
+    geval_steps((geval_steps))
 
-  G -.-> LLM
-  G -.-> DE
-  G -.-> NLTK
+    %% Metric nodes (rounded rectangles)
+    relevance(relevance)
+    grounding(grounding)
+    redteam(redteam)
+    geval(geval)
+    reference(reference)
+
+    %% Orchestration
+    eval{{eval}}
+    report([report])
+
+    %% Utility chain
+    scan -- "requires: generation" --> chunk
+    chunk -- "requires: generation" --> claims
+    claims -- "requires: generation" --> dedup
+    scan -- "requires: generation + geval" --> geval_steps
+
+    %% Metric fan-out
+    dedup -- "requires: generation + question" --> relevance
+    dedup -- "requires: generation + context" --> grounding
+    scan -- "requires: generation" --> redteam
+    geval_steps -- "requires: generation + geval" --> geval
+    scan -- "requires: generation + reference" --> reference
+
+    %% Join into eval
+    chunk --> eval
+    claims --> eval
+    dedup --> eval
+    geval_steps --> eval
+    relevance --> eval
+    grounding --> eval
+    redteam --> eval
+    geval --> eval
+    reference --> eval
+
+    %% Terminal
+    eval --> report
+
+    %% Node colors — muted mid-tone palette, hue-matched to NodeSpec.color in topology.py
+    style scan        fill:#7FC7D1,stroke:#3F7A82,color:#fff
+    style chunk       fill:#7FA8D8,stroke:#3F6A9C,color:#fff
+    style claims      fill:#C07AA8,stroke:#7A4469,color:#fff
+    style dedup       fill:#7FBF7F,stroke:#3F8A3F,color:#fff
+    style geval_steps fill:#9FBF9F,stroke:#5F8A5F,color:#fff
+    style relevance   fill:#8FCF7F,stroke:#4F8A3F,color:#fff
+    style grounding   fill:#7FA8D8,stroke:#4F75A8,color:#fff
+    style redteam     fill:#D8847A,stroke:#9A4A42,color:#fff
+    style geval       fill:#A88FBF,stroke:#6F5A8A,color:#fff
+    style reference   fill:#CF7FBF,stroke:#8F4F82,color:#fff
+    style eval        fill:#E0C970,stroke:#A08F3F,color:#3A2F0F
+    style report      fill:#C9A85C,stroke:#8F7A3A,color:#fff
 ```
 
-## 2) Main Subsystems
+## Execution Rules
 
-### CLI (`apps/nexagauge-cli`)
-- Commands:
-  - `nexagauge run <node_name>`
-  - `nexagauge estimate <node_name>`
-- Data source adapters:
-  - Local file adapter (`json`, `jsonl`, `csv`, text fallback)
-  - Hugging Face adapter (`hf://...`)
-- Runtime model routing:
-  - global and per-node model/fallback override handling
+- Dependencies and requirement labels are derived from `PIPELINE` node specs (direct-parent edges).
+- `eval` aggregates metric branches plus utility prerequisites; `report` depends on `eval`.
+- The eligibility subgraph mirrors `scan`-produced presence flags that gate node execution.
+- At runtime, the CLI runner can append `report` for non-report targets; this diagram focuses on architecture dependency flow.
 
-### Core (`packages/nexagauge-core`)
-- Shared typed contracts (`types.py`)
-- Environment-backed config (`config.py`)
-- Cache backend and key utilities (`cache.py`)
-- Error types (`errors.py`)
+## Data and Output Contracts
 
-### Graph (`packages/nexagauge-graph`)
-- Node topology registry (`topology.py`)
-- Node function registry (`registry.py`)
-- Graph node implementations (`graph.py`, `nodes/*`)
-- Cache-aware executor (`runner.py`)
-- Report projection contract (`nodes/report.py`)
+Input normalization (`scan`) maps common aliases into canonical `inputs` fields:
 
-## 3) Data Contracts
+- `case_id`, `generation`, `question`, `context`, `reference`, `geval`, `redteam`
 
-### Input row (raw)
-Scanner accepts multiple aliases and normalizes to `Inputs`.
+Core runtime state includes:
 
-Key normalized fields:
-- `case_id`
-- `generation` (required to run meaningful evaluation)
-- `question` (optional)
-- `context` (optional)
-- `reference` (optional)
-- `geval` (optional)
-- `redteam` (optional)
-
-### Graph state (`EvalCase`)
-Important keys in runtime state:
 - control: `target_node`, `execution_mode`, `llm_overrides`
-- normalized input: `inputs`
-- node artifacts:
-  - `generation_chunk`
-  - `generation_claims`
-  - `generation_dedup_claims`
-  - `grounding_metrics`
-  - `relevance_metrics`
-  - `redteam_metrics`
-  - `geval_steps`
-  - `geval_metrics`
-  - `reference_metrics`
-- cost/model bookkeeping:
-  - `estimated_costs`
-  - `node_model_usage`
+- artifacts: `generation_chunk`, `generation_claims`, `generation_dedup_claims`, `geval_steps`, metric outputs
+- bookkeeping: `estimated_costs`, `node_model_usage`
 
-### Output report
-`report.aggregate(state=...)` builds report from declarative `REPORT_VISIBILITY`.
-
-Always present:
-- `target_node`
-- `input`
-
-Conditionally present (omitted when source artifact is `None`):
-- `chunks`, `claims`, `claims_unique`, `geval_steps`, `grounding`, `relevance`, `redteam`, `geval`, `reference`
-
-## 4) Node Topology and Eligibility
-
-Canonical nodes:
-- `scan`, `chunk`, `claims`, `dedup`, `geval_steps`, `relevance`, `grounding`, `redteam`, `geval`, `reference`, `eval`, `report`
-
-Eligibility flags are declared in `topology.py` and enforced by node logic:
-- `requires_generation`
-- `requires_question`
-- `requires_context`
-- `requires_geval`
-- `requires_reference`
-
-Current practical gates in node execution:
-- `chunk/claims/dedup`: generation required
-- `relevance`: generation + question
-- `grounding`: generation + context
-- `geval_steps/geval`: generation + GEval metrics
-- `reference`: generation + reference
-
-## 5) Execution Paths
-
-### `run`
-- Builds initial state from raw row.
-- Plans prerequisite chain + target.
-- Executes with node-level cache reuse.
-- For `target=eval`, metric nodes execute in parallel.
-- Emits final per-case state; writes `report` JSON when present.
-
-### `estimate`
-- Uses same runner with `execution_mode="estimate"`.
-- Executes node `estimate()` logic where available.
-- Aggregates uncached estimated cost rows per node.
-- Reuses run cache entries for matching routes.
-
-## 6) Caching Model
-
-Cache key is opaque and route-aware:
-- case fingerprint (input content)
-- execution mode
-- node name
-- node route fingerprint (includes model/fallback/temp route)
-
-Policies:
-- cache reads: allowed in run and estimate
-- estimate may reuse run-mode cache
-- `eval` and `report` are non-cacheable
-
-## 7) Concurrency Model
-
-Two layers of concurrency:
-- record-level concurrency via `run_cases_iter(..., max_workers=...)`
-- metric fan-out concurrency inside `run_case` when target is `eval`
-
-Result ordering is preserved in streaming iterator output.
-
-## 8) Current Boundaries
-
-- API server package was removed; CLI is the active interface.
-- Legacy ingest/evidence packages were removed; adapter and scanner logic now live in CLI/graph packages.
-- `report` is now a projection of state, not a separate post-processing service.
+Report shape is controlled by `REPORT_VISIBILITY` and `SECTION_GATES` in `ng_graph.nodes.report`.

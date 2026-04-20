@@ -4,20 +4,23 @@ from itertools import islice
 from typing import Optional
 
 import typer
-from ng_api.adapters import create_dataset_adapter
+from adapters import create_dataset_adapter
 from ng_core.cache import CacheStore, NoOpCacheStore
 from ng_core.types import CostEstimate
+from ng_graph.log import set_node_logging_enabled
 from ng_graph.runner import CachedNodeRunner
 from rich.table import Table
 
 from .util import (
     DEFAULT_PRIMARY_LLM,
+    _case_progress,
     _collect_estimate_rows,
     _format_cost,
     _is_case_eligible_for_target_path,
     _is_node_eligible_for_inputs,
     _plan_nodes_for_target,
     _print_llm_routing_summary,
+    _progress_total_from_bounds,
     _resolve_runtime_llm_overrides,
     _resolve_target_node,
     _set_case_llm_overrides,
@@ -108,6 +111,13 @@ def estimate(
     force: bool = typer.Option(False, "--force", help="Ignore cache reads (still writes)."),
     no_cache: bool = typer.Option(False, "--no-cache", help="Disable cache reads and writes."),
     cache_dir: Optional[str] = typer.Option(None, "--cache-dir", help="Cache directory path."),
+    debug: bool = typer.Option(
+        False,
+        "--debug",
+        help=(
+            "Emit per-node debug logs while estimating. When enabled, the progress bar is hidden."
+        ),
+    ),
 ) -> None:
     """Estimate uncached branch costs via graph estimate-mode execution."""
     # try:
@@ -156,16 +166,6 @@ def estimate(
     )
     total_selected_cases = 0
 
-    def _iter_eligible_cases_with_overrides():
-        nonlocal total_selected_cases
-        for case in selected_cases:
-            total_selected_cases += 1
-            if not _is_case_eligible_for_target_path(target_node=target_node, case=case):
-                continue
-            yield _set_case_llm_overrides(case, llm_overrides)
-
-    cases = _iter_eligible_cases_with_overrides()
-
     total_records = 0
     failed = 0
     failures: list[tuple[str, str]] = []
@@ -176,64 +176,83 @@ def estimate(
         for node in branch_nodes
     }
 
-    # try:
-    for outcome in runner.run_cases_iter(
-        cases=cases,
-        node_name=target_node,
-        force=force,
-        execution_mode="estimate",
-        max_workers=max_workers,
-        max_in_flight=max_in_flight,
-        continue_on_error=continue_on_error,
-    ):
-        total_records += 1
-        if outcome.result is None:
-            failed += 1
-            failures.append((outcome.case_id, outcome.error or "unknown error"))
-            continue
+    set_node_logging_enabled(debug)
+    try:
+        with _case_progress(
+            enabled=not debug,
+            description=f"estimate:{target_node}",
+            total=_progress_total_from_bounds(start=start, end=effective_end),
+        ) as advance_progress:
+            def _iter_eligible_cases_with_overrides():
+                nonlocal total_selected_cases
+                for case in selected_cases:
+                    total_selected_cases += 1
+                    advance_progress()
+                    if not _is_case_eligible_for_target_path(target_node=target_node, case=case):
+                        continue
+                    yield _set_case_llm_overrides(case, llm_overrides)
 
-        result = outcome.result
-        estimated_costs = result.final_state.get("estimated_costs") or {}
-        executed_nodes = set(getattr(result, "executed_nodes", []) or [])
-        cached_nodes = set(getattr(result, "cached_nodes", []) or [])
-        inputs = result.final_state.get("inputs")
-        for node in branch_nodes:
-            if node in executed_nodes:
-                node_stats[node]["executed"] += 1
-                if _is_node_eligible_for_inputs(node, inputs):
-                    node_stats[node]["eligible_uncached"] += 1
-            if node in cached_nodes:
-                node_stats[node]["cached"] += 1
-            if node in estimated_costs:
-                node_stats[node]["estimated"] += 1
+            # try:
+            for outcome in runner.run_cases_iter(
+                cases=_iter_eligible_cases_with_overrides(),
+                node_name=target_node,
+                force=force,
+                execution_mode="estimate",
+                max_workers=max_workers,
+                max_in_flight=max_in_flight,
+                continue_on_error=continue_on_error,
+                debug=debug,
+            ):
+                total_records += 1
+                if outcome.result is None:
+                    failed += 1
+                    failures.append((outcome.case_id, outcome.error or "unknown error"))
+                    continue
 
-        for step, step_cost in estimated_costs.items():
-            cost_obj = (
-                step_cost
-                if isinstance(step_cost, CostEstimate)
-                else CostEstimate.model_validate(step_cost)
-            )
-            existing = aggregated_costs.get(step)
-            if existing is None:
-                aggregated_costs[step] = CostEstimate(
-                    cost=float(cost_obj.cost or 0.0),
-                    input_tokens=float(cost_obj.input_tokens)
-                    if cost_obj.input_tokens is not None
-                    else None,
-                    output_tokens=float(cost_obj.output_tokens)
-                    if cost_obj.output_tokens is not None
-                    else None,
-                )
-                continue
-            existing.cost = float(existing.cost or 0.0) + float(cost_obj.cost or 0.0)
-            if cost_obj.input_tokens is not None:
-                existing.input_tokens = float(existing.input_tokens or 0.0) + float(
-                    cost_obj.input_tokens
-                )
-            if cost_obj.output_tokens is not None:
-                existing.output_tokens = float(existing.output_tokens or 0.0) + float(
-                    cost_obj.output_tokens
-                )
+                result = outcome.result
+                estimated_costs = result.final_state.get("estimated_costs") or {}
+                executed_nodes = set(getattr(result, "executed_nodes", []) or [])
+                cached_nodes = set(getattr(result, "cached_nodes", []) or [])
+                inputs = result.final_state.get("inputs")
+                for node in branch_nodes:
+                    if node in executed_nodes:
+                        node_stats[node]["executed"] += 1
+                        if _is_node_eligible_for_inputs(node, inputs):
+                            node_stats[node]["eligible_uncached"] += 1
+                    if node in cached_nodes:
+                        node_stats[node]["cached"] += 1
+                    if node in estimated_costs:
+                        node_stats[node]["estimated"] += 1
+
+                for step, step_cost in estimated_costs.items():
+                    cost_obj = (
+                        step_cost
+                        if isinstance(step_cost, CostEstimate)
+                        else CostEstimate.model_validate(step_cost)
+                    )
+                    existing = aggregated_costs.get(step)
+                    if existing is None:
+                        aggregated_costs[step] = CostEstimate(
+                            cost=float(cost_obj.cost or 0.0),
+                            input_tokens=float(cost_obj.input_tokens)
+                            if cost_obj.input_tokens is not None
+                            else None,
+                            output_tokens=float(cost_obj.output_tokens)
+                            if cost_obj.output_tokens is not None
+                            else None,
+                        )
+                        continue
+                    existing.cost = float(existing.cost or 0.0) + float(cost_obj.cost or 0.0)
+                    if cost_obj.input_tokens is not None:
+                        existing.input_tokens = float(existing.input_tokens or 0.0) + float(
+                            cost_obj.input_tokens
+                        )
+                    if cost_obj.output_tokens is not None:
+                        existing.output_tokens = float(existing.output_tokens or 0.0) + float(
+                            cost_obj.output_tokens
+                        )
+    finally:
+        set_node_logging_enabled(False)
     # except ValueError as exc:
     #     console.print(f"[red]{exc}[/red]")
     #     raise typer.Exit(1)

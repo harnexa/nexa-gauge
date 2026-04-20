@@ -2,20 +2,61 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
 from ng_core.types import CostEstimate
 from ng_graph.llm.config import get_judge_model, normalize_node_name
 from ng_graph.nodes.scanner import scan
-from ng_graph.topology import NODE_ORDER, NODES_BY_NAME
+from ng_graph.topology import NODE_ORDER, NODES_BY_NAME, transitive_prerequisites
 from rich.console import Console
+from rich.progress import BarColumn, MofNCompleteColumn, Progress, TaskProgressColumn, TextColumn
 from rich.table import Table
 
 console = Console()
 
 DEFAULT_PRIMARY_LLM = "openai/gpt-4o-mini"
 DEFAULT_FALLBACK_LLM = "openai/gpt-4o"
+
+
+def _progress_total_from_bounds(*, start: int, end: int | None) -> int | None:
+    if end is None:
+        return None
+    return max(0, end - start)
+
+
+@contextmanager
+def _case_progress(
+    *,
+    enabled: bool,
+    description: str,
+    total: int | None,
+) -> Iterator[Callable[[], None]]:
+    """Render a lightweight CLI progress bar and yield an `advance()` callback."""
+    if not enabled:
+        yield lambda: None
+        return
+
+    progress = Progress(
+        TextColumn("[cyan]{task.description}"),
+        BarColumn(bar_width=24),
+        TaskProgressColumn(),
+        MofNCompleteColumn(),
+        console=console,
+        transient=False,
+    )
+    progress.start()
+    task_id = progress.add_task(description, total=total)
+
+    def _advance() -> None:
+        progress.advance(task_id, 1)
+
+    try:
+        yield _advance
+    finally:
+        progress.stop()
 
 
 def _slug(value: str) -> str:
@@ -34,14 +75,24 @@ def _to_jsonable(value: Any) -> Any:
 
 
 def _resolve_target_node(node_name: str) -> str:
+    valid_targets = ", ".join(
+        n
+        for n in NODE_ORDER
+        if NODES_BY_NAME[n].is_utility or NODES_BY_NAME[n].is_metric or n == "eval"
+    )
     if node_name not in NODES_BY_NAME:
-        valid = ", ".join(NODE_ORDER)
-        raise ValueError(f"Unknown node '{node_name}'. Valid options: {valid}.")
+        raise ValueError(f"Unknown node '{node_name}'. Valid options: {valid_targets}.")
+    spec = NODES_BY_NAME[node_name]
+    if not (spec.is_utility or spec.is_metric or node_name == "eval"):
+        raise ValueError(
+            f"Node '{node_name}' is not directly invocable from the CLI. "
+            f"Only utility, metric, and eval nodes are valid targets: {valid_targets}."
+        )
     return node_name
 
 
 def _plan_nodes_for_target(target_node: str) -> list[str]:
-    return [*NODES_BY_NAME[target_node].prerequisites, target_node]
+    return [*transitive_prerequisites(target_node), target_node]
 
 
 def _parse_model_overrides(

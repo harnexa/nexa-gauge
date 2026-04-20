@@ -24,7 +24,13 @@ class NodeSpec:
 
     # ── Topology ──────────────────────────────────────────────────────────
     prerequisites: tuple[str, ...] = ()
-    """Ordered names of all nodes that must have run before this node."""
+    """Direct parent edges for this node in the pipeline DAG.
+
+    List only the *immediate* predecessors — transitive ancestors are expanded
+    on demand via :func:`transitive_prerequisites`. For example, ``grounding``
+    declares ``("dedup",)``; the full ``scan → chunk → claims → dedup`` chain
+    is derived, not repeated here.
+    """
 
     # ── Eligibility ───────────────────────────────────────────────────────
     requires_generation: bool = False
@@ -45,6 +51,9 @@ class NodeSpec:
 
     is_metric: bool = False
     """Node produces metric results and participates in the parallel fan-out."""
+
+    is_utility: bool = False
+    """Node produces direct/indirect artifacts for metric nodes but is not a metric itself (e.g. claim extraction)."""
 
     is_preflight: bool = False
     """Node runs before any LLM calls and is part of lightweight preflight passes."""
@@ -87,23 +96,26 @@ PIPELINE: list[NodeSpec] = [
         requires_generation=True,
         cost_category="claim_extraction",
         color="blue",
+        is_utility=True,
         env_key_suffixes=("CHUNK",),
         skip_output={"generation_chunk": None},
     ),
     NodeSpec(
         name="claims",
-        prerequisites=("scan", "chunk"),
+        prerequisites=("chunk",),
         requires_generation=True,
         cost_category="claim_extraction",
         color="magenta",
+        is_utility=True,
         env_key_suffixes=("CLAIMS",),
         skip_output={"generation_claims": None},
     ),
     NodeSpec(
         name="dedup",
-        prerequisites=("scan", "chunk", "claims"),
+        prerequisites=("claims",),
         requires_generation=True,
         color="green",
+        is_utility=True,
         env_key_suffixes=("DEDUP",),
         skip_output={"generation_dedup_claims": None},
     ),
@@ -112,6 +124,7 @@ PIPELINE: list[NodeSpec] = [
         prerequisites=("scan",),
         requires_generation=True,
         requires_geval=True,
+        is_utility=True,
         color="dark_sea_green4",
         env_key_suffixes=("GEVAL_STEPS",),
         skip_output={
@@ -120,7 +133,7 @@ PIPELINE: list[NodeSpec] = [
     ),
     NodeSpec(
         name="relevance",
-        prerequisites=("scan", "chunk", "claims", "dedup"),
+        prerequisites=("dedup",),
         requires_generation=True,
         requires_question=True,
         is_metric=True,
@@ -130,7 +143,7 @@ PIPELINE: list[NodeSpec] = [
     ),
     NodeSpec(
         name="grounding",
-        prerequisites=("scan", "chunk", "claims", "dedup"),
+        prerequisites=("dedup",),
         requires_generation=True,
         requires_context=True,
         is_metric=True,
@@ -149,7 +162,7 @@ PIPELINE: list[NodeSpec] = [
     ),
     NodeSpec(
         name="geval",
-        prerequisites=("scan", "geval_steps"),
+        prerequisites=("geval_steps",),
         requires_generation=True,
         requires_geval=True,
         is_metric=True,
@@ -170,7 +183,6 @@ PIPELINE: list[NodeSpec] = [
     NodeSpec(
         name="eval",
         prerequisites=(
-            "scan",
             "chunk",
             "claims",
             "dedup",
@@ -202,8 +214,29 @@ NODE_ORDER: list[str] = [s.name for s in PIPELINE]
 
 METRIC_NODES: list[str] = [s.name for s in PIPELINE if s.is_metric]
 """Ordered list of metric node names (the parallel fan-out group)."""
+UTILITY_NODES: list[str] = [s.name for s in PIPELINE if s.is_utility]
 
 # Nodes excluded from --debug per-case logging. These are either pure
 # orchestration joins or declarative aggregation — no LLM work to narrate.
 DEBUG_SKIP_NODES: frozenset[str] = frozenset({"eval", "report", "scan"})
 
+
+def transitive_prerequisites(node_name: str) -> tuple[str, ...]:
+    """Return all ancestors of ``node_name`` in topological (PIPELINE) order.
+
+    Walks direct ``prerequisites`` edges recursively and deduplicates. The
+    result does not include ``node_name`` itself. Emission order follows
+    ``NODE_ORDER`` so callers (plan builders, cache fingerprinting) see a
+    stable, deterministic sequence independent of DFS traversal order.
+    """
+    seen: set[str] = set()
+
+    def _visit(name: str) -> None:
+        for parent in NODES_BY_NAME[name].prerequisites:
+            if parent in seen:
+                continue
+            seen.add(parent)
+            _visit(parent)
+
+    _visit(node_name)
+    return tuple(n for n in NODE_ORDER if n in seen)

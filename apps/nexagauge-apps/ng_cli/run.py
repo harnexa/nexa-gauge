@@ -5,14 +5,17 @@ from pathlib import Path
 from typing import Optional
 
 import typer
-from ng_api.adapters import create_dataset_adapter
+from adapters import create_dataset_adapter
 from ng_core.cache import CacheStore, NoOpCacheStore
+from ng_graph.log import set_node_logging_enabled
 from ng_graph.runner import CachedNodeRunner
 
 from .util import (
     DEFAULT_PRIMARY_LLM,
+    _case_progress,
     _is_case_eligible_for_target_path,
     _print_llm_routing_summary,
+    _progress_total_from_bounds,
     _resolve_runtime_llm_overrides,
     _resolve_target_node,
     _set_case_llm_overrides,
@@ -182,38 +185,51 @@ def run(
         start,
         effective_end,
     )
-    # Keep this fully streaming: both are lazy generators, no dataset materialization.
-    eligible_cases = (
-        case
-        for case in selected_cases
-        if _is_case_eligible_for_target_path(target_node=target_node, case=case)
-    )
-    cases = (_set_case_llm_overrides(case, llm_overrides) for case in eligible_cases)
+    set_node_logging_enabled(debug)
+    try:
+        with _case_progress(
+            enabled=not debug,
+            description=f"run:{target_node}",
+            total=_progress_total_from_bounds(start=start, end=effective_end),
+        ) as advance_progress:
+            # Keep this fully streaming: no dataset materialization.
+            def _iter_eligible_cases_with_overrides():
+                for case in selected_cases:
+                    advance_progress()
+                    if not _is_case_eligible_for_target_path(target_node=target_node, case=case):
+                        continue
+                    yield _set_case_llm_overrides(case, llm_overrides)
 
-    for outcome in runner.run_cases_iter(
-        cases=cases,
-        node_name=target_node,
-        force=force,
-        execution_mode="run",
-        max_workers=max_workers,
-        max_in_flight=max_in_flight,
-        continue_on_error=continue_on_error,
-        debug=debug,
-    ):
-        if outcome.result is not None:
-            result = outcome.result
-            succeeded += 1
-            total_executed += len(result.executed_nodes)
-            total_cached += len(result.cached_nodes)
+            for outcome in runner.run_cases_iter(
+                cases=_iter_eligible_cases_with_overrides(),
+                node_name=target_node,
+                force=force,
+                execution_mode="run",
+                max_workers=max_workers,
+                max_in_flight=max_in_flight,
+                continue_on_error=continue_on_error,
+                debug=debug,
+            ):
+                if outcome.result is not None:
+                    result = outcome.result
+                    succeeded += 1
+                    total_executed += len(result.executed_nodes)
+                    total_cached += len(result.cached_nodes)
 
-            if output_dir:
-                report = result.final_state.get("report")
-                if report is not None:
-                    _write_report_json(report=report, output_dir=output_dir, case_id=result.case_id)
-            continue
+                    if output_dir:
+                        report = result.final_state.get("report")
+                        if report is not None:
+                            _write_report_json(
+                                report=report,
+                                output_dir=output_dir,
+                                case_id=result.case_id,
+                            )
+                    continue
 
-        failed += 1
-        failures.append((outcome.case_id, outcome.error or "unknown error"))
+                failed += 1
+                failures.append((outcome.case_id, outcome.error or "unknown error"))
+    finally:
+        set_node_logging_enabled(False)
 
     console.print(
         f"\n[bold green]Done.[/bold green]  "

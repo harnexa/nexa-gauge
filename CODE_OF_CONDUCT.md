@@ -26,7 +26,7 @@ This Code of Conduct applies in all project spaces, including GitHub issues, pul
 
 ## Reporting
 
-Report conduct issues to: `sardhendu+lumiseval-coc@proton.me`
+Report conduct issues to: # TODO
 
 All reports will be reviewed and investigated promptly and fairly.
 
