@@ -54,6 +54,7 @@ idea.md
 .ruff_cache
 scripts/
 report/*
-notes.mdPR.md
+notes.md
+PR.md
 .claude
 data/*

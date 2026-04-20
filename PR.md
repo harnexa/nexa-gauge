@@ -1,9 +1,10 @@
-<!-- pr-snapshot: 0403b0e731cd14dc09cb809d329cb5921af87007 -->
+<!-- pr-snapshot: b7a9af9f3e213a01aa407baf5c2e7cd9245d815f -->
 
 # GEval split, unified cache, and package rename to `nexagauge`
 
 **Branch:** `geval-split` → `main`
 **Date:** 2026-04-19
+Updated: 2026-04-19
 
 ## Summary
 
@@ -57,9 +58,31 @@ Splits the GEval metric node into `geval_steps`, `geval_score`, and `geval_weigh
 - [ ] Smoke (cross-case reuse retained): rerun without `--no-cache` twice; second run shows `"cache_used"` for shared criteria.
 - [ ] `grep -R "GevalArtifactCache\|ng_core.geval_cache\|lumos_\|lumoseval_" packages/ apps/` — zero hits.
 
+---
+### Updates since snapshot 0403b0e (2026-04-19)
+
+**New Changes:**
+- **Topology registry:** Introduces `packages/nexagauge-graph/ng_graph/topology.py` — a frozen `NodeSpec` / `PIPELINE` single source of truth for node ordering, direct-prerequisite edges, eligibility flags, colors, env-key suffixes, and skip-output shapes; adds `transitive_prerequisites()` helper. Node wiring now declares only *direct* parents; transitive ancestors are derived.
+- **Apps layout:** Consolidates `apps/lumiseval-cli` and adapters under a single `apps/nexagauge-apps/` package. Splits surfaces into `ng_cli/` (existing CLI) and a new `ng_api/` FastAPI entry point (`ng_api/main.py`). CLI app rename in the prior snapshot is now **`nexagauge-apps`** (not `nexagauge-api`) — the earlier name was inaccurate.
+- **Docs rewrite:** Rewrites `docs/get-started.md`, `docs/architecture.md`, `docs/cli-code-flow.md`; adds `docs/PRODUCT_SUMMARY.md`; removes `docs/execution-model.md` and root `nodes.md` (content folded into architecture + topology docstrings).
+- **Branding:** Adds `nexagauge-banner.svg`; updates README and legacy `lumiseval-banner.svg` references.
+- **Test reorganization:** Moves tests into package-scoped dirs (`test_apps/test_adapters`, `test_apps/test_ng_cli`, `test_ng_core`, `test_ng_graph`); removes the stale `packages/lumiseval-graph/test_lumiseval_graph/__init__.py` residue.
+- **Residual rename cleanup:** Module-level imports, pyproject entry points, Makefile targets, `setup.sh`, and `.env.example` all settled onto the `nexagauge` / `ng_*` names. Grep for `lumos_` / `lumoseval_` is clean.
+
+**Reason:**
+- Prior snapshot still had the CLI app advertised as `nexagauge-api` and left node wiring implicit in `graph.py`; centralising topology removes a class of drift bugs where ordering, colors, and eligibility flags lived in three files.
+- Adding `ng_api` alongside `ng_cli` under one app package preserves a single install surface while leaving room for the upcoming HTTP entry point without another rename.
+- Docs had diverged from the renamed modules and split node boundaries; the rewrite aligns them with the shipped code before review.
+
+**New Tests:**
+- No new test files in this delta; existing suites were updated only for the package move (`test_apps/`, `test_ng_core/`, `test_ng_graph/` roots).
+---
+
 ## Notes for Reviewer
 
 - On-disk `{cache_dir}/geval_artifacts/*.json` from the old `GevalArtifactCache` layout become unreachable; no automatic migration. Recommend `rm -rf $LUMISEVAL_CACHE_DIR/geval_artifacts` after upgrade.
 - `state["__cache_store"]` uses an under-dunder key deliberately — it is a runner-to-node internal channel, not user data, and `_merge_state_patch` does not touch it.
 - `NON_CACHEABLE_NODES = {"eval", "report"}` and the GEval artifact key prefix `v2:geval_artifact:` are the two extension points most likely to matter for future caching work; both are documented in `cache.py`'s new module docstring.
 - The stale `PR.md` that previously lived on this branch was from the already-merged `full-refactor` PR and has been regenerated from scratch for `geval-split`.
+- `topology.py` is intentionally located in `nexagauge-graph` but contains no function references, so `nexagauge-core` and `nexagauge-apps` can import it without introducing a circular dependency. Treat this as the extension point for any future metric node.
+- The new `ng_api/main.py` is a placeholder FastAPI entry and is not wired into CI or docs yet — flag in review if we should gate its pyproject entry point behind an extra.
