@@ -139,6 +139,7 @@ def _stable_json(obj: Any) -> str:
     structurally-equal states always produce byte-identical output — the whole
     basis of the node-level cache.
     """
+
     def _default(value: Any) -> Any:
         if hasattr(value, "model_dump"):
             return value.model_dump()
@@ -149,7 +150,9 @@ def _stable_json(obj: Any) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), default=_default)
 
 
-def _build_initial_state(case: dict[str, Any], *, execution_mode: str, target_node: str) -> EvalCase:
+def _build_initial_state(
+    case: dict[str, Any], *, execution_mode: str, target_node: str
+) -> EvalCase:
     """Construct the initial :class:`EvalCase` state from a raw input record.
 
     This is the seed state every plan node receives; node outputs are merged in

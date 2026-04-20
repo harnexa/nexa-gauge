@@ -152,9 +152,7 @@ class StructuredLLM:
             try:
                 if not self.fallback_model:
                     raise
-                response = self._call_with_logprobs(
-                    messages, self.fallback_model, top_logprobs
-                )
+                response = self._call_with_logprobs(messages, self.fallback_model, top_logprobs)
                 used_model = self.fallback_model
             except Exception:
                 response = self._call(messages, self.model)

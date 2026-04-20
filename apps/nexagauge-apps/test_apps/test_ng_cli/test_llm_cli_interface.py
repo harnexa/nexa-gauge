@@ -353,7 +353,9 @@ def test_estimate_command_uses_all_selected_records_as_denominator(
     assert captured_total_selected_cases == [2]
 
 
-def test_run_command_filters_ineligible_cases_for_grounding(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_command_filters_ineligible_cases_for_grounding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     captured_case_ids: list[str] = []
 
     class _Adapter:

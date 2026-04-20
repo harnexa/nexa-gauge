@@ -36,8 +36,7 @@ def compute_geval_signature(
 
     fields_key = ",".join(sorted(item_fields))
     payload = (
-        f"{model}\x00{prompt_version}\x00{parser_version}\x00"
-        f"{fields_key}\x00{criteria.strip()}"
+        f"{model}\x00{prompt_version}\x00{parser_version}\x00{fields_key}\x00{criteria.strip()}"
     )
     return hashlib.sha256(payload.encode()).hexdigest()[:24]
 

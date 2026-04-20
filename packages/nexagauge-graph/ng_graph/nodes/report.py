@@ -63,7 +63,10 @@ REPORT_VISIBILITY: dict[str, Any] = {
         },
     },
     "grounding": {
-        "metrics": ["grounding_metrics.metrics[*]", {"name": "name", "score": "score", "result": "result"}],
+        "metrics": [
+            "grounding_metrics.metrics[*]",
+            {"name": "name", "score": "score", "result": "result"},
+        ],
         "cost": {
             "cost": "grounding_metrics.cost.cost",
             "input_tokens": "grounding_metrics.cost.input_tokens",
@@ -71,7 +74,10 @@ REPORT_VISIBILITY: dict[str, Any] = {
         },
     },
     "relevance": {
-        "metrics": ["relevance_metrics.metrics[*]", {"name": "name", "score": "score", "result": "result"}],
+        "metrics": [
+            "relevance_metrics.metrics[*]",
+            {"name": "name", "score": "score", "result": "result"},
+        ],
         "cost": {
             "cost": "relevance_metrics.cost.cost",
             "input_tokens": "relevance_metrics.cost.input_tokens",
@@ -79,7 +85,10 @@ REPORT_VISIBILITY: dict[str, Any] = {
         },
     },
     "redteam": {
-        "metrics": ["redteam_metrics.metrics[*]", {"name": "name", "score": "score", "result": "result"}],
+        "metrics": [
+            "redteam_metrics.metrics[*]",
+            {"name": "name", "score": "score", "result": "result"},
+        ],
         "cost": {
             "cost": "redteam_metrics.cost.cost",
             "input_tokens": "redteam_metrics.cost.input_tokens",
@@ -87,7 +96,10 @@ REPORT_VISIBILITY: dict[str, Any] = {
         },
     },
     "geval": {
-        "metrics": ["geval_metrics.metrics[*]", {"name": "name", "score": "score", "result": "result"}],
+        "metrics": [
+            "geval_metrics.metrics[*]",
+            {"name": "name", "score": "score", "result": "result"},
+        ],
         "cost": {
             "cost": "geval_metrics.cost.cost",
             "input_tokens": "geval_metrics.cost.input_tokens",
@@ -95,7 +107,10 @@ REPORT_VISIBILITY: dict[str, Any] = {
         },
     },
     "reference": {
-        "metrics": ["reference_metrics.metrics[*]", {"name": "name", "score": "score", "result": "result"}],
+        "metrics": [
+            "reference_metrics.metrics[*]",
+            {"name": "name", "score": "score", "result": "result"},
+        ],
         "cost": {
             "cost": "reference_metrics.cost.cost",
             "input_tokens": "reference_metrics.cost.input_tokens",
@@ -174,7 +189,7 @@ def resolve_path(state: Mapping[str, Any], path: str) -> Any:
     dot = path.find(".")
     if dot == -1:
         return state.get(path)
-    top_key, rest = path[:dot], path[dot + 1:]
+    top_key, rest = path[:dot], path[dot + 1 :]
     value = state.get(top_key)
     if value is None:
         return None
@@ -199,8 +214,7 @@ def resolve_section(state: Mapping[str, Any], spec: str | dict | list) -> Any:
         if not isinstance(items, list):
             return []
         return [
-            {key: _extract_path(item, path) for key, path in projection.items()}
-            for item in items
+            {key: _extract_path(item, path) for key, path in projection.items()} for item in items
         ]
     return {key: resolve_section(state, child) for key, child in spec.items()}
 

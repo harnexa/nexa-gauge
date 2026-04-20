@@ -139,11 +139,7 @@ class GevalStepsNode(BaseMetricNode):
         "Return JSON only:\n"
         '{"evaluation_steps": ["step 1", "step 2"]}'
     )
-    USER_PROMPT = (
-        "Parameters: {param_names}\n\n"
-        "Criteria:\n"
-        "{criteria}"
-    )
+    USER_PROMPT = "Parameters: {param_names}\n\nCriteria:\n{criteria}"
     static_prompt_tokens: int = _count_tokens(SYSTEM_PROMPT) + template_static_tokens(USER_PROMPT)
 
     def __init__(

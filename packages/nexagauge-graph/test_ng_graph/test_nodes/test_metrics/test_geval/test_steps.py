@@ -59,9 +59,7 @@ def _seed_cache(
 
 
 def test_run_returns_empty_when_disabled_or_no_metrics(tmp_path) -> None:
-    node = GevalStepsNode(
-        judge_model="gpt-4o-mini", artifact_cache_store=CacheStore(tmp_path)
-    )
+    node = GevalStepsNode(judge_model="gpt-4o-mini", artifact_cache_store=CacheStore(tmp_path))
 
     disabled = node.run(metrics=[], enable_geval=False)
     assert disabled.resolved_steps == []
@@ -75,9 +73,7 @@ def test_run_returns_empty_when_disabled_or_no_metrics(tmp_path) -> None:
 
 
 def test_provided_steps_bypass_llm(tmp_path, monkeypatch: pytest.MonkeyPatch) -> None:
-    node = GevalStepsNode(
-        judge_model="gpt-4o-mini", artifact_cache_store=CacheStore(tmp_path)
-    )
+    node = GevalStepsNode(judge_model="gpt-4o-mini", artifact_cache_store=CacheStore(tmp_path))
 
     def _should_not_call_llm(*_args, **_kwargs):
         pytest.fail("LLM must not be called when evaluation_steps are provided")

@@ -1,5 +1,3 @@
-
-
 import numpy as np
 from ng_core.config import config
 from ng_core.constants import MMR_LAMBDA, MMR_SIMILARITY_THRESHOLD

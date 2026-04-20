@@ -94,8 +94,12 @@ def test_resolve_path_wildcard_on_pydantic() -> None:
     state = {
         "generation_chunk": ChunkArtifacts(
             chunks=[
-                Chunk(index=0, item=Item(text="A", tokens=1.0), char_start=0, char_end=1, sha256="a"),
-                Chunk(index=1, item=Item(text="B", tokens=2.0), char_start=1, char_end=2, sha256="b"),
+                Chunk(
+                    index=0, item=Item(text="A", tokens=1.0), char_start=0, char_end=1, sha256="a"
+                ),
+                Chunk(
+                    index=1, item=Item(text="B", tokens=2.0), char_start=1, char_end=2, sha256="b"
+                ),
             ],
             cost=CostEstimate(cost=0.01, input_tokens=10.0, output_tokens=5.0),
         )

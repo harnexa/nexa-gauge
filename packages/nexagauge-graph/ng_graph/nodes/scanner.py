@@ -119,9 +119,7 @@ def _build_geval(raw_geval: Any) -> Geval | None:
             continue
 
         raw_item_fields = metric_raw.get("item_fields")
-        if not isinstance(raw_item_fields, list) and (
-            accept_legacy_item_fields or metric_is_model
-        ):
+        if not isinstance(raw_item_fields, list) and (accept_legacy_item_fields or metric_is_model):
             raw_item_fields = metric_raw.get("item_fields")
         item_fields: list[str] = []
         if isinstance(raw_item_fields, list):

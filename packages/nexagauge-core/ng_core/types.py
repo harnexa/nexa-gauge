@@ -321,7 +321,6 @@ class EvalReport(BaseModel):
     cost_actual_usd: float = 0.0
 
 
-
 # ── Graph state ────────────────────────────────────────────────────────────
 class EvalCase(TypedDict):
     """Canonical dataset row used by adapters and dataset runners."""

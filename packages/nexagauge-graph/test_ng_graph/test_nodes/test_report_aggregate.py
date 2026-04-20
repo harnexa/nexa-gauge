@@ -84,9 +84,7 @@ def _chunks() -> ChunkArtifacts:
 
 def _claims() -> ClaimArtifacts:
     return ClaimArtifacts(
-        claims=[
-            Claim(item=_item("X is true.", tokens=3.0), source_chunk_index=0, confidence=0.9)
-        ],
+        claims=[Claim(item=_item("X is true.", tokens=3.0), source_chunk_index=0, confidence=0.9)],
         cost=_cost(0.001, 10.0, 3.0),
     )
 
@@ -170,7 +168,9 @@ def _assert_input(result: dict) -> None:
     assert inp["reference"] == "X"
 
 
-def _assert_cost(cost_dict: dict, expected_cost: float, expected_inp: float, expected_out: float) -> None:
+def _assert_cost(
+    cost_dict: dict, expected_cost: float, expected_inp: float, expected_out: float
+) -> None:
     assert cost_dict["cost"] == pytest.approx(expected_cost)
     assert cost_dict["input_tokens"] == pytest.approx(expected_inp)
     assert cost_dict["output_tokens"] == pytest.approx(expected_out)
@@ -334,6 +334,7 @@ def test_grounding_and_relevance() -> None:
     )
     result = report.aggregate(state=state)
     from ng_core.utils import pprint_model
+
     pprint_model(result)
 
     _assert_sections(result, {"chunks", "claims", "claims_unique", "grounding", "relevance"})
@@ -377,7 +378,16 @@ def test_full_eval() -> None:
 
     _assert_sections(
         result,
-        {"chunks", "claims", "claims_unique", "grounding", "relevance", "redteam", "geval", "reference"},
+        {
+            "chunks",
+            "claims",
+            "claims_unique",
+            "grounding",
+            "relevance",
+            "redteam",
+            "geval",
+            "reference",
+        },
     )
     _assert_input(result)
 

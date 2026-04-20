@@ -110,6 +110,6 @@ def test_custom_score_range() -> None:
         }
     ]
     expected = (2 * 0.3 + 3 * 0.7) / (0.3 + 0.7)
-    assert abs(
-        calculate_weighted_summed_score(3, tokens, score_min=1, score_max=5) - expected
-    ) < 1e-9
+    assert (
+        abs(calculate_weighted_summed_score(3, tokens, score_min=1, score_max=5) - expected) < 1e-9
+    )

@@ -183,6 +183,7 @@ def estimate(
             description=f"estimate:{target_node}",
             total=_progress_total_from_bounds(start=start, end=effective_end),
         ) as advance_progress:
+
             def _iter_eligible_cases_with_overrides():
                 nonlocal total_selected_cases
                 for case in selected_cases:
