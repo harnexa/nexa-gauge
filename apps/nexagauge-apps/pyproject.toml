@@ -1,6 +1,6 @@
 [project]
 name = "nexagauge-apps"
-version = "0.1.0"
+version = "0.1.2"
 description = "Typer CLI and FastAPI surfaces for nexa-gauge"
 requires-python = ">=3.10"
 dependencies = [
