@@ -18,6 +18,10 @@ Sections
   DATASET           Dataset adapter defaults
 """
 
+import os
+import sys
+from pathlib import Path
+
 # ── Tokenization & Chunking ──────────────────────────────────────────────────
 
 # tiktoken encoding used for token counting across scanner and chunker.
@@ -125,6 +129,12 @@ DEFAULT_JUDGE_MODEL: str = "gpt-4o-mini"
 # Default LLM provider prefix used for routing in LiteLLM.
 DEFAULT_LLM_PROVIDER: str = "openai"
 
+# Fully-qualified default primary model used by the CLI (``provider/model``).
+DEFAULT_PRIMARY_LLM: str = f"{DEFAULT_LLM_PROVIDER}/{DEFAULT_JUDGE_MODEL}"
+
+# Fully-qualified default fallback model used when the primary errors.
+DEFAULT_FALLBACK_LLM: str = f"{DEFAULT_LLM_PROVIDER}/gpt-4o"
+
 # Default sentence-transformer model used for local embeddings.
 DEFAULT_EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
 
@@ -133,9 +143,27 @@ LLM_CALL_TIMEOUT_SECONDS: int = 60
 
 # ── Storage ───────────────────────────────────────────────────────────────────
 
-# Default directory for node-level execution cache.
-# Override with the LUMISEVAL_CACHE_DIR environment variable.
-CACHE_DIR: str = ".nexagauge"
+
+def default_cache_dir() -> Path:
+    """Return the per-user cache root for nexagauge.
+
+    Follows the XDG Base Directory spec on macOS and Linux — the convention
+    used by uv, pip, huggingface, and other Python CLI tools — so cached
+    artifacts live in one place per user regardless of which directory the
+    ``nexagauge`` CLI is invoked from.
+
+    Resolution:
+      - macOS / Linux : ``$XDG_CACHE_HOME/nexagauge`` or ``~/.cache/nexagauge``
+      - Windows       : ``%LOCALAPPDATA%\\nexagauge``
+
+    Callers can override this via ``NEXAGAUGE_CACHE_DIR`` (env var) or the
+    ``--cache-dir`` CLI flag — see :class:`ng_core.cache.CacheStore`.
+    """
+    if sys.platform == "win32":
+        base = os.getenv("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+    else:
+        base = os.getenv("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    return Path(base) / "nexagauge"
 
 # ── Dataset Adapter ───────────────────────────────────────────────────────────
 

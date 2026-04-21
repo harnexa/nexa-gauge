@@ -163,8 +163,10 @@ Two special-case branches live inside ``_deserialize``:
 Backends
 ==============================================================================
 
-:class:`CacheStore` — disk-backed; default path is ``$LUMISEVAL_CACHE_DIR`` or
-``constants.CACHE_DIR``.
+:class:`CacheStore` — disk-backed; default path resolves to
+``$NEXAGAUGE_CACHE_DIR`` when set, otherwise a per-user XDG-style directory
+from :func:`ng_core.constants.default_cache_dir` (``~/.cache/nexagauge`` on
+macOS/Linux, ``%LOCALAPPDATA%\\nexagauge`` on Windows).
 
 :class:`NoOpCacheStore` — inherits from CacheStore; every method is a no-op.
 Installed by the runner when ``--no-cache`` is passed. Because the node code
@@ -206,7 +208,7 @@ from typing import Any, Optional, Protocol, TypedDict, runtime_checkable
 
 from pydantic import BaseModel
 
-from ng_core.constants import CACHE_DIR
+from ng_core.constants import default_cache_dir
 from ng_core.types import (
     Chunk,
     ChunkArtifacts,
@@ -473,7 +475,7 @@ class CacheStore:
     """Filesystem-backed key-value store for node execution patches."""
 
     def __init__(self, cache_dir: str | Path | None = None) -> None:
-        raw = cache_dir or os.getenv("LUMISEVAL_CACHE_DIR") or CACHE_DIR
+        raw = cache_dir or os.getenv("NEXAGAUGE_CACHE_DIR") or default_cache_dir()
         self._root = Path(raw)
 
     def _kv_path(self, cache_key: str) -> Path:
@@ -506,6 +508,7 @@ class CacheStore:
                 "metadata": metadata,
             }
         except Exception:
+            # Corrupt or partially-written cache file — treat as miss rather than crash.
             return None
 
     def get_by_key(self, cache_key: str) -> Optional[dict[str, Any]]:

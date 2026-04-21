@@ -47,13 +47,6 @@ dependencies = [
 huggingface = [
     "datasets>=2.0.0",
 ]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-asyncio>=0.21.0",
-    "ruff>=0.1.0",
-    "mypy>=1.0.0",
-    "pre-commit>=3.0.0",
-]
 
 [project.urls]
 Homepage = "https://github.com/Sardhendu/nexa-gauge"
@@ -124,4 +117,5 @@ asyncio_mode = "auto"
 testpaths = [
     "packages/nexagauge-core/test_ng_core",
     "packages/nexagauge-graph/test_ng_graph",
+    "apps/nexagauge-apps/test_apps",
 ]

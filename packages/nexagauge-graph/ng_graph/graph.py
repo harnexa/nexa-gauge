@@ -6,11 +6,6 @@ Node sequence:
   geval_steps →
   [parallel: relevance, grounding, redteam, geval, reference] →
   eval → report → result
-
-TODO:
-  - Implement async TaskIQ dispatch for batch jobs.
-  - Stream progress to CLI/API consumers.
-  - Persist EvalReport to SQLite via SQLModel.
 """
 
 import logging

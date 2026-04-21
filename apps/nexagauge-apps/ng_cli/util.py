@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
+from ng_core.constants import DEFAULT_FALLBACK_LLM, DEFAULT_PRIMARY_LLM
 from ng_core.types import CostEstimate
 from ng_graph.llm.config import get_judge_model, normalize_node_name
 from ng_graph.nodes.scanner import scan
@@ -16,9 +17,6 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, TaskProgressC
 from rich.table import Table
 
 console = Console()
-
-DEFAULT_PRIMARY_LLM = "openai/gpt-4o-mini"
-DEFAULT_FALLBACK_LLM = "openai/gpt-4o"
 
 
 def _progress_total_from_bounds(*, start: int, end: int | None) -> int | None:
@@ -214,11 +212,13 @@ def _set_case_llm_overrides(case: Any, llm_overrides: dict[str, dict[str, str]])
         try:
             return case.model_copy(update={"llm_overrides": llm_overrides})
         except Exception:
+            # pydantic may reject unknown fields on strict models; fall through to setattr.
             pass
 
     try:
         setattr(case, "llm_overrides", llm_overrides)
     except Exception:
+        # Frozen/slots-only objects can't accept new attrs; return case untouched.
         return case
     return case
 
@@ -336,6 +336,9 @@ def _collect_estimate_rows(
 ) -> list[tuple[str, str, str, str, str, str, str, float]]:
     rows: list[tuple[str, str, str, str, str, str, str, float]] = []
     for node_name in _plan_nodes_for_target(target_node):
+        spec = NODES_BY_NAME[node_name]
+        if not (spec.is_metric or spec.is_utility or spec.is_preflight):
+            continue
         est = cost_by_node.get(node_name) or CostEstimate(
             cost=0.0, input_tokens=None, output_tokens=None
         )

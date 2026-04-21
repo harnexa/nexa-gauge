@@ -11,6 +11,7 @@ from ng_graph.log import set_node_logging_enabled
 from ng_graph.runner import CachedNodeRunner
 
 from .util import (
+    DEFAULT_FALLBACK_LLM,
     DEFAULT_PRIMARY_LLM,
     _case_progress,
     _is_case_eligible_for_target_path,
@@ -74,7 +75,8 @@ def run(
         "--llm-model",
         help=(
             "Repeatable LLM model override. Use MODEL for global default, or NODE=MODEL "
-            "(for example: --llm-model openai/gpt-4o --llm-model grounding=openai/gpt-4o-mini)."
+            f"(for example: --llm-model {DEFAULT_FALLBACK_LLM} "
+            f"--llm-model grounding={DEFAULT_PRIMARY_LLM})."
         ),
     ),
     llm_fallback: list[str] = typer.Option(
@@ -82,7 +84,8 @@ def run(
         "--llm-fallback",
         help=(
             "Repeatable fallback override. Use MODEL for global fallback, or NODE=MODEL "
-            "(for example: --llm-fallback openai/gpt-4o --llm-fallback grounding=openai/gpt-4o-mini)."
+            f"(for example: --llm-fallback {DEFAULT_FALLBACK_LLM} "
+            f"--llm-fallback grounding={DEFAULT_PRIMARY_LLM})."
         ),
     ),
     web_search: bool = typer.Option(False, "--web-search", help="Enable Tavily web search."),

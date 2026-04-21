@@ -85,6 +85,7 @@ def get_model_pricing(model: str) -> ModelPricing:
         out = float(tokencost.calculate_cost_by_tokens(1000, model, "output"))
         return ModelPricing(input_per_1k=inp, output_per_1k=out)
     except Exception:
+        # tokencost lacks a pricing entry for this model (e.g. private deployment) — use fallback.
         return _FALLBACK_PRICING
 
 

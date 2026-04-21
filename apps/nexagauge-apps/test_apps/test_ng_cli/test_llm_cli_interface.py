@@ -146,6 +146,22 @@ def test_collect_estimate_rows_includes_all_branch_nodes_with_status() -> None:
     ]
 
 
+def test_collect_estimate_rows_excludes_eval_aggregator() -> None:
+    rows = _collect_estimate_rows(
+        target_node="eval",
+        cost_by_node={},
+        node_stats={},
+        total_selected_cases=1,
+        successful_cases=1,
+        effective_judge_model=DEFAULT_PRIMARY_LLM,
+        llm_overrides={"models": {}, "fallback_models": {}},
+    )
+    row_names = [row[0] for row in rows]
+    assert "eval" not in row_names
+    assert "scan" in row_names
+    assert "grounding" in row_names
+
+
 def test_is_case_eligible_for_target_path_requires_full_grounding_branch() -> None:
     assert (
         _is_case_eligible_for_target_path(

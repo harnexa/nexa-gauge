@@ -102,6 +102,7 @@ class StructuredLLM:
             response = self._call(messages, self.model)
             used_model = self.model
         except Exception:
+            # Primary model failed (quota, auth, network, etc.); retry on fallback if configured.
             if self.fallback_model:
                 response = self._call(messages, self.fallback_model)
                 used_model = self.fallback_model
@@ -149,12 +150,14 @@ class StructuredLLM:
         try:
             response = self._call_with_logprobs(messages, self.model, top_logprobs)
         except Exception:
+            # Primary logprobs call failed — try fallback, then retry without logprobs.
             try:
                 if not self.fallback_model:
                     raise
                 response = self._call_with_logprobs(messages, self.fallback_model, top_logprobs)
                 used_model = self.fallback_model
             except Exception:
+                # Provider likely doesn't support logprobs (e.g. Ollama) — degrade gracefully.
                 response = self._call(messages, self.model)
                 logprobs_supported = False
 

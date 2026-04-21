@@ -12,6 +12,7 @@ from ng_graph.runner import CachedNodeRunner
 from rich.table import Table
 
 from .util import (
+    DEFAULT_FALLBACK_LLM,
     DEFAULT_PRIMARY_LLM,
     _case_progress,
     _collect_estimate_rows,
@@ -78,7 +79,8 @@ def estimate(
         "--llm-model",
         help=(
             "Repeatable LLM model override. Use MODEL for global default, or NODE=MODEL "
-            "(for example: --llm-model openai/gpt-4o --llm-model grounding=openai/gpt-4o-mini)."
+            f"(for example: --llm-model {DEFAULT_FALLBACK_LLM} "
+            f"--llm-model grounding={DEFAULT_PRIMARY_LLM})."
         ),
     ),
     llm_fallback: list[str] = typer.Option(
@@ -86,7 +88,8 @@ def estimate(
         "--llm-fallback",
         help=(
             "Repeatable fallback override. Use MODEL for global fallback, or NODE=MODEL "
-            "(for example: --llm-fallback openai/gpt-4o --llm-fallback grounding=openai/gpt-4o-mini)."
+            f"(for example: --llm-fallback {DEFAULT_FALLBACK_LLM} "
+            f"--llm-fallback grounding={DEFAULT_PRIMARY_LLM})."
         ),
     ),
     continue_on_error: bool = typer.Option(
@@ -120,22 +123,14 @@ def estimate(
     ),
 ) -> None:
     """Estimate uncached branch costs via graph estimate-mode execution."""
-    # try:
     target_node = _resolve_target_node(node_name)
-    # except ValueError as exc:
-    #     console.print(f"[red]{exc}[/red]")
-    #     raise typer.Exit(1)
 
-    # try:
     effective_judge_model, llm_overrides, llm_warnings = _resolve_runtime_llm_overrides(
         target_node=target_node,
         legacy_model=judge_model,
         llm_model_values=llm_model,
         llm_fallback_values=llm_fallback,
     )
-    # except ValueError as exc:
-    #     console.print(f"[red]{exc}[/red]")
-    #     raise typer.Exit(1)
 
     _print_llm_routing_summary(
         target_node=target_node,
@@ -193,7 +188,6 @@ def estimate(
                         continue
                     yield _set_case_llm_overrides(case, llm_overrides)
 
-            # try:
             for outcome in runner.run_cases_iter(
                 cases=_iter_eligible_cases_with_overrides(),
                 node_name=target_node,
@@ -254,12 +248,6 @@ def estimate(
                         )
     finally:
         set_node_logging_enabled(False)
-    # except ValueError as exc:
-    #     console.print(f"[red]{exc}[/red]")
-    #     raise typer.Exit(1)
-    # except Exception as exc:
-    #     console.print(f"[red]{exc}[/red]")
-    #     raise typer.Exit(1)
 
     successful_cases = total_records - failed
     rows = _collect_estimate_rows(

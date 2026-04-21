@@ -1,14 +1,17 @@
 """
-Node function registry — maps canonical node names to their callable implementations.
+Registry for graph node handlers.
 
-This is the only file that imports both lumis_core.pipeline (pure data) and
-the graph module (callables), keeping circular imports out of graph.py and node_runner.py.
+This module maps canonical pipeline node names (defined in ``PIPELINE``) to
+their executable functions in ``ng_graph.graph``. It is the central binding
+layer between topology (node order/definitions) and runtime execution
+(callable implementations), and includes a startup guard that fails fast when
+a pipeline node is missing from ``NODE_FNS``.
 
-To add a new metric node:
-  1. Write the node function in ng_graph/nodes/metrics/<name>.py
-  2. Add a NodeSpec entry to PIPELINE in ng_graph/topology.py
-  3. Add one entry to NODE_FNS here
-  4. Add g.add_edge() calls in ng_graph/graph.py build_graph()
+To add a new node:
+1. Implement the node function in the graph/nodes layer.
+2. Add the node spec to ``ng_graph.topology.PIPELINE``.
+3. Register the node name and function in ``NODE_FNS`` below.
+4. Add required graph edges in ``ng_graph.graph.build_graph``.
 """
 
 from typing import Any, Callable
