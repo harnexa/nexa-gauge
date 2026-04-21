@@ -165,6 +165,7 @@ def default_cache_dir() -> Path:
         base = os.getenv("XDG_CACHE_HOME") or str(Path.home() / ".cache")
     return Path(base) / "nexagauge"
 
+
 # ── Dataset Adapter ───────────────────────────────────────────────────────────
 
 # Default dataset name assigned to cases that don't carry an explicit name.
