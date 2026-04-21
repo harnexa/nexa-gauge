@@ -1,0 +1,18 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "packages": {
+    ".": {
+      "release-type": "python",
+      "include-v-in-tag": true,
+      "extra-files": [
+        "apps/nexagauge-apps/pyproject.toml",
+        "packages/nexagauge-core/pyproject.toml",
+        "packages/nexagauge-graph/pyproject.toml",
+        "apps/nexagauge-apps/ng_api/__init__.py",
+        "apps/nexagauge-apps/ng_cli/__init__.py",
+        "packages/nexagauge-core/ng_core/__init__.py",
+        "packages/nexagauge-graph/ng_graph/__init__.py"
+      ]
+    }
+  }
+}

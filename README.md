@@ -105,6 +105,11 @@ make test
 make ci
 ```
 
+Releases are automated with `release-please`:
+- merge conventional commits into `main` (`feat:`, `fix:`, `deps:`) to queue a version bump
+- a `Release PR` is created/updated automatically
+- merging that PR creates a `v*` tag, which triggers `.github/workflows/publish.yml`
+
 Build distributions:
 
 ```bash
