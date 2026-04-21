@@ -1,6 +1,6 @@
 [project]
 name = "nexagauge-graph"
-version = "0.1.0"
+version = "0.1.2"
 description = "LangGraph orchestration graph and metric dispatch nodes for nexa-gauge"
 requires-python = ">=3.10"
 dependencies = [

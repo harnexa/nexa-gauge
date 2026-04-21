@@ -33,16 +33,16 @@ typecheck: ## Run mypy across packages
 
 # ── Tests ──────────────────────────────────────────────────────────────────
 test: ## Run all tests
-	uv run pytest
+	VIRTUAL_ENV= uv run --all-packages --group dev -m pytest
 
 test-verbose: ## Run all tests with verbose output
-	uv run pytest -v
+	VIRTUAL_ENV= uv run --all-packages --group dev -m pytest -v
 
 test-pkg: ## Run tests for a specific package. Usage: make test-pkg PKG=packages/nexagauge-core
-	uv run pytest $(PKG)
+	VIRTUAL_ENV= uv run --all-packages --group dev -m pytest $(PKG)
 
 test_graph: ## Run nexagauge-graph tests with output
-	uv run pytest -s packages/nexagauge-graph/test_ng_graph
+	VIRTUAL_ENV= uv run --all-packages --group dev -m pytest -s packages/nexagauge-graph/test_ng_graph
 
 # ── CI ─────────────────────────────────────────────────────────────────────
 ci: ## Run full CI pipeline locally (format check → lint → test)
