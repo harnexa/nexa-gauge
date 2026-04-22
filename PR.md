@@ -4,7 +4,7 @@
 
 **Branch:** `geval-split` → `main`
 **Date:** 2026-04-19
-Updated: 2026-04-19
+Updated: 2026-04-21
 
 ## Summary
 
@@ -76,6 +76,39 @@ Splits the GEval metric node into `geval_steps`, `geval_score`, and `geval_weigh
 
 **New Tests:**
 - No new test files in this delta; existing suites were updated only for the package move (`test_apps/`, `test_ng_core/`, `test_ng_graph/` roots).
+---
+
+### Updates since snapshot 28018e7 (2026-04-21)
+
+**New Changes:**
+- **Intra-node LLM parallelism:** Adds node-local threadpool fan-out for high-cardinality LLM work:
+  - `ClaimExtractorNode` now parallelizes chunk-level extraction.
+  - `GevalStepsNode` now parallelizes missing step generation across metrics while preserving cache/provided ordering and adds a lock around shared usage accounting.
+  - `RedteamNode` now parallelizes per-metric evaluations with thread-safe usage recording.
+- **Global LLM backpressure control:** Introduces process-wide LLM concurrency gating in `ng_graph/llm/gateway.py` via `BoundedSemaphore`, plus `set_llm_concurrency()` / `get_llm_concurrency()`. Both structured-call paths (`invoke` and `invoke_logprobs`) now execute under the same global cap.
+- **Config/runtime concurrency split:** Replaces generic `MAX_CONCURRENT_JOBS` with explicit node-local worker caps in `ng_core`:
+  - `CLAIMS_MAX_WORKERS`
+  - `GEVAL_STEPS_MAX_WORKERS`
+  - `REDTEAM_MAX_WORKERS`
+  This separates case-level concurrency from intra-node fan-out.
+- **Runner refactor (no API break):** Replaces monolithic `ng_graph/runner.py` with `ng_graph/runner/` package:
+  - `engine.py` (execution/caching pipeline)
+  - `plan.py` (plan topology derivation)
+  - `fingerprints.py` (cache key/fingerprint mechanics)
+  - `types.py` (result/data contracts)
+  `ng_graph.runner` import compatibility is preserved through `runner/__init__.py`.
+- **CLI tuning + observability:** `nexagauge run` adds `--llm-concurrency`; debug mode now prints per-node timing summaries with run/cache counts and eligibility-aware totals for targeted paths.
+- **Config cleanup:** Removes legacy web-search toggles from runtime config/CLI path (`TAVILY_API_KEY`, `WEB_SEARCH_ENABLED`, `--web-search`, `--evidence-threshold`) to keep execution settings focused on graph + LLM evaluation.
+- **Naming/docs polish:** CLI and project descriptions were updated to the "graph-based toolkit" wording, and `docs/get-started.md` was rewritten as a dev-first bootstrap/testing guide.
+
+**Reason:**
+- Case-level parallelism alone did not address intra-case bottlenecks where a single case fans out into many LLM calls (`claims`, `geval_steps`, `redteam`). This change parallelizes within a case while adding a single global throttle to avoid provider overload.
+- Splitting runner internals reduces coupling and makes cache-fingerprint logic, plan derivation, and execution flow independently testable/maintainable without changing the public runner surface.
+- Debug output previously lacked per-node latency distributions and cache-hit visibility across runs; timing summary output now makes throughput tuning (`--max-workers`, `--max-in-flight`, `--llm-concurrency`) measurable.
+
+**New Tests:**
+- No new test modules added in this delta.
+- Updated coverage across runner streaming, gateway behavior, claim extraction, GEval step generation, and redteam/reference metric tests to align with runner package split and new concurrency paths.
 ---
 
 ## Notes for Reviewer
