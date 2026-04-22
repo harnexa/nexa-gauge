@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "nexa-gauge"
 version = "0.1.2"
-description = "Agentic LLM evaluation pipeline with cache-aware graph execution"
+description = "A graph-based toolkit for evaluating LLM and RAG outputs with repeatable quality metrics and reporting."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }

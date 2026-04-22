@@ -20,7 +20,7 @@ from .util import (
     _resolve_runtime_llm_overrides,
 )
 
-app = typer.Typer(name="nexagauge", help="Agentic LLM evaluation pipeline.")
+app = typer.Typer(name="nexagauge", help="A graph-based toolkit for evaluating LLM and RAG outputs with repeatable quality metrics and reporting.")
 
 __all__ = [
     "app",

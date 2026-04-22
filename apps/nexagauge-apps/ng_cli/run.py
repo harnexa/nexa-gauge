@@ -7,6 +7,7 @@ from typing import Optional
 import typer
 from adapters import create_dataset_adapter
 from ng_core.cache import CacheStore, NoOpCacheStore
+from ng_graph.llm.gateway import set_llm_concurrency
 from ng_graph.log import set_node_logging_enabled
 from ng_graph.runner import CachedNodeRunner
 
@@ -16,6 +17,7 @@ from .util import (
     _case_progress,
     _is_case_eligible_for_target_path,
     _print_llm_routing_summary,
+    _print_node_timings_summary,
     _progress_total_from_bounds,
     _resolve_runtime_llm_overrides,
     _resolve_target_node,
@@ -88,8 +90,6 @@ def run(
             f"--llm-fallback grounding={DEFAULT_PRIMARY_LLM})."
         ),
     ),
-    web_search: bool = typer.Option(False, "--web-search", help="Enable Tavily web search."),
-    evidence_threshold: float = typer.Option(0.75, "--evidence-threshold"),
     yes: bool = typer.Option(
         False,
         "--yes",
@@ -106,6 +106,12 @@ def run(
         "--max-workers",
         min=1,
         help="Number of records to process concurrently.",
+    ),
+    llm_concurrency: int = typer.Option(
+        16,
+        "--llm-concurrency",
+        min=1,
+        help="Global cap on concurrent LLM calls across all worker threads.",
     ),
     max_in_flight: Optional[int] = typer.Option(
         None,
@@ -135,7 +141,8 @@ def run(
     ),
 ) -> None:
     """Execute selected cases up to `node_name` without preflight prompts."""
-    del web_search, evidence_threshold
+    llm_concurrency = int(getattr(llm_concurrency, "default", llm_concurrency))
+    debug = bool(getattr(debug, "default", debug))
 
     target_node = _resolve_target_node(node_name)
 
@@ -156,6 +163,7 @@ def run(
         global_primary=effective_judge_model,
         llm_overrides=llm_overrides,
     )
+    set_llm_concurrency(llm_concurrency)
     for warning in llm_warnings:
         console.print(f"[yellow]{warning}[/yellow]")
 
@@ -170,6 +178,7 @@ def run(
     succeeded = 0
     failed = 0
     failures: list[tuple[str, str]] = []
+    timings_by_case: list[dict[str, float]] = []
 
     effective_end = end
     if limit is not None:
@@ -218,6 +227,8 @@ def run(
                     succeeded += 1
                     total_executed += len(result.executed_nodes)
                     total_cached += len(result.cached_nodes)
+                    if debug and result.node_timings:
+                        timings_by_case.append(result.node_timings)
 
                     if output_dir:
                         report = result.final_state.get("report")
@@ -233,6 +244,9 @@ def run(
                 failures.append((outcome.case_id, outcome.error or "unknown error"))
     finally:
         set_node_logging_enabled(False)
+
+    if debug:
+        _print_node_timings_summary(timings_by_case)
 
     console.print(
         f"\n[bold green]Done.[/bold green]  "

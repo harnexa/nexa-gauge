@@ -1,145 +1,115 @@
-# Get Started with neXa-gauge
+# Development Get Started (nexa-gauge)
 
-## 1) Install
+This guide is for local development in this repository, not just CLI usage from PyPI.
 
-Python 3.10+ is required.
+## 1) Prerequisites
 
-Install from PyPI:
+- Python 3.10+
+- `uv` installed: <https://docs.astral.sh/uv/>
+- Optional: `make`
 
-```bash
-pip install nexa-gauge
-```
+## 2) Bootstrap the workspace
 
-If you plan to use Hugging Face datasets (`hf://...`), install extras:
-
-```bash
-pip install "nexa-gauge[huggingface]"
-```
-
-## 2) Configure Environment
-
-Set at least one provider key before LLM-backed runs.
-
-macOS/Linux:
+From repo root:
 
 ```bash
-export OPENAI_API_KEY="<your-key>"
-# optional
-export LLM_MODEL="openai/gpt-4o-mini"
+cd /Volumes/Raid1CrucialHD/sardhendu/workspace/harnexa-dev/nexa-gauge
+make install
 ```
 
-Windows PowerShell:
+`make install` runs `setup.sh`, which creates `.venv` (if missing) and runs `uv sync`.
 
-```powershell
-$env:OPENAI_API_KEY="<your-key>"
-# optional
-$env:LLM_MODEL="openai/gpt-4o-mini"
-```
-
-You can also use a local `.env` file; see `.env.example` in this repository.
-
-## 3) Create Input Data
-
-Create a sample dataset:
-
-```json
-[
-  {
-    "case_id": "tower-1",
-    "question": "Where is the Eiffel Tower?",
-    "generation": "The Eiffel Tower is in Paris, France.",
-    "context": ["The Eiffel Tower is a Paris landmark."],
-    "reference": "The Eiffel Tower is in Paris.",
-    "geval": {
-      "metrics": [
-        {
-          "name": "location_accuracy",
-          "item_fields": ["question", "generation"],
-          "criteria": "Answer must state Paris as the location."
-        }
-      ]
-    }
-  }
-]
-```
-
-Save it as `sample.json`.
-
-## 4) Run the CLI
-
-Inspect commands:
+If you prefer manual setup:
 
 ```bash
+uv venv .venv
+source .venv/bin/activate
+uv sync --all-packages --group dev
+```
+
+## 3) Configure environment
+
+```bash
+cp .env.example .env
+```
+
+Set at least one provider key in `.env` before LLM-backed runs, for example:
+
+```env
+OPENAI_API_KEY=<your-key>
+LLM_MODEL=gpt-4o-mini
+```
+
+## 4) Verify your dev install
+
+```bash
+source .venv/bin/activate
+which nexagauge
 nexagauge --help
-nexagauge run --help
-nexagauge estimate --help
 ```
 
-Estimate before execution:
+Expected:
+- `which nexagauge` points to `.venv/bin/nexagauge`
+- help output shows `run`, `estimate`, and `delete`
+
+## 5) Run tests and checks
 
 ```bash
-nexagauge estimate grounding --input sample.json --limit 10
+make lint
+make test
 ```
 
-Run a branch:
+Useful targets:
+- `make test-pkg PKG=packages/nexagauge-core`
+- `make test_graph`
+- `make ci`
+
+## 6) Run a local smoke test
 
 ```bash
-nexagauge run grounding --input sample.json --limit 10
+nexagauge estimate grounding --input sample.json --limit 1
+nexagauge run eval --input sample.json --limit 1 --output-dir ./report
 ```
 
-Run full evaluation and write report files:
+## 7) Development workflow notes
 
-```bash
-nexagauge run eval --input sample.json --output-dir ./report --limit 10
-```
-
-## 5) Target Nodes
-
-Available targets:
-- `scan`
-- `chunk`
-- `claims`
-- `dedup`
-- `geval_steps`
-- `relevance`
-- `grounding`
-- `redteam`
-- `geval`
-- `reference`
-- `eval`
-- `report`
-
-Typical paths:
-- `grounding`: `scan -> chunk -> claims -> dedup -> grounding`
-- `relevance`: `scan -> chunk -> claims -> dedup -> relevance`
-- `geval`: `scan -> geval_steps -> geval`
-- `eval`: full branch execution + aggregate evaluation
-
-## 6) Common Flags
-
-- data: `--input`, `--adapter`, `--split`, `--start`, `--end`, `--limit`
-- model routing: `--model`, `--llm-model`, `--llm-fallback`
-- cache: `--force`, `--no-cache`, `--cache-dir`
-- execution: `--max-workers`, `--max-in-flight`, `--continue-on-error`
-- output: `--output-dir` (run only)
-- debug: `--debug` (node logs on; progress bar off)
-
-## 7) Hugging Face Example
-
-```bash
-nexagauge estimate relevance \
-  --input hf://openai/gsm8k \
-  --adapter huggingface \
-  --hf-config main \
-  --split train \
-  --limit 20
-```
+- CLI entrypoint `nexagauge` is defined in:
+  - root `pyproject.toml` (`[project.scripts] nexagauge = "ng_cli.main:main"`)
+  - `apps/nexagauge-apps/pyproject.toml` (same script)
+- `nexagauge-core` and `nexagauge-graph` packages do not expose the `nexagauge` command on their own.
+- You can always run commands without activating venv via `uv run ...` if needed.
 
 ## 8) Troubleshooting
 
-| Error | Resolution |
-|---|---|
-| `Unknown node '...'` | Use one of the canonical node names listed above. |
-| `Could not resolve dataset source` | Use an existing local path or `hf://<dataset-id>`. |
-| `datasets package is required for hf:// adapters` | Install `nexa-gauge[huggingface]`. |
-| Authentication errors | Set provider key (for example `OPENAI_API_KEY`). |
+### `nexagauge: command not found` after `source .venv/bin/activate`
+
+Most common cause: stale or relocated virtualenv where `.venv/bin/activate` points to an old path.
+
+Check:
+
+```bash
+rg -n "^VIRTUAL_ENV='" .venv/bin/activate
+```
+
+If it does not match your current repo path, recreate the venv:
+
+```bash
+deactivate 2>/dev/null || true
+rm -rf .venv
+uv venv .venv
+source .venv/bin/activate
+uv sync --all-packages --group dev
+which nexagauge
+```
+
+### CLI exists but import errors occur
+
+Run a clean sync from repo root:
+
+```bash
+uv sync --all-packages --group dev
+```
+
+### `OPENAI_API_KEY`/provider auth errors
+
+Set credentials in `.env` (or shell env), then rerun.
