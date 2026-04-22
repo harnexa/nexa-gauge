@@ -101,7 +101,7 @@ def estimate(
     max_workers: int = typer.Option(
         1,
         "--max-workers",
-        min=2,
+        min=1,
         help=(
             "Case-level parallelism. Number of records estimated concurrently. "
             "Default 1 means one case at a time."
