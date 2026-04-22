@@ -3,15 +3,53 @@
   "packages": {
     ".": {
       "release-type": "python",
+      "versioning": "always-bump-patch",
       "include-v-in-tag": true,
-      "extra-files": [
-        "apps/nexagauge-apps/pyproject.toml",
-        "packages/nexagauge-core/pyproject.toml",
-        "packages/nexagauge-graph/pyproject.toml",
-        "apps/nexagauge-apps/ng_api/__init__.py",
-        "apps/nexagauge-apps/ng_cli/__init__.py",
-        "packages/nexagauge-core/ng_core/__init__.py",
-        "packages/nexagauge-graph/ng_graph/__init__.py"
+      "changelog-sections": [
+        {
+          "type": "feat",
+          "section": "Features"
+        },
+        {
+          "type": "fix",
+          "section": "Bug Fixes"
+        },
+        {
+          "type": "deps",
+          "section": "Dependencies"
+        },
+        {
+          "type": "perf",
+          "section": "Performance"
+        },
+        {
+          "type": "refactor",
+          "section": "Refactoring"
+        },
+        {
+          "type": "docs",
+          "section": "Documentation"
+        },
+        {
+          "type": "test",
+          "section": "Tests"
+        },
+        {
+          "type": "build",
+          "section": "Build System"
+        },
+        {
+          "type": "ci",
+          "section": "CI"
+        },
+        {
+          "type": "chore",
+          "section": "Miscellaneous"
+        },
+        {
+          "type": "revert",
+          "section": "Reverts"
+        }
       ]
     }
   }

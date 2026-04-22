@@ -106,9 +106,11 @@ make ci
 ```
 
 Releases are automated with `release-please`:
-- merge conventional commits into `main` (`feat:`, `fix:`, `deps:`) to queue a version bump
-- a `Release PR` is created/updated automatically
-- merging that PR creates a `v*` tag, which triggers `.github/workflows/publish.yml`
+- use Conventional Commit PR titles (`feat:`, `fix:`, `deps:`, `chore:`, etc.) so merged commits are parseable
+- if using merge commits, ensure the merge message includes a conventional title (or use squash merge with a conventional PR title)
+- a `Release PR` is created/updated automatically and auto-merged after required checks pass
+- release bump scope is repo-level (`nexa-gauge` root version), not every package-level file
+- publish runs from `.github/workflows/release.yml` after release creation
 
 Build distributions:
 
