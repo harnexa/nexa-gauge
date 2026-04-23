@@ -8,7 +8,18 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](pyproject.toml)
 
-Cache-aware LLM evaluation CLI with topology-based execution and branch-level cost estimation.
+
+
+A graph-based evaluation toolkit for LLM and RAG systems with repeatable quality checks, upfront cost visibility, and clean per-case outputs for analysis.
+
+
+*  Graph-native evaluation flow (scan -> claims -> metrics -> eval)
+*  Cost visibility before runtime with estimate-first execution
+*  Cache-aware runs to avoid duplicate spend and recomputation
+*  Coverage across relevance, grounding, redteam, GEval, and reference scoring
+*  Production-friendly CLI for run, estimate, and cache management
+*  Scales with control across utility and metric nodes
+*  Bring your own model: Ollama support comming!!
 
 ## Install
 
