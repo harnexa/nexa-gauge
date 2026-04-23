@@ -9,9 +9,7 @@
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](pyproject.toml)
 
 
-
-A graph-based evaluation toolkit for LLM and RAG systems with repeatable quality checks, upfront cost visibility, and clean per-case outputs for analysis.
-
+A graph-based evaluation toolkit for LLM and RAG systems with repeatable quality checks, upfront cost visibility, cache for reusability and clean per-case outputs for analysis.
 
 *  Graph-native evaluation flow (scan -> claims -> metrics -> eval)
 *  Cost visibility before runtime with estimate-first execution
