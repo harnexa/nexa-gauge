@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 from ng_core.types import ChunkArtifacts, CostEstimate, Inputs, Item
+from conftest import make_fake_get_judge_model
 
 
 def test_node_generation_claims_estimate_calls_estimate_without_chunks(
@@ -12,10 +13,6 @@ def test_node_generation_claims_estimate_calls_estimate_without_chunks(
     Run: uv run pytest -s packages/nexagauge-graph/test_ng_graph/test_graph/test_estimate_mode.py::test_node_generation_claims_estimate_calls_estimate_without_chunks
     """
     captured: dict[str, object] = {}
-
-    def _fake_get_judge_model(node_name: str, default: str, llm_overrides=None) -> str:
-        captured["resolved_node_name"] = node_name
-        return "resolved-claims-model"
 
     class _FakeClaimExtractorNode:
         def __init__(self, model: str, llm_overrides=None):
@@ -29,7 +26,9 @@ def test_node_generation_claims_estimate_calls_estimate_without_chunks(
             captured["estimate_chunk_count"] = len(chunks)
             return CostEstimate(cost=0.123, input_tokens=0.0, output_tokens=0.0)
 
-    monkeypatch.setattr(graph_module, "get_judge_model", _fake_get_judge_model)
+    monkeypatch.setattr(
+        graph_module, "get_judge_model", make_fake_get_judge_model(captured)
+    )
     monkeypatch.setattr(graph_module.claim_extractor, "ClaimExtractorNode", _FakeClaimExtractorNode)
 
     llm_overrides = {"models": {"claims": "runtime-claims-model"}}
@@ -67,10 +66,6 @@ def test_node_grounding_estimate_calls_estimate_without_claim_artifact(
     """
     captured: dict[str, object] = {}
 
-    def _fake_get_judge_model(node_name: str, default: str, llm_overrides=None) -> str:
-        captured["resolved_node_name"] = node_name
-        return "resolved-grounding-model"
-
     class _FakeGroundingNode:
         def __init__(self, judge_model: str, llm_overrides=None):
             captured["constructor_model"] = judge_model
@@ -83,7 +78,9 @@ def test_node_grounding_estimate_calls_estimate_without_claim_artifact(
             captured["estimate_context"] = context
             return CostEstimate(cost=0.456, input_tokens=0.0, output_tokens=0.0)
 
-    monkeypatch.setattr(graph_module, "get_judge_model", _fake_get_judge_model)
+    monkeypatch.setattr(
+        graph_module, "get_judge_model", make_fake_get_judge_model(captured)
+    )
     monkeypatch.setattr(graph_module, "GroundingNode", _FakeGroundingNode)
 
     llm_overrides = {"models": {"grounding": "runtime-grounding-model"}}
@@ -117,10 +114,6 @@ def test_node_relevance_estimate_calls_estimate_with_claims_and_question(
     """
     captured: dict[str, object] = {}
 
-    def _fake_get_judge_model(node_name: str, default: str, llm_overrides=None) -> str:
-        captured["resolved_node_name"] = node_name
-        return "resolved-relevance-model"
-
     class _FakeRelevanceNode:
         def __init__(self, judge_model: str, llm_overrides=None):
             captured["constructor_model"] = judge_model
@@ -133,7 +126,9 @@ def test_node_relevance_estimate_calls_estimate_with_claims_and_question(
             captured["estimate_question"] = question
             return CostEstimate(cost=0.234, input_tokens=0.0, output_tokens=0.0)
 
-    monkeypatch.setattr(graph_module, "get_judge_model", _fake_get_judge_model)
+    monkeypatch.setattr(
+        graph_module, "get_judge_model", make_fake_get_judge_model(captured)
+    )
     monkeypatch.setattr(graph_module, "RelevanceNode", _FakeRelevanceNode)
 
     llm_overrides = {"models": {"relevance": "runtime-relevance-model"}}

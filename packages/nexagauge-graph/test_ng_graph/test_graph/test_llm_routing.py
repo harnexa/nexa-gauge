@@ -17,6 +17,8 @@ from ng_core.types import (
     Item,
 )
 
+from conftest import make_fake_get_judge_model
+
 
 def _make_chunk(text: str) -> Chunk:
     return Chunk(
@@ -31,11 +33,6 @@ def _make_chunk(text: str) -> Chunk:
 def test_node_generation_claims_uses_canonical_model_key(graph_module, monkeypatch) -> None:
     captured: dict[str, object] = {}
 
-    def _fake_get_judge_model(node_name: str, default: str, llm_overrides=None) -> str:
-        captured["resolved_node_name"] = node_name
-        captured["resolved_overrides"] = llm_overrides
-        return "resolved-claims-model"
-
     class _FakeClaimExtractorNode:
         def __init__(self, model: str, llm_overrides=None):
             captured["constructor_model"] = model
@@ -46,7 +43,9 @@ def test_node_generation_claims_uses_canonical_model_key(graph_module, monkeypat
                 claims=[], cost=CostEstimate(cost=0.0, input_tokens=None, output_tokens=None)
             )
 
-    monkeypatch.setattr(graph_module, "get_judge_model", _fake_get_judge_model)
+    monkeypatch.setattr(
+        graph_module, "get_judge_model", make_fake_get_judge_model(captured)
+    )
     monkeypatch.setattr(graph_module.claim_extractor, "ClaimExtractorNode", _FakeClaimExtractorNode)
 
     llm_overrides = {"models": {"claims": "runtime-claims-model"}}
@@ -77,11 +76,6 @@ def test_node_grounding_uses_canonical_key_and_handles_missing_context(
 ) -> None:
     captured: dict[str, object] = {}
 
-    def _fake_get_judge_model(node_name: str, default: str, llm_overrides=None) -> str:
-        captured["resolved_node_name"] = node_name
-        captured["resolved_overrides"] = llm_overrides
-        return "resolved-grounding-model"
-
     class _FakeGroundingNode:
         def __init__(self, judge_model: str, llm_overrides=None):
             captured["constructor_model"] = judge_model
@@ -92,7 +86,9 @@ def test_node_grounding_uses_canonical_key_and_handles_missing_context(
             captured["context_text"] = context.text
             return {"ok": True, "claims": len(claims)}
 
-    monkeypatch.setattr(graph_module, "get_judge_model", _fake_get_judge_model)
+    monkeypatch.setattr(
+        graph_module, "get_judge_model", make_fake_get_judge_model(captured, "grounding-model")
+    )
     monkeypatch.setattr(graph_module, "GroundingNode", _FakeGroundingNode)
 
     llm_overrides = {"models": {"grounding": "runtime-grounding-model"}}

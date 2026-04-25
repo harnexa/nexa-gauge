@@ -22,6 +22,7 @@ from ng_core.types import (
     RedteamRubric,
 )
 from ng_graph.llm import normalize_runtime_overrides
+from conftest import make_fake_get_judge_model_multi
 
 
 def test_normalize_runtime_overrides_parses_and_normalizes() -> None:
@@ -42,10 +43,6 @@ def test_normalize_runtime_overrides_parses_and_normalizes() -> None:
 def test_graph_forwards_llm_overrides_to_nodes(graph_module, monkeypatch) -> None:
     """llm_overrides are forwarded to all LLM-routing nodes in node-level execution."""
     captured: list[tuple[str, object]] = []
-
-    def _fake_get_judge_model(node_name: str, default: str, llm_overrides=None) -> str:
-        captured.append((node_name, llm_overrides))
-        return f"resolved-{node_name}"
 
     class _FakeClaimExtractorNode:
         def __init__(self, model: str, llm_overrides=None):
@@ -114,7 +111,7 @@ def test_graph_forwards_llm_overrides_to_nodes(graph_module, monkeypatch) -> Non
                 cost=CostEstimate(cost=0.0, input_tokens=None, output_tokens=None),
             )
 
-    monkeypatch.setattr(graph_module, "get_judge_model", _fake_get_judge_model)
+    monkeypatch.setattr(graph_module, "get_judge_model", make_fake_get_judge_model_multi(captured))
     monkeypatch.setattr(graph_module.claim_extractor, "ClaimExtractorNode", _FakeClaimExtractorNode)
     monkeypatch.setattr(graph_module, "GroundingNode", _FakeGroundingNode)
     monkeypatch.setattr(graph_module, "RelevanceNode", _FakeRelevanceNode)
