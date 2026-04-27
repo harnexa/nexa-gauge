@@ -1,10 +1,10 @@
-<!-- pr-snapshot: b7a9af9f3e213a01aa407baf5c2e7cd9245d815f -->
+<!-- pr-snapshot: 4dabc7946a213a31abe60f43d913a88a602ed5c9 -->
 
 # GEval split, unified cache, and package rename to `nexagauge`
 
 **Branch:** `geval-split` → `main`
 **Date:** 2026-04-19
-Updated: 2026-04-21
+Updated: 2026-04-26
 
 ## Summary
 
@@ -109,6 +109,28 @@ Splits the GEval metric node into `geval_steps`, `geval_score`, and `geval_weigh
 **New Tests:**
 - No new test modules added in this delta.
 - Updated coverage across runner streaming, gateway behavior, claim extraction, GEval step generation, and redteam/reference metric tests to align with runner package split and new concurrency paths.
+---
+
+### Updates since snapshot 4c36a7a (2026-04-26)
+
+**New Changes:**
+- **Evaluation summary node:** New `packages/nexagauge-graph/ng_graph/nodes/eval.py` (432 LOC) introduces `node_eval` for per-case rollups and `EvalBatchCollector` for cross-case running totals. Per-case node is pure/stateless; the batch collector owns a `Lock` so multi-threaded case execution can update shared metric/node counters atomically. Wired into `runner/engine.py` (+106 lines) and `nodes/report.py`.
+- **Standardized metric verdicts:** New `nodes/metrics/verdicts.py` exposes `PASSED`/`FAILED` constants plus `verdict_from_passed` / `verdict_from_score` helpers. Adopted by `grounding`, `relevance`, `redteam`, and `geval/score` so every metric path emits the same verdict shape.
+- **CLI evaluation surface:** `ng_cli/run.py` (+70 lines) renders the new evaluation summary at run end (rich table, threshold-aware totals); `pyproject.toml` and `nexagauge-apps/__init__.py` exports updated to expose the eval primitives.
+- **Release automation overhaul:** Replaces `publish.yml` + `release-please.yml` with a unified `.github/workflows/release.yml` driven by release-please; adds `release-automerge.yml` for auto-merge of release PRs; tightens `release-please-config.json` (component config, changelog sections). Switches the workflow to a fine-scoped PAT (`RELEASE_PLEASE_TOKEN`) so the release PR can be merged from CI without bypassing branch protection. Adds `CHANGELOG.md` 0.1.3 entry; `.release-please-manifest.json` bumped.
+- **CI:** Adds `.github/workflows/ci.yml` (lint + test on push/PR).
+- **Core type/constants polish:** `ng_core/types.py` (146 changed lines) consolidates eval-summary models alongside the existing `CostEstimate`; `ng_core/constants.py` (+31 lines) adds threshold + display constants for the new summary path.
+
+**Reason:**
+- The runner had per-case results but no canonical, render-ready aggregation; downstream callers (CLI, API, tests) each rolled their own. Centralizing in `node_eval` + `EvalBatchCollector` removes that duplication and gives the new CLI summary a single source of truth that's safe under the multithreaded runner introduced in the prior block.
+- Verdicts were previously derived inline in each metric node, which made it easy for one node to drift from the others. A shared `verdicts.py` is small, removes a class of bugs, and lets the eval summary trust uniform inputs.
+- Release process was manually driven and lacked an automatic merge path; release-please + automerge + a PAT-scoped token enables hands-off `0.x` releases on merge to `main`.
+
+**New Tests:**
+- `test_ng_graph/test_nodes/test_eval_batch.py` (102 LOC) — covers `EvalBatchCollector` running totals and per-case `node_eval` rollups.
+- `test_ng_graph/test_graph/test_end_metric_routes.py` additions (+50 LOC) and `test_runner_streaming.py` additions (+117 LOC) — verify eval summary integrates with end-metric routing and streaming emission.
+- `test_apps/test_ng_cli/test_llm_cli_interface.py` (+172 LOC) — exercises the new CLI summary output and threshold formatting.
+- Existing metric tests (`test_grounding`, `test_relevance`, `test_redteam`, `test_geval/test_score`, `test_report_aggregate`) updated for the standardized verdict shape.
 ---
 
 ## Notes for Reviewer
