@@ -1,6 +1,6 @@
-# neXa-gauge Architecture
+# nexa-gauge Architecture
 
-neXa-gauge is a CLI-first evaluation engine for LLM outputs. Execution is driven by a typed node topology, a cache-aware runner, and declarative report projection.
+nexa-gauge is a CLI-first evaluation engine for LLM outputs. Execution is driven by a typed node topology, a cache-aware runner, and declarative report projection.
 
 Source of truth for node dependencies and input gating: `packages/nexagauge-graph/ng_graph/topology.py`.
 

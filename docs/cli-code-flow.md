@@ -6,13 +6,15 @@ Primary source files:
 - `apps/nexagauge-apps/ng_cli/main.py`
 - `apps/nexagauge-apps/ng_cli/run.py`
 - `apps/nexagauge-apps/ng_cli/estimate.py`
+- `apps/nexagauge-apps/ng_cli/cache.py`
 - `packages/nexagauge-graph/ng_graph/runner.py`
 
 ## Command Entry
 
-`nexagauge` exposes two commands:
+`nexagauge` exposes three top-level command entries:
 - `nexagauge run <node_name>`
 - `nexagauge estimate <node_name>`
+- `nexagauge cache <command>`
 
 Shared setup in both commands:
 1. Validate target node name against topology.
@@ -33,7 +35,6 @@ Per outcome:
 Behavior notes:
 - `--debug` enables per-node debug logs.
 - When `--debug` is off, a CLI progress bar is shown.
-- `--yes` is accepted but deprecated.
 - `--web-search` and `--evidence-threshold` are currently accepted for compatibility but not used by current `run` implementation.
 
 ## `estimate` Flow
@@ -48,6 +49,17 @@ Per outcome:
 Behavior notes:
 - `--debug` enables per-node debug logs.
 - When `--debug` is off, a CLI progress bar is shown.
+
+## `cache` Flow
+
+`cache` exposes cache-management commands:
+- `nexagauge cache dir` prints the resolved cache root.
+- `nexagauge cache delete` wipes the node-level execution cache.
+
+Cache root resolution:
+1. `--cache-dir` for `cache delete`, when provided.
+2. `NEXAGAUGE_CACHE_DIR`, when set.
+3. The per-user platform default from `default_cache_dir()`.
 
 ## Runner Responsibilities
 

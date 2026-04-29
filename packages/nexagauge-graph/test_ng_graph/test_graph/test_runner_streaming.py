@@ -220,6 +220,76 @@ def test_report_target_parallelizes_independent_branches(monkeypatch) -> None:
     assert timestamps["reference_start"] < timestamps["dedup_end"]
 
 
+def test_dependent_snapshot_includes_unmerged_prereq_outputs(monkeypatch) -> None:
+    observed: dict[str, str | None] = {"geval_seen_steps": None}
+
+    def _scan(_state: dict) -> dict:
+        return {"inputs": object()}
+
+    def _chunk(_state: dict) -> dict:
+        # Keep chunk slower than geval_steps so ``geval`` is scheduled before
+        # global in-order merge can advance past chunk.
+        time.sleep(0.12)
+        return {"chunk_marker": "chunked"}
+
+    def _claims(_state: dict) -> dict:
+        return {"claims_marker": "claims"}
+
+    def _dedup(_state: dict) -> dict:
+        return {"dedup_marker": "dedup"}
+
+    def _geval_steps(_state: dict) -> dict:
+        time.sleep(0.01)
+        return {"geval_steps_marker": "ready"}
+
+    def _geval(state: dict) -> dict:
+        observed["geval_seen_steps"] = state.get("geval_steps_marker")
+        return {"geval_marker": "run-geval" if state.get("geval_steps_marker") else None}
+
+    def _grounding(_state: dict) -> dict:
+        return {"grounding_marker": "grounding"}
+
+    def _relevance(_state: dict) -> dict:
+        return {"relevance_marker": "relevance"}
+
+    def _redteam(_state: dict) -> dict:
+        return {"redteam_marker": "redteam"}
+
+    def _reference(_state: dict) -> dict:
+        return {"reference_marker": "reference"}
+
+    def _eval(_state: dict) -> dict:
+        return {"eval_marker": "eval"}
+
+    def _report(_state: dict) -> dict:
+        return {"report": []}
+
+    monkeypatch.setitem(runner_module.NODE_FNS, "scan", _scan)
+    monkeypatch.setitem(runner_module.NODE_FNS, "chunk", _chunk)
+    monkeypatch.setitem(runner_module.NODE_FNS, "claims", _claims)
+    monkeypatch.setitem(runner_module.NODE_FNS, "dedup", _dedup)
+    monkeypatch.setitem(runner_module.NODE_FNS, "geval_steps", _geval_steps)
+    monkeypatch.setitem(runner_module.NODE_FNS, "geval", _geval)
+    monkeypatch.setitem(runner_module.NODE_FNS, "grounding", _grounding)
+    monkeypatch.setitem(runner_module.NODE_FNS, "relevance", _relevance)
+    monkeypatch.setitem(runner_module.NODE_FNS, "redteam", _redteam)
+    monkeypatch.setitem(runner_module.NODE_FNS, "reference", _reference)
+    monkeypatch.setitem(runner_module.NODE_FNS, "eval", _eval)
+    monkeypatch.setitem(runner_module.NODE_FNS, "report", _report)
+
+    runner = CachedNodeRunner(cache_store=NoOpCacheStore())
+    result = runner.run_case(
+        case={"case_id": "case-dependency", "generation": "hello"},
+        node_name="eval",
+        execution_mode="run",
+        force=True,
+    )
+
+    assert "geval" in result.executed_nodes
+    assert observed["geval_seen_steps"] == "ready"
+    assert result.final_state.get("geval_marker") == "run-geval"
+
+
 def test_estimate_mode_reuses_run_cache_for_shared_prerequisites(monkeypatch, tmp_path) -> None:
     def _fake_scan(_state: dict) -> dict:
         return {"scan_marker": "ok"}

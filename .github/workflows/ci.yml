@@ -12,27 +12,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate PR title follows Conventional Commits
-        if: github.event_name == 'pull_request' && github.actor != 'release-please[bot]'
-        env:
-          PR_TITLE: ${{ github.event.pull_request.title }}
-        run: |
-          set -euo pipefail
-          pattern='^(feat|fix|deps|chore|docs|refactor|perf|test|build|ci|revert)(\([^)]+\))?(!)?: .+'
-          if [[ "${PR_TITLE}" =~ ${pattern} ]]; then
-            echo "PR title is conventional: ${PR_TITLE}"
-            exit 0
-          fi
-          echo "::error title=Invalid PR title::Release Please requires Conventional Commit style titles."
-          echo "Expected format: type(scope): summary"
-          echo "Examples:"
-          echo "  fix(cli): handle --max-workers default correctly"
-          echo "  feat(runner): add llm concurrency control"
-          echo "  chore: update docs"
-          echo ""
-          echo "Current title: ${PR_TITLE}"
-          exit 1
-
       - name: Install uv
         uses: astral-sh/setup-uv@v3
         with:

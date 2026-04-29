@@ -406,7 +406,6 @@ def test_run_command_filters_ineligible_cases_for_grounding(
     main_module.run(
         node_name="grounding",
         input="dummy.json",
-        split="train",
         start=0,
         end=None,
         limit=10,
@@ -416,13 +415,11 @@ def test_run_command_filters_ineligible_cases_for_grounding(
         judge_model=DEFAULT_PRIMARY_LLM,
         llm_model=[],
         llm_fallback=[],
-        yes=False,
         continue_on_error=True,
         max_workers=1,
         max_in_flight=None,
         force=False,
         no_cache=True,
-        cache_dir=None,
         output_dir=None,
     )
 
@@ -462,7 +459,6 @@ def test_run_command_does_not_prefetch_all_cases(monkeypatch: pytest.MonkeyPatch
     main_module.run(
         node_name="grounding",
         input="dummy.json",
-        split="train",
         start=0,
         end=None,
         limit=None,
@@ -472,13 +468,11 @@ def test_run_command_does_not_prefetch_all_cases(monkeypatch: pytest.MonkeyPatch
         judge_model=DEFAULT_PRIMARY_LLM,
         llm_model=[],
         llm_fallback=[],
-        yes=False,
         continue_on_error=True,
         max_workers=1,
         max_in_flight=None,
         force=False,
         no_cache=True,
-        cache_dir=None,
         output_dir=None,
     )
 
@@ -519,7 +513,6 @@ def test_run_command_sets_llm_concurrency(monkeypatch: pytest.MonkeyPatch) -> No
     main_module.run(
         node_name="grounding",
         input="dummy.json",
-        split="train",
         start=0,
         end=None,
         limit=None,
@@ -529,14 +522,12 @@ def test_run_command_sets_llm_concurrency(monkeypatch: pytest.MonkeyPatch) -> No
         judge_model=DEFAULT_PRIMARY_LLM,
         llm_model=[],
         llm_fallback=[],
-        yes=False,
         continue_on_error=True,
         max_workers=1,
         llm_concurrency=7,
         max_in_flight=None,
         force=False,
         no_cache=True,
-        cache_dir=None,
         output_dir=None,
     )
 
@@ -597,7 +588,6 @@ def test_run_debug_summary_uses_per_node_eligible_counts(
     main_module.run(
         node_name="eval",
         input="dummy.json",
-        split="train",
         start=0,
         end=None,
         limit=None,
@@ -607,13 +597,11 @@ def test_run_debug_summary_uses_per_node_eligible_counts(
         judge_model=DEFAULT_PRIMARY_LLM,
         llm_model=[],
         llm_fallback=[],
-        yes=False,
         continue_on_error=True,
         max_workers=1,
         max_in_flight=None,
         force=False,
         no_cache=True,
-        cache_dir=None,
         output_dir=None,
         debug=True,
     )
@@ -681,7 +669,6 @@ def test_run_command_passes_eval_collector_and_renders_from_snapshot(
     main_module.run(
         node_name="eval",
         input="dummy.json",
-        split="train",
         start=0,
         end=None,
         limit=1,
@@ -691,13 +678,11 @@ def test_run_command_passes_eval_collector_and_renders_from_snapshot(
         judge_model=DEFAULT_PRIMARY_LLM,
         llm_model=[],
         llm_fallback=[],
-        yes=False,
         continue_on_error=True,
         max_workers=1,
         max_in_flight=None,
         force=False,
         no_cache=True,
-        cache_dir=None,
         output_dir=None,
     )
 
@@ -760,7 +745,6 @@ def test_run_command_writes_case_report_and_metric_breakdowns(
     main_module.run(
         node_name="eval",
         input="dummy.json",
-        split="train",
         start=0,
         end=None,
         limit=1,
@@ -770,13 +754,11 @@ def test_run_command_writes_case_report_and_metric_breakdowns(
         judge_model=DEFAULT_PRIMARY_LLM,
         llm_model=[],
         llm_fallback=[],
-        yes=False,
         continue_on_error=True,
         max_workers=1,
         max_in_flight=None,
         force=False,
         no_cache=True,
-        cache_dir=None,
         output_dir=out_dir,
     )
 

@@ -125,7 +125,6 @@ def run(
         "-i",
         help="Dataset source: local file path or hf://<dataset-id>.",
     ),
-    split: str = typer.Option("train", "--split", help="Dataset split for adapter-backed sources."),
     start: int = typer.Option(
         0,
         "--start",
@@ -180,12 +179,6 @@ def run(
             f"--llm-fallback grounding={DEFAULT_PRIMARY_LLM})."
         ),
     ),
-    yes: bool = typer.Option(
-        False,
-        "--yes",
-        "-y",
-        help="Deprecated: run executes immediately and no longer needs confirmation.",
-    ),
     continue_on_error: bool = typer.Option(
         True,
         "--continue-on-error/--fail-fast",
@@ -226,7 +219,6 @@ def run(
     ),
     force: bool = typer.Option(False, "--force", help="Ignore cache reads (still writes)."),
     no_cache: bool = typer.Option(False, "--no-cache", help="Disable cache reads and writes."),
-    cache_dir: Optional[str] = typer.Option(None, "--cache-dir", help="Cache directory path."),
     output_dir: Optional[Path] = typer.Option(
         None,
         "--output-dir",
@@ -252,11 +244,6 @@ def run(
 
     target_node = _resolve_target_node(node_name)
 
-    if yes:
-        console.print(
-            "[dim]`--yes` is deprecated for `run`; execution now starts immediately.[/dim]"
-        )
-
     effective_judge_model, llm_overrides, llm_warnings = _resolve_runtime_llm_overrides(
         target_node=target_node,
         legacy_model=judge_model,
@@ -273,7 +260,7 @@ def run(
     for warning in llm_warnings:
         console.print(f"[yellow]{warning}[/yellow]")
 
-    cache_store: CacheStore = NoOpCacheStore() if no_cache else CacheStore(cache_dir)
+    cache_store: CacheStore = NoOpCacheStore() if no_cache else CacheStore()
     runner = CachedNodeRunner(cache_store=cache_store)
 
     case_report_dir: Optional[Path] = None
@@ -314,7 +301,7 @@ def run(
     )
 
     selected_cases = islice(
-        ds_adapter.iter_cases(split=split, limit=effective_end),
+        ds_adapter.iter_cases(limit=effective_end),
         start,
         effective_end,
     )

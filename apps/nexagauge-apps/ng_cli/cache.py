@@ -10,7 +10,7 @@ from ng_core.constants import default_cache_dir
 
 from .util import console
 
-delete_app = typer.Typer(name="delete", help="Remove cached or generated artifacts.")
+cache_app = typer.Typer(name="cache", help="Inspect and manage cached artifacts.")
 
 
 _UNIT_STEP = 1024.0
@@ -48,7 +48,14 @@ def _resolve_cache_root(cache_dir: Optional[str]) -> Path:
     return default_cache_dir()
 
 
-@delete_app.command("cache")
+@cache_app.command("dir")
+def cache_dir() -> None:
+    """Print the resolved cache root directory."""
+    root = _resolve_cache_root(None).expanduser().resolve()
+    typer.echo(str(root))
+
+
+@cache_app.command("delete")
 def delete_cache(
     cache_dir: Optional[str] = typer.Option(
         None,
@@ -86,7 +93,7 @@ def delete_cache(
     console.print(f"[bold]Files:[/bold] {total_files:,}   [bold]Size:[/bold] {pretty_size}")
 
     if dry_run:
-        console.print("[yellow]Dry run — nothing was deleted.[/yellow]")
+        console.print("[yellow]Dry run - nothing was deleted.[/yellow]")
         raise typer.Exit(0)
 
     if total_files == 0:

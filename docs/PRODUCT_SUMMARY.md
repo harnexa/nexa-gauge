@@ -1,8 +1,8 @@
-# neXa-gauge Product Summary
+# nexa-gauge Product Summary
 
 ## What It Is
 
-neXa-gauge is a Python package and CLI for evaluating LLM outputs using a cache-aware node graph.
+nexa-gauge is a Python package and CLI for evaluating LLM outputs using a cache-aware node graph.
 
 Core commands:
 - `nexagauge run <target_node>`

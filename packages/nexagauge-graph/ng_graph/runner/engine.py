@@ -346,6 +346,23 @@ class CachedNodeRunner:
             out = NODE_FNS[step_name](snapshot)
             return out, (time.monotonic() - node_t0) * 1000
 
+        def _build_step_snapshot(step_name: str) -> dict[str, Any]:
+            """Build a consistent per-node snapshot with prerequisite outputs merged.
+
+            A dependent node can become runnable as soon as prerequisite futures
+            resolve, but canonical ``state`` may not yet include those patches
+            because global merge order is plan-indexed. Merge all resolved
+            prerequisite outputs into a local snapshot so node execution sees the
+            data contract promised by the DAG, independent of merge timing.
+            """
+            snapshot: dict[str, Any] = deepcopy(state)
+            for prereq in plan_transitive_prereqs.get(step_name, ()):
+                prereq_output = completed_outputs.get(prereq)
+                if prereq_output is None:
+                    continue
+                _merge_state_patch(snapshot, prereq_output)
+            return snapshot
+
         # Run all the nodes in parallel
         case_workers = max(4, len(METRIC_NODES))
         with ThreadPoolExecutor(max_workers=case_workers) as pool:
@@ -382,7 +399,9 @@ class CachedNodeRunner:
                     if debug:
                         _debug_log_running(step, case_id_for_log)
                     # Snapshot-per-node: concurrent workers do not share mutable state.
-                    future = pool.submit(_timed_step_run, step, deepcopy(state))
+                    # Include resolved prerequisite outputs even when canonical state
+                    # merge is still blocked by earlier plan-index nodes.
+                    future = pool.submit(_timed_step_run, step, _build_step_snapshot(step))
                     in_flight[future] = step
                     submitted.add(step)
                     made_progress = True

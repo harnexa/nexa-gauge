@@ -8,7 +8,7 @@ import typer
 from adapters import create_dataset_adapter
 from ng_graph.runner import CachedNodeRunner
 
-from .delete import delete_app
+from .cache import cache_app
 from .estimate import estimate as estimate_command
 from .run import run as run_command
 from .util import (
@@ -46,7 +46,7 @@ def cli() -> None:
 
 app.command(name="run")(run_command)
 app.command(name="estimate")(estimate_command)
-app.add_typer(delete_app, name="delete")
+app.add_typer(cache_app, name="cache")
 
 
 def run(*args: Any, **kwargs: Any) -> None:
