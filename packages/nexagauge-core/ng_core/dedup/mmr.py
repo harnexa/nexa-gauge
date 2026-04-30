@@ -2,11 +2,12 @@ from threading import Lock
 
 import numpy as np
 from ng_core.config import config
-from ng_core.constants import MMR_LAMBDA, MMR_SIMILARITY_THRESHOLD
+from ng_core.constants import MMR_LAMBDA, MMR_SIMILARITY_THRESHOLD, REFINER_TOP_K
 from ng_core.types import Item
 from sentence_transformers import SentenceTransformer
 
 _SIMILARITY_THRESHOLD = MMR_SIMILARITY_THRESHOLD
+_MMR_TOP_K = REFINER_TOP_K
 _LAMBDA = MMR_LAMBDA
 
 _model: SentenceTransformer | None = None
@@ -36,22 +37,30 @@ def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
 def deduplicate(
     items: list[Item],
     similarity_threshold: float = _SIMILARITY_THRESHOLD,
+    top_k: int | None = _MMR_TOP_K,
     lmb: float = _LAMBDA,
-) -> tuple[list[Item], dict[int, int]]:
+) -> tuple[list[int], dict[int, int]]:
     """Deduplicate claims using Maximal Marginal Relevance.
 
     Args:
-        claims: Ordered claims to deduplicate.
+        items: Ordered items to deduplicate.
         similarity_threshold: Candidate-to-selected cosine threshold above which
             a candidate is treated as duplicate.
         lmb: MMR lambda balancing relevance (claim confidence) and diversity.
+        top_k: Optional maximum number of unique items to retain. Items excluded
+            only because this limit is reached are not added to ``dedup_map``.
 
     Returns:
-        unique_claims: Claims that survive deduplication.
-        dedup_map: Mapping from discarded claim index -> retained representative index.
+        selected_indices: Indices of items selected by MMR.
+        dedup_map: Mapping from duplicate item index -> retained representative index.
     """
+    if top_k is not None and top_k <= 0:
+        return [], {}
+
     if len(items) < 2:
-        return items, {}
+        if top_k is None:
+            return list(range(len(items))), {}
+        return list(range(min(len(items), top_k))), {}
 
     model = _get_model()
     texts = [c.text for c in items]
@@ -66,7 +75,7 @@ def deduplicate(
     selected_indices.append(best_start)
     candidate_indices.remove(best_start)
 
-    while candidate_indices:
+    while candidate_indices and (top_k is None or len(selected_indices) < top_k):
         scores: list[tuple[int, float]] = []
         for ci in candidate_indices:
             relevance = items[ci].confidence
@@ -90,5 +99,4 @@ def deduplicate(
         selected_indices.append(best_ci)
         candidate_indices = [c for c in candidate_indices if c not in dedup_map and c != best_ci]
 
-    unique_items: list[Item] = [items[i] for i in selected_indices]
-    return unique_items, dedup_map
+    return selected_indices, dedup_map
