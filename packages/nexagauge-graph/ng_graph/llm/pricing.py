@@ -62,9 +62,7 @@ MODEL_PRICING: dict[str, ModelPricing] = {
     "anthropic/claude-3-haiku-20240307": ModelPricing(
         input_per_1k=0.000250, output_per_1k=0.001250
     ),
-    "anthropic/claude-3-opus-20240229": ModelPricing(
-        input_per_1k=0.015000, output_per_1k=0.075000
-    ),
+    "anthropic/claude-3-opus-20240229": ModelPricing(input_per_1k=0.015000, output_per_1k=0.075000),
     # ── Google ────────────────────────────────────────────────────────────────
     # Gemini Developer API standard text/image/video token pricing.
     # - https://ai.google.dev/gemini-api/docs/pricing
