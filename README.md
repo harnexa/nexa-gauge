@@ -100,14 +100,14 @@ nexagauge run eval --input sample.json --limit 10 --output-dir ./report
 | Category | Nodes | Purpose |
 | --- | --- | --- |
 | Input and orchestration | `scan`, `eval`, `report` | Normalize records, aggregate metric branches, and project final reports. |
-| Utility | `chunk`, `claims`, `dedup`, `geval_steps` | Prepare generated text, extract claims, remove duplicates, and resolve GEval steps. |
+| Utility | `chunk`, `refiner`, `claims`, `geval_steps` | Prepare generated text, select top-k chunks via configurable refinement, extract claims, and resolve GEval steps. |
 | Metrics | `relevance`, `grounding`, `redteam`, `geval`, `reference` | Score answer quality, evidence support, safety, rubric alignment, and reference overlap. |
 
 Typical execution paths:
 
 ```text
-grounding: scan -> chunk -> claims -> dedup -> grounding
-relevance: scan -> chunk -> claims -> dedup -> relevance
+grounding: scan -> chunk -> refiner -> claims -> grounding
+relevance: scan -> chunk -> refiner -> claims -> relevance
 geval:     scan -> geval_steps -> geval
 eval:      full graph execution and aggregate metric summary
 ```
@@ -145,6 +145,9 @@ nexagauge estimate eval --input sample.json --limit 100
 # Run full evaluation and write JSON reports
 nexagauge run eval --input sample.json --limit 100 --output-dir ./report
 
+# Run full evaluation with explicit chunk/refiner strategies
+nexagauge run eval --input sample.json --limit 100 --chunker semchunk --refiner mmr --refiner-top-k 3
+
 # Run only the grounding metric branch
 nexagauge run grounding --input sample.json --limit 25
 
@@ -158,6 +161,7 @@ Common flags:
 | --- | --- |
 | Data selection | `--input`, `--adapter`, `--start`, `--end`, `--limit` |
 | Model routing | `--model`, `--llm-model`, `--llm-fallback` |
+| Strategy routing | `--chunker`, `--refiner`, `--refiner-top-k` |
 | Caching | `--force`, `--no-cache` |
 | Execution | `--max-workers`, `--max-in-flight`, `--llm-concurrency`, `--continue-on-error` |
 | Debugging | `--debug` |

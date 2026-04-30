@@ -22,7 +22,8 @@ Primary distribution target: `pip install nexa-gauge`.
 - Topology-driven execution (`topology.py`) with explicit prerequisites per node.
 - Shared runner for both run and estimate modes.
 - Parallel metric fan-out for `eval` target.
-- Declarative report projection via `REPORT_VISIBILITY` and section gates.
+- Topology-driven report projection by `state_key` presence in `PIPELINE`.
+- Strategy-aware utility stages (`chunk`, `refiner`) with runtime selection (`--chunker`, `--refiner`, `--refiner-top-k`).
 - Per-node model routing (`LLM_{NODE}_MODEL`, fallback, temperature) plus runtime overrides.
 
 ## User Experience

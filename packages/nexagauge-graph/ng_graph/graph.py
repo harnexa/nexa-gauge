@@ -304,7 +304,7 @@ def node_generation_refiner(state: EvalCase) -> dict[str, Any]:
     in_kind = spec.artifact_in_kind
     if in_kind == "none":
         raise ValueError("Topology contract error: 'refiner' must declare artifact_in_kind.")
-    
+
     out_key = spec.state_key
 
     if not out_key:
@@ -362,7 +362,6 @@ def node_generation_claims(state: EvalCase) -> dict[str, Any]:
     if not out_key:
         raise ValueError(f"node: Claims out_key: {out_key} should be generation_claims")
 
-
     in_kind = spec.artifact_in_kind
     if in_kind == "none":
         raise ValueError("Topology contract error: 'claims' must declare artifact_in_kind.")
@@ -416,7 +415,6 @@ def node_grounding(state: EvalCase) -> dict[str, Any]:
 
     if not out_key:
         raise ValueError(f"node: Grounding out_key: {out_key} should be grounding_metrics")
-    
 
     in_kind = spec.artifact_in_kind
     if in_kind == "none":
@@ -472,7 +470,7 @@ def node_relevance(state: EvalCase) -> dict[str, Any]:
 
     if not out_key:
         raise ValueError(f"node: Relevance out_key: {out_key} should be relevance_metrics")
-    
+
     in_kind = spec.artifact_in_kind
     if in_kind == "none":
         raise ValueError("Topology contract error: 'relevance' must declare artifact_in_kind.")
@@ -620,7 +618,7 @@ def node_geval(state: EvalCase) -> dict[str, Any]:
     spec = _node_spec("geval")
     inputs = state["inputs"]
     estimate_mode = _is_estimate_mode(state)
-    out_key = spec.state_key 
+    out_key = spec.state_key
     if not out_key:
         raise ValueError(f"node: Geval out_key: {out_key} should be geval_metrics")
 

@@ -21,7 +21,7 @@ Shared setup in both commands:
 2. Resolve global/per-node model routing.
 3. Build cache store (`CacheStore` or `NoOpCacheStore`).
 4. Resolve dataset adapter and stream selected rows.
-5. Inject per-case LLM overrides.
+5. Inject per-case runtime routing config (LLM overrides + `chunker`/`refiner`/`refiner_top_k`).
 
 ## `run` Flow
 
