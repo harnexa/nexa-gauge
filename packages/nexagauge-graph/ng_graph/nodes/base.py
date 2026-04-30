@@ -21,20 +21,20 @@ from ng_core.types import (
     ChunkArtifacts,
     ClaimArtifacts,
     CostEstimate,
-    DedupArtifacts,
     GevalMetrics,
     GevalStepsArtifacts,
     GevalStepsResolved,
     GroundingMetrics,
     RedteamMetrics,
     ReferenceMetrics,
+    RefinerArtifacts,
     RelevanceMetrics,
 )
 
 NodeEstimate = [
     ChunkArtifacts,
     ClaimArtifacts,
-    DedupArtifacts,
+    RefinerArtifacts,
     GroundingMetrics,
     RelevanceMetrics,
     RedteamMetrics,

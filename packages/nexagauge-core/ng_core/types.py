@@ -244,16 +244,17 @@ class ChunkArtifacts(BaseModel):
 
 
 class ClaimArtifacts(BaseModel):
-    """Output of the ``claims`` / ``dedup`` nodes: extracted claims + cost."""
+    """Output of the ``claims`` node: extracted claims + cost."""
 
     claims: list[Claim]
     cost: CostEstimate
 
 
-class DedupArtifacts(BaseModel):
-    """Raw dedup output; ``dedup_map`` records source→kept index relations."""
+class RefinerArtifacts(BaseModel):
+    """Raw refiner output; ``dedup_map`` records source→kept index relations."""
 
     items: list[Item]
+    indices: list[int]
     dropped: int
     dedup_map: dict[int, int]
     cost: CostEstimate
@@ -368,12 +369,20 @@ class EvalCase(TypedDict):
 
     # Pipeline artifacts — None until the corresponding node runs
     generation_chunk: Optional[ChunkArtifacts]
+    generation_refined_chunks: Optional[ChunkArtifacts]
     generation_claims: Optional[ClaimArtifacts]
-    generation_dedup_claims: Optional[ClaimArtifacts]
     grounding_metrics: Optional[GroundingMetrics]
     relevance_metrics: Optional[RelevanceMetrics]
     redteam_metrics: Optional[RedteamMetrics]
     geval_steps: Optional[GevalStepsArtifacts]
     geval_metrics: Optional[GevalMetrics]
     reference_metrics: Optional[ReferenceMetrics]
+    eval_summary: Optional[dict[str, Any]]
+    report: Optional[dict[str, Any]]
+    cost_estimate: Optional[CostEstimate]
     node_model_usage: dict[str, dict[str, Any]]
+
+    # Per-run utility-node strategy config
+    chunker: str
+    refiner: str
+    refiner_top_k: int
