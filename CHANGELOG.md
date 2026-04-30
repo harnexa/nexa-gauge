@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.9](https://github.com/harnexa/nexa-gauge/compare/v0.1.8...v0.1.9) (2026-04-30)
+
+
+### Bump
+
+* lite llm version ([#38](https://github.com/harnexa/nexa-gauge/issues/38)) ([e071987](https://github.com/harnexa/nexa-gauge/commit/e0719877ded48fdd1752639cd09b877ada91954a))
+* version update ([46a2f71](https://github.com/harnexa/nexa-gauge/commit/46a2f71228928fec3a1857a8f9aca2a0d3a773f4))
+
 ## [0.1.8](https://github.com/harnexa/nexa-gauge/compare/v0.1.7...v0.1.8) (2026-04-30)
 
 
