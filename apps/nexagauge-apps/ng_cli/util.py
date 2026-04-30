@@ -274,21 +274,37 @@ def _resolve_runtime_llm_overrides(
     )
 
 
-def _set_case_llm_overrides(case: Any, llm_overrides: dict[str, dict[str, str]]) -> Any:
+def _set_case_llm_overrides(
+    case: Any,
+    llm_overrides: dict[str, dict[str, str]],
+    *,
+    chunker: str | None = None,
+    refiner: str | None = None,
+    refiner_top_k: int | None = None,
+) -> Any:
+    updates: dict[str, Any] = {"llm_overrides": llm_overrides}
+    if chunker is not None:
+        updates["chunker"] = chunker
+    if refiner is not None:
+        updates["refiner"] = refiner
+    if refiner_top_k is not None:
+        updates["refiner_top_k"] = int(refiner_top_k)
+
     if isinstance(case, dict):
         updated = dict(case)
-        updated["llm_overrides"] = llm_overrides
+        updated.update(updates)
         return updated
 
     if hasattr(case, "model_copy"):
         try:
-            return case.model_copy(update={"llm_overrides": llm_overrides})
+            return case.model_copy(update=updates)
         except Exception:
             # pydantic may reject unknown fields on strict models; fall through to setattr.
             pass
 
     try:
-        setattr(case, "llm_overrides", llm_overrides)
+        for key, value in updates.items():
+            setattr(case, key, value)
     except Exception:
         # Frozen/slots-only objects can't accept new attrs; return case untouched.
         return case

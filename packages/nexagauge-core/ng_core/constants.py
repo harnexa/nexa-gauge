@@ -10,7 +10,7 @@ Sections
 ────────
   TOKENIZATION      Encoding and chunk sizing
   COST_ESTIMATION   Pricing heuristics
-  MMR               Claim deduplication thresholds
+  MMR               Chunk refinement thresholds
   EVIDENCE          Retrieval limits and verdict thresholds
   METRICS           Per-metric pass/fail thresholds and composite score weights
   LLM               Model defaults and gateway settings
@@ -73,16 +73,27 @@ AVG_DEEPEVAL_OUTPUT_VERDICT: int = 14
 AVG_DEEPEVAL_GEVAL_CRITERIA_STEPS: int = 3
 AVG_DEEPEVAL_GEVAL_CRITERIA_STEP_TOKENS: int = 40
 
-# ── MMR Claim Deduplication ──────────────────────────────────────────────────
+# ── Chunk/Refiner Strategies ─────────────────────────────────────────────────
+
+# Default chunking strategy identifier.
+DEFAULT_CHUNKER_STRATEGY: str = "semchunk"
+
+# Default refiner strategy identifier.
+DEFAULT_REFINER_STRATEGY: str = "mmr"
+
+# ── MMR Refiner ───────────────────────────────────────────────────────────────
 
 # Cosine similarity threshold above which a candidate claim is considered a
 # duplicate of an already-selected claim and is discarded.
-MMR_SIMILARITY_THRESHOLD: float = 0.9
+MMR_SIMILARITY_THRESHOLD: float = 0.7
 
 # MMR λ (lambda) — weight balancing relevance (λ) vs. diversity (1-λ).
 # 0.5 = equal weight; increase toward 1.0 to keep higher-confidence claims
 # even if they are similar; decrease toward 0.0 to maximise diversity.
 MMR_LAMBDA: float = 0.5
+
+# Maximum number of chunks to keep after MMR refinement.
+REFINER_TOP_K: int = 3
 
 # ── Evidence Retrieval ───────────────────────────────────────────────────────
 

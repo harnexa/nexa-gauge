@@ -238,8 +238,8 @@ from ng_core.types import (
 _FIELD_TYPE_MAP: dict[str, Any] = {
     "inputs": Inputs,
     "generation_chunk": ChunkArtifacts,
+    "generation_refined_chunks": ChunkArtifacts,
     "generation_claims": ClaimArtifacts,
-    "generation_dedup_claims": ClaimArtifacts,
     "chunks": (list, Chunk),
     "raw_claims": (list, Claim),
     "unique_claims": (list, Claim),
