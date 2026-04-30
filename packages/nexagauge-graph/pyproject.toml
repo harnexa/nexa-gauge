@@ -5,7 +5,7 @@ description = "LangGraph orchestration graph and metric dispatch nodes for nexa-
 requires-python = ">=3.10"
 dependencies = [
     "python-dotenv>=1.0.0",
-    "litellm==1.82.6",
+    "litellm==1.83.0",
     "tokencost>=0.1.26",
     "rich>=13.0.0",
     "nexagauge-core",
