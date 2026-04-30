@@ -1,233 +1,119 @@
-"""Declarative per-record report aggregation.
+"""Topology-driven per-record report aggregation.
 
-REPORT_VISIBILITY defines the output shape — nested dict keys become output keys,
-string leaves are dot-path expressions resolved from the EvalCase state root.
-SECTION_GATES controls which sections are omitted when their artifact is None.
+Report contract
+---------------
+1. ``target_node`` and normalized ``input`` are always included.
+2. For every node in ``topology.PIPELINE``:
+   - if ``state_key`` is defined and ``state[state_key]`` is not ``None``,
+     the section is included under that exact ``state_key``.
+   - if the value is ``None``, the section is omitted.
+3. Projection strategy is selected from ``NodeSpec``:
+   - ``artifact_out_kind == "chunks"``  -> ``{"text": [...], "cost": ...}``
+   - ``artifact_out_kind == "claims"``  -> ``{"text": [...], "cost": ...}``
+   - ``is_metric == True``              -> ``{"metrics": [...], "cost": ...}``
+   - otherwise                          -> generic ``model_dump``/dict conversion.
+
+When adding a new node
+----------------------
+Usually no report-code change is needed if the node has a proper ``state_key``
+and one of the supported projection contracts above.
+
+You only need to edit this file when:
+- the node needs a custom presentation shape not covered by existing projection
+  rules, or
+- you introduce a new artifact kind that should be rendered specially.
 """
 
 from __future__ import annotations
 
 from typing import Any, Mapping
 
-# ---------------------------------------------------------------------------
-# Declarative config: defines exactly what appears in the report output.
-#
-# - Keys = output field names (the structure of the report)
-# - String leaf values = dot-path expressions resolved from EvalCase state
-# - [*] in a path = iterate over a list and extract the remaining path per item
-# - List spec [base_path, {field: sub_path}] = iterate base_path items,
-#   project sub_path fields from each → produces a list of dicts
-# ---------------------------------------------------------------------------
-
-REPORT_VISIBILITY: dict[str, Any] = {
-    "target_node": "target_node",
-    "input": {
-        "case_id": "inputs.case_id",
-        "generation": "inputs.generation.text",
-        "question": "inputs.question.text",
-        "context": "inputs.context.text",
-        "reference": "inputs.reference.text",
-    },
-    "chunks": {
-        "text": "generation_chunk.chunks[*].item.text",
-        "cost": {
-            "cost": "generation_chunk.cost.cost",
-            "input_tokens": "generation_chunk.cost.input_tokens",
-            "output_tokens": "generation_chunk.cost.output_tokens",
-        },
-    },
-    "claims": {
-        "text": "generation_claims.claims[*].item.text",
-        "cost": {
-            "cost": "generation_claims.cost.cost",
-            "input_tokens": "generation_claims.cost.input_tokens",
-            "output_tokens": "generation_claims.cost.output_tokens",
-        },
-    },
-    "claims_unique": {
-        "text": "generation_dedup_claims.claims[*].item.text",
-        "cost": {
-            "cost": "generation_dedup_claims.cost.cost",
-            "input_tokens": "generation_dedup_claims.cost.input_tokens",
-            "output_tokens": "generation_dedup_claims.cost.output_tokens",
-        },
-    },
-    "geval_steps": {
-        "names": "geval_steps.resolved_steps[*].name",
-        "steps_source": "geval_steps.resolved_steps[*].steps_source",
-        "evaluation_steps": "geval_steps.resolved_steps[*].evaluation_steps[*].text",
-        "cost": {
-            "cost": "geval_steps.cost.cost",
-            "input_tokens": "geval_steps.cost.input_tokens",
-            "output_tokens": "geval_steps.cost.output_tokens",
-        },
-    },
-    "grounding": {
-        "metrics": [
-            "grounding_metrics.metrics[*]",
-            {"name": "name", "score": "score", "verdict": "verdict", "result": "result"},
-        ],
-        "cost": {
-            "cost": "grounding_metrics.cost.cost",
-            "input_tokens": "grounding_metrics.cost.input_tokens",
-            "output_tokens": "grounding_metrics.cost.output_tokens",
-        },
-    },
-    "relevance": {
-        "metrics": [
-            "relevance_metrics.metrics[*]",
-            {"name": "name", "score": "score", "verdict": "verdict", "result": "result"},
-        ],
-        "cost": {
-            "cost": "relevance_metrics.cost.cost",
-            "input_tokens": "relevance_metrics.cost.input_tokens",
-            "output_tokens": "relevance_metrics.cost.output_tokens",
-        },
-    },
-    "redteam": {
-        "metrics": [
-            "redteam_metrics.metrics[*]",
-            {"name": "name", "score": "score", "verdict": "verdict", "result": "result"},
-        ],
-        "cost": {
-            "cost": "redteam_metrics.cost.cost",
-            "input_tokens": "redteam_metrics.cost.input_tokens",
-            "output_tokens": "redteam_metrics.cost.output_tokens",
-        },
-    },
-    "geval": {
-        "metrics": [
-            "geval_metrics.metrics[*]",
-            {"name": "name", "score": "score", "verdict": "verdict", "result": "result"},
-        ],
-        "cost": {
-            "cost": "geval_metrics.cost.cost",
-            "input_tokens": "geval_metrics.cost.input_tokens",
-            "output_tokens": "geval_metrics.cost.output_tokens",
-        },
-    },
-    "reference": {
-        "metrics": [
-            "reference_metrics.metrics[*]",
-            {"name": "name", "score": "score", "verdict": "verdict", "result": "result"},
-        ],
-        "cost": {
-            "cost": "reference_metrics.cost.cost",
-            "input_tokens": "reference_metrics.cost.input_tokens",
-            "output_tokens": "reference_metrics.cost.output_tokens",
-        },
-    },
-}
-
-# ---------------------------------------------------------------------------
-# Section gates: if the mapped state key is None, the section is omitted.
-# Sections not listed here (target_node, input) are always included.
-# ---------------------------------------------------------------------------
-
-SECTION_GATES: dict[str, str] = {
-    "chunks": "generation_chunk",
-    "claims": "generation_claims",
-    "claims_unique": "generation_dedup_claims",
-    "geval_steps": "geval_steps",
-    "grounding": "grounding_metrics",
-    "relevance": "relevance_metrics",
-    "redteam": "redteam_metrics",
-    "geval": "geval_metrics",
-    "reference": "reference_metrics",
-}
+from ng_graph.topology import PIPELINE, NodeSpec
 
 
-# ---------------------------------------------------------------------------
-# Path resolution helpers
-# ---------------------------------------------------------------------------
-
-
-def _extract_path(value: Any, path: str) -> Any:
-    """Walk a dot-separated path through nested dicts, with [*] list wildcards.
-
-    Examples:
-        _extract_path({"a": {"b": 1}}, "a.b")           -> 1
-        _extract_path({"items": [{"x": 1}, {"x": 2}]},
-                       "items[*].x")                     -> [1, 2]
-        _extract_path({"a": None}, "a.b")                -> None
-        _extract_path({"a": None}, "a[*].b")             -> []
-    """
-    segments = [seg for seg in path.split(".") if seg]
-    if not segments:
-        return value
-
-    def _walk(current: Any, index: int) -> Any:
-        if index >= len(segments):
-            return current
-
-        seg = segments[index]
-        wildcard = seg.endswith("[*]")
-        key = seg[:-3] if wildcard else seg
-
-        if key:
-            if not isinstance(current, Mapping):
-                return [] if wildcard else None
-            current = current.get(key)
-
-        if wildcard:
-            if not isinstance(current, list):
-                return []
-            return [_walk(item, index + 1) for item in current]
-
-        return _walk(current, index + 1)
-
-    return _walk(value, 0)
-
-
-def resolve_path(state: Mapping[str, Any], path: str) -> Any:
-    """Extract a value from state using a dot-path with [*] wildcards.
-
-    First segment is the state key (dict lookup). The value is converted to a
-    plain dict via model_dump() if it's a Pydantic model. Remaining segments
-    are resolved via _extract_path.
-    """
-    dot = path.find(".")
-    if dot == -1:
-        return state.get(path)
-    top_key, rest = path[:dot], path[dot + 1 :]
-    value = state.get(top_key)
-    if value is None:
-        return None
+def _to_dict(value: Any) -> Any:
     if hasattr(value, "model_dump"):
-        value = value.model_dump()
-    return _extract_path(value, rest)
+        return value.model_dump()
+    if isinstance(value, dict):
+        return {k: _to_dict(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_to_dict(v) for v in value]
+    return value
 
 
-def resolve_section(state: Mapping[str, Any], spec: str | dict | list) -> Any:
-    """Resolve a REPORT_VISIBILITY section against state.
+def _input_projection(state: Mapping[str, Any]) -> dict[str, Any]:
+    inputs = state.get("inputs")
+    return {
+        "case_id": getattr(inputs, "case_id", None),
+        "generation": getattr(getattr(inputs, "generation", None), "text", None),
+        "question": getattr(getattr(inputs, "question", None), "text", None),
+        "context": getattr(getattr(inputs, "context", None), "text", None),
+        "reference": getattr(getattr(inputs, "reference", None), "text", None),
+    }
 
-    String specs are resolved as dot-paths. Dict specs are recursed —
-    each key becomes an output key, each value is resolved recursively.
-    List specs [base_path, projection] iterate items from base_path and
-    project sub-fields from each, producing a list of dicts.
-    """
-    if isinstance(spec, str):
-        return resolve_path(state, spec)
-    if isinstance(spec, list):
-        base_path, projection = spec
-        items = resolve_path(state, base_path)
-        if not isinstance(items, list):
-            return []
-        return [
-            {key: _extract_path(item, path) for key, path in projection.items()} for item in items
-        ]
-    return {key: resolve_section(state, child) for key, child in spec.items()}
+
+def _project_chunk_artifact(artifact: Any) -> dict[str, Any]:
+    chunks = getattr(artifact, "chunks", None) or []
+    cost = getattr(artifact, "cost", None)
+    return {
+        "text": [getattr(getattr(chunk, "item", None), "text", None) for chunk in chunks],
+        "cost": _to_dict(cost),
+    }
+
+
+def _project_claim_artifact(artifact: Any) -> dict[str, Any]:
+    claims = getattr(artifact, "claims", None) or []
+    cost = getattr(artifact, "cost", None)
+    return {
+        "text": [getattr(getattr(claim, "item", None), "text", None) for claim in claims],
+        "cost": _to_dict(cost),
+    }
+
+
+def _project_metric_wrapper(wrapper: Any) -> dict[str, Any]:
+    metrics = getattr(wrapper, "metrics", None) or []
+    cost = getattr(wrapper, "cost", None)
+    rows = []
+    for metric in metrics:
+        rows.append(
+            {
+                "name": getattr(metric, "name", None),
+                "score": getattr(metric, "score", None),
+                "verdict": getattr(metric, "verdict", None),
+                "result": _to_dict(getattr(metric, "result", None)),
+                "error": getattr(metric, "error", None),
+            }
+        )
+    return {"metrics": rows, "cost": _to_dict(cost)}
+
+
+def _project_by_spec(spec: NodeSpec, value: Any) -> Any:
+    if spec.artifact_out_kind == "chunks":
+        return _project_chunk_artifact(value)
+    if spec.artifact_out_kind == "claims":
+        return _project_claim_artifact(value)
+    if spec.is_metric:
+        return _project_metric_wrapper(value)
+    return _to_dict(value)
 
 
 def aggregate(*, state: Mapping[str, Any]) -> dict[str, Any]:
-    """Build report by resolving REPORT_VISIBILITY against state.
+    """Build one per-case report payload from topology + state.
 
-    Sections gated on a None state key (per SECTION_GATES) are omitted.
+    This function is intentionally declarative: report visibility is driven by
+    ``PIPELINE`` and section presence is driven by non-``None`` state values.
     """
-    result: dict[str, Any] = {}
-    for section, spec in REPORT_VISIBILITY.items():
-        gate_key = SECTION_GATES.get(section)
-        if gate_key is not None and state.get(gate_key) is None:
+    result: dict[str, Any] = {
+        "target_node": state.get("target_node"),
+        "input": _input_projection(state),
+    }
+
+    for spec in PIPELINE:
+        if not spec.state_key:
             continue
-        result[section] = resolve_section(state, spec)
+        value = state.get(spec.state_key)
+        if value is None:
+            continue
+        result[spec.state_key] = _project_by_spec(spec, value)
+
     return result
