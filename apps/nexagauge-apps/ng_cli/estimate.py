@@ -6,6 +6,7 @@ from typing import Optional
 import typer
 from adapters import create_dataset_adapter
 from ng_core.cache import CacheStore, NoOpCacheStore
+from ng_core.constants import DEFAULT_CHUNKER_STRATEGY, DEFAULT_REFINER_STRATEGY, REFINER_TOP_K
 from ng_core.types import CostEstimate
 from ng_graph.log import set_node_logging_enabled
 from ng_graph.runner import CachedNodeRunner
@@ -92,6 +93,22 @@ def estimate(
             f"--llm-fallback grounding={DEFAULT_PRIMARY_LLM})."
         ),
     ),
+    chunker: str = typer.Option(
+        DEFAULT_CHUNKER_STRATEGY,
+        "--chunker",
+        help="Chunking strategy for the `chunk` utility node.",
+    ),
+    refiner: str = typer.Option(
+        DEFAULT_REFINER_STRATEGY,
+        "--refiner",
+        help="Refiner strategy for selecting top-k chunks (default: mmr).",
+    ),
+    refiner_top_k: int = typer.Option(
+        REFINER_TOP_K,
+        "--refiner-top-k",
+        min=1,
+        help="Maximum number of chunks to keep after refinement.",
+    ),
     continue_on_error: bool = typer.Option(
         True,
         "--continue-on-error/--fail-fast",
@@ -129,6 +146,10 @@ def estimate(
     ),
 ) -> None:
     """Estimate uncached branch costs via graph estimate-mode execution."""
+    chunker = str(getattr(chunker, "default", chunker))
+    refiner = str(getattr(refiner, "default", refiner))
+    refiner_top_k = int(getattr(refiner_top_k, "default", refiner_top_k))
+
     target_node = _resolve_target_node(node_name)
 
     effective_judge_model, llm_overrides, llm_warnings = _resolve_runtime_llm_overrides(
@@ -192,7 +213,13 @@ def estimate(
                     advance_progress()
                     if not _is_case_eligible_for_target_path(target_node=target_node, case=case):
                         continue
-                    yield _set_case_llm_overrides(case, llm_overrides)
+                    yield _set_case_llm_overrides(
+                        case,
+                        llm_overrides,
+                        chunker=chunker,
+                        refiner=refiner,
+                        refiner_top_k=refiner_top_k,
+                    )
 
             for outcome in runner.run_cases_iter(
                 cases=_iter_eligible_cases_with_overrides(),

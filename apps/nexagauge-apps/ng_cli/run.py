@@ -39,6 +39,7 @@ from typing import Any, Callable, Iterable, Iterator, Optional
 import typer
 from adapters import create_dataset_adapter
 from ng_core.cache import CacheStore, NoOpCacheStore
+from ng_core.constants import DEFAULT_CHUNKER_STRATEGY, DEFAULT_REFINER_STRATEGY, REFINER_TOP_K
 from ng_graph.llm.gateway import set_llm_concurrency
 from ng_graph.log import set_node_logging_enabled
 from ng_graph.nodes import eval as eval_node
@@ -102,6 +103,9 @@ def _iter_eligible_cases_with_overrides(
     target_node: str,
     branch_nodes: list[str],
     llm_overrides: dict[str, dict[str, str]],
+    chunker: str,
+    refiner: str,
+    refiner_top_k: int,
     stats: _RunEligibilityStats,
 ) -> Iterator[Any]:
     """Stream eligible cases while tracking per-node eligibility stats."""
@@ -114,7 +118,13 @@ def _iter_eligible_cases_with_overrides(
             if _is_node_eligible_for_inputs(node, inputs):
                 stats.eligible_counts_by_node[node] += 1
         stats.submitted_cases += 1
-        yield _set_case_llm_overrides(case, llm_overrides)
+        yield _set_case_llm_overrides(
+            case,
+            llm_overrides,
+            chunker=chunker,
+            refiner=refiner,
+            refiner_top_k=refiner_top_k,
+        )
 
 
 def run(
@@ -179,6 +189,22 @@ def run(
             f"--llm-fallback grounding={DEFAULT_PRIMARY_LLM})."
         ),
     ),
+    chunker: str = typer.Option(
+        DEFAULT_CHUNKER_STRATEGY,
+        "--chunker",
+        help="Chunking strategy for the `chunk` utility node.",
+    ),
+    refiner: str = typer.Option(
+        DEFAULT_REFINER_STRATEGY,
+        "--refiner",
+        help="Refiner strategy for selecting top-k chunks (default: mmr).",
+    ),
+    refiner_top_k: int = typer.Option(
+        REFINER_TOP_K,
+        "--refiner-top-k",
+        min=1,
+        help="Maximum number of chunks to keep after refinement.",
+    ),
     continue_on_error: bool = typer.Option(
         True,
         "--continue-on-error/--fail-fast",
@@ -240,6 +266,9 @@ def run(
 ) -> None:
     """Execute selected cases up to `node_name` without preflight prompts."""
     llm_concurrency = int(getattr(llm_concurrency, "default", llm_concurrency))
+    chunker = str(getattr(chunker, "default", chunker))
+    refiner = str(getattr(refiner, "default", refiner))
+    refiner_top_k = int(getattr(refiner_top_k, "default", refiner_top_k))
     debug = bool(getattr(debug, "default", debug))
 
     target_node = _resolve_target_node(node_name)
@@ -319,6 +348,9 @@ def run(
                     target_node=target_node,
                     branch_nodes=branch_nodes,
                     llm_overrides=llm_overrides,
+                    chunker=chunker,
+                    refiner=refiner,
+                    refiner_top_k=refiner_top_k,
                     stats=eligibility_stats,
                 ),
                 node_name=target_node,
