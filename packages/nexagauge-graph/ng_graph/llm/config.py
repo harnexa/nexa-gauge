@@ -44,7 +44,7 @@ _KNOWN_NODES: frozenset[str] = frozenset(
     {
         "claims",
         "chunk",
-        "dedup",
+        "refiner",
         "relevance",
         "grounding",
         "reference",
@@ -54,23 +54,14 @@ _KNOWN_NODES: frozenset[str] = frozenset(
     }
 )
 
-_NODE_ALIASES: dict[str, str] = {
-    f"{prefix}{n}": n for n in _KNOWN_NODES for prefix in ("node_", "generation_")
-}
-
 
 def normalize_node_name(node_name: str, strict: bool = False) -> str:
-    """Normalize a node name to a consistent key (lowercase, underscores).
-
-    Resolves aliases like ``"node_claims"`` or ``"generation_claims"`` to
-    their canonical form ``"claims"`` via an explicit lookup table.
-    """
+    """Normalize a node name to a consistent key (lowercase, underscores)."""
     name = str(node_name).strip().lower().replace("-", "_").replace(" ", "_")
-    canonical = _NODE_ALIASES.get(name, name)
-    if strict and canonical not in _KNOWN_NODES:
+    if strict and name not in _KNOWN_NODES:
         valid = ", ".join(sorted(_KNOWN_NODES))
         raise ValueError(f"Unknown node '{node_name}'. Valid nodes: {valid}.")
-    return canonical
+    return name
 
 
 def normalize_runtime_overrides(

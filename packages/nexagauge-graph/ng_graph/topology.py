@@ -14,6 +14,19 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+_ARTIFACT_KINDS: frozenset[str] = frozenset(
+    {
+        "none",
+        "inputs",
+        "chunks",
+        "claims",
+        "geval_steps",
+        "metric_results",
+        "eval_summary",
+        "report",
+    }
+)
+
 
 @dataclass(frozen=True)
 class NodeSpec:
@@ -28,7 +41,7 @@ class NodeSpec:
 
     List only the *immediate* predecessors — transitive ancestors are expanded
     on demand via :func:`transitive_prerequisites`. For example, ``grounding``
-    declares ``("dedup",)``; the full ``scan → chunk → claims → dedup`` chain
+    declares ``("claims",)``; the full ``scan → chunk → refiner → claims`` chain
     is derived, not repeated here.
     """
 
@@ -58,9 +71,32 @@ class NodeSpec:
     is_preflight: bool = False
     """Node runs before any LLM calls and is part of lightweight preflight passes."""
 
-    # ── Cost routing ──────────────────────────────────────────────────────
-    cost_category: str = ""
-    """Logical cost group.  Values: 'claim_extraction' | '' (none)."""
+    # ── Artifact contract ───────────────────────────────────────────────────
+    stream: str | None = None
+    """Namespace prefix for state keys, e.g. ``generation`` or ``context``."""
+
+    state_key: str | None = None
+    """Primary output state key for this node."""
+
+    artifact_in_kind: str = "none"
+    """Expected upstream artifact kind consumed by this node.
+
+    Current values: ``none`` | ``inputs`` | ``chunks`` | ``claims`` |
+    ``geval_steps`` | ``metric_results`` | ``eval_summary`` | ``report``.
+    """
+
+    artifact_out_kind: str = "none"
+    """Artifact kind emitted by this node.
+
+    Current values: ``none`` | ``inputs`` | ``chunks`` | ``claims`` |
+    ``geval_steps`` | ``metric_results`` | ``eval_summary`` | ``report``.
+    """
+
+    is_transform: bool = False
+    """True when node transforms one artifact kind to the same kind."""
+
+    route_via_artifact_graph: bool = False
+    """Resolve ``artifact_in_kind`` by walking topology ancestors when True."""
 
     # ── Display ───────────────────────────────────────────────────────────
     color: str = "white"
@@ -86,6 +122,8 @@ PIPELINE: list[NodeSpec] = [
     NodeSpec(
         name="scan",
         prerequisites=(),
+        artifact_in_kind="none",
+        artifact_out_kind="inputs",
         is_preflight=True,
         color="cyan",
         env_key_suffixes=("SCAN",),
@@ -94,98 +132,120 @@ PIPELINE: list[NodeSpec] = [
         name="chunk",
         prerequisites=("scan",),
         requires_generation=True,
-        cost_category="claim_extraction",
+        stream="generation",
+        state_key="generation_chunk",
+        artifact_in_kind="inputs",
+        artifact_out_kind="chunks",
         color="blue",
         is_utility=True,
         env_key_suffixes=("CHUNK",),
-        skip_output={"generation_chunk": None},
+    ),
+    NodeSpec(
+        name="refiner",
+        prerequisites=("chunk",),
+        requires_generation=True,
+        stream="generation",
+        state_key="generation_refined_chunks",
+        artifact_in_kind="chunks",
+        artifact_out_kind="chunks",
+        is_transform=True,
+        route_via_artifact_graph=True,
+        color="green",
+        is_utility=True,
+        env_key_suffixes=("REFINER",),
     ),
     NodeSpec(
         name="claims",
-        prerequisites=("chunk",),
+        prerequisites=("refiner",),
         requires_generation=True,
-        cost_category="claim_extraction",
+        stream="generation",
+        state_key="generation_claims",
+        artifact_in_kind="chunks",
+        artifact_out_kind="claims",
+        route_via_artifact_graph=True,
         color="magenta",
         is_utility=True,
         env_key_suffixes=("CLAIMS",),
-        skip_output={"generation_claims": None},
-    ),
-    NodeSpec(
-        name="dedup",
-        prerequisites=("claims",),
-        requires_generation=True,
-        color="green",
-        is_utility=True,
-        env_key_suffixes=("DEDUP",),
-        skip_output={"generation_dedup_claims": None},
     ),
     NodeSpec(
         name="geval_steps",
         prerequisites=("scan",),
         requires_generation=True,
         requires_geval=True,
+        state_key="geval_steps",
+        artifact_in_kind="inputs",
+        artifact_out_kind="geval_steps",
         is_utility=True,
         color="dark_sea_green4",
         env_key_suffixes=("GEVAL_STEPS",),
-        skip_output={
-            "geval_steps_by_signature": {},
-        },
     ),
     NodeSpec(
         name="relevance",
-        prerequisites=("dedup",),
+        prerequisites=("claims",),
         requires_generation=True,
         requires_question=True,
+        state_key="relevance_metrics",
+        artifact_in_kind="claims",
+        artifact_out_kind="metric_results",
+        route_via_artifact_graph=True,
         is_metric=True,
         color="bright_green",
         env_key_suffixes=("RELEVANCE",),
-        skip_output={"relevance_metrics": None},
     ),
     NodeSpec(
         name="grounding",
-        prerequisites=("dedup",),
+        prerequisites=("claims",),
         requires_generation=True,
         requires_context=True,
+        state_key="grounding_metrics",
+        artifact_in_kind="claims",
+        artifact_out_kind="metric_results",
+        route_via_artifact_graph=True,
         is_metric=True,
         color="cornflower_blue",
         env_key_suffixes=("GROUNDING",),
-        skip_output={"grounding_metrics": None},
     ),
     NodeSpec(
         name="redteam",
         prerequisites=("scan",),
         requires_generation=True,
+        state_key="redteam_metrics",
+        artifact_in_kind="inputs",
+        artifact_out_kind="metric_results",
         is_metric=True,
         color="red",
         env_key_suffixes=("REDTEAM",),
-        skip_output={"redteam_metrics": None},
     ),
     NodeSpec(
         name="geval",
         prerequisites=("geval_steps",),
         requires_generation=True,
         requires_geval=True,
+        state_key="geval_metrics",
+        artifact_in_kind="geval_steps",
+        artifact_out_kind="metric_results",
         is_metric=True,
         color="medium_purple3",
         env_key_suffixes=("GEVAL",),
-        skip_output={"geval_metrics": None},
     ),
     NodeSpec(
         name="reference",
         prerequisites=("scan",),
         requires_generation=True,
         requires_reference=True,
+        state_key="reference_metrics",
+        artifact_in_kind="inputs",
+        artifact_out_kind="metric_results",
         is_metric=True,
         color="bright_magenta",
         env_key_suffixes=("REFERENCE",),
-        skip_output={"reference_metrics": None},
     ),
     NodeSpec(
         name="eval",
         prerequisites=(
             "chunk",
+            "refiner",
             "claims",
-            "dedup",
             "geval_steps",
             "relevance",
             "grounding",
@@ -193,12 +253,18 @@ PIPELINE: list[NodeSpec] = [
             "geval",
             "reference",
         ),
+        state_key="eval_summary",
+        artifact_in_kind="metric_results",
+        artifact_out_kind="eval_summary",
         color="gold1",
         env_key_suffixes=("EVAL",),
     ),
     NodeSpec(
         name="report",
         prerequisites=("eval",),
+        state_key="report",
+        artifact_in_kind="eval_summary",
+        artifact_out_kind="report",
         color="gold3",
         env_key_suffixes=("REPORT",),
     ),
@@ -240,3 +306,75 @@ def transitive_prerequisites(node_name: str) -> tuple[str, ...]:
 
     _visit(node_name)
     return tuple(n for n in NODE_ORDER if n in seen)
+
+
+def _topology_validation_errors() -> list[str]:
+    errors: list[str] = []
+    known = set(NODES_BY_NAME)
+
+    for spec in PIPELINE:
+        for parent in spec.prerequisites:
+            if parent not in known:
+                errors.append(f"Node '{spec.name}' has unknown prerequisite '{parent}'.")
+        if spec.state_key and not spec.state_key.startswith("_") and " " in spec.state_key:
+            errors.append(f"Node '{spec.name}' has invalid state_key '{spec.state_key}'.")
+        if spec.artifact_in_kind not in _ARTIFACT_KINDS:
+            errors.append(
+                f"Node '{spec.name}' has unsupported artifact_in_kind '{spec.artifact_in_kind}'."
+            )
+        if spec.artifact_out_kind not in _ARTIFACT_KINDS:
+            errors.append(
+                f"Node '{spec.name}' has unsupported artifact_out_kind '{spec.artifact_out_kind}'."
+            )
+        if not spec.artifact_in_kind:
+            errors.append(f"Node '{spec.name}' must define artifact_in_kind.")
+        if not spec.artifact_out_kind:
+            errors.append(f"Node '{spec.name}' must define artifact_out_kind.")
+        if spec.is_transform and spec.artifact_in_kind != spec.artifact_out_kind:
+            errors.append(
+                f"Node '{spec.name}' is_transform requires matching artifact kinds, got "
+                f"'{spec.artifact_in_kind}' -> '{spec.artifact_out_kind}'."
+            )
+        if spec.is_transform and spec.artifact_in_kind == "none":
+            errors.append(f"Node '{spec.name}' is_transform cannot use artifact kind 'none'.")
+
+    # Validate artifact-routed nodes can resolve a unique upstream producer.
+    for spec in PIPELINE:
+        if not spec.route_via_artifact_graph:
+            continue
+
+        producers_by_depth: dict[str, int] = {}
+
+        def _visit(name: str, seen: set[str], depth: int) -> None:
+            for parent in NODES_BY_NAME[name].prerequisites:
+                if parent in seen:
+                    continue
+                seen.add(parent)
+                p_spec = NODES_BY_NAME[parent]
+                if p_spec.artifact_out_kind == spec.artifact_in_kind and p_spec.state_key:
+                    existing = producers_by_depth.get(parent)
+                    producers_by_depth[parent] = depth if existing is None else min(existing, depth)
+                _visit(parent, seen, depth + 1)
+
+        _visit(spec.name, set(), 1)
+        if not producers_by_depth:
+            errors.append(
+                f"Node '{spec.name}' expects artifact kind '{spec.artifact_in_kind}' but has no "
+                "upstream producer."
+            )
+            continue
+
+        min_depth = min(producers_by_depth.values())
+        nearest = sorted(node for node, depth in producers_by_depth.items() if depth == min_depth)
+        if len(nearest) > 1:
+            errors.append(
+                f"Node '{spec.name}' has ambiguous upstream producers for "
+                f"'{spec.artifact_in_kind}': {', '.join(nearest)}."
+            )
+
+    return errors
+
+
+_TOPOLOGY_ERRORS = _topology_validation_errors()
+if _TOPOLOGY_ERRORS:
+    raise RuntimeError("Invalid topology:\n- " + "\n- ".join(_TOPOLOGY_ERRORS))

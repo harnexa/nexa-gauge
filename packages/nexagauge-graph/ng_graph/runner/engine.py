@@ -7,11 +7,12 @@ from copy import deepcopy
 from typing import Any, Iterable, Iterator, Mapping
 
 from ng_core.cache import NodeCacheBackend, cache_read_allowed, cache_write_allowed
+from ng_core.constants import DEFAULT_CHUNKER_STRATEGY, DEFAULT_REFINER_STRATEGY, REFINER_TOP_K
 from ng_core.types import EvalCase
 
 from ng_graph.log import get_node_logger
 from ng_graph.registry import NODE_FNS
-from ng_graph.topology import DEBUG_SKIP_NODES, METRIC_NODES
+from ng_graph.topology import DEBUG_SKIP_NODES, METRIC_NODES, PIPELINE
 
 from .fingerprints import (
     _cache_key_for_step,
@@ -50,7 +51,7 @@ def _build_initial_state(
         "geval": _case_value(case, "geval"),
         "redteam": _case_value(case, "redteam"),
     }
-    return EvalCase(
+    initial_state = EvalCase(
         record=record,
         llm_overrides=_case_value(case, "llm_overrides"),
         target_node=target_node,
@@ -58,7 +59,14 @@ def _build_initial_state(
         estimated_costs={},
         node_model_usage={},
         reference_files=_case_value(case, "reference_files") or [],
+        chunker=str(_case_value(case, "chunker", DEFAULT_CHUNKER_STRATEGY)),
+        refiner=str(_case_value(case, "refiner", DEFAULT_REFINER_STRATEGY)),
+        refiner_top_k=int(_case_value(case, "refiner_top_k", REFINER_TOP_K)),
     )
+    for spec in PIPELINE:
+        if spec.state_key:
+            initial_state.setdefault(spec.state_key, None)
+    return initial_state
 
 
 def _merge_state_patch(state: dict[str, Any], patch: Mapping[str, Any]) -> None:

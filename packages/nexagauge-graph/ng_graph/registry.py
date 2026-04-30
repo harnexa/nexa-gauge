@@ -24,8 +24,8 @@ NodeFn = Callable[[dict[str, Any]], dict[str, Any]]
 NODE_FNS: dict[str, NodeFn] = {
     "scan": _graph.node_metadata_scanner,
     "chunk": _graph.node_generation_chunk,
+    "refiner": _graph.node_generation_refiner,
     "claims": _graph.node_generation_claims,
-    "dedup": _graph.node_generation_claims_dedup,
     "geval_steps": _graph.node_geval_steps,
     "relevance": _graph.node_relevance,
     "grounding": _graph.node_grounding,
