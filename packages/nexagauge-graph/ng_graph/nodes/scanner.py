@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping, TypedDict
 
+from ng_core.aliases import resolve_alias
 from ng_core.constants import DEFAULT_DATASET_NAME, DEFAULT_SPLIT
 from ng_core.types import (
     Geval,
@@ -34,13 +35,6 @@ class GraphEvalCase(TypedDict, total=False):
     split: str
     reference_files: list[str]
     inputs: Inputs
-
-
-def _pick_first(record: Mapping[str, Any], keys: list[str], default: Any = None) -> Any:
-    for key in keys:
-        if key in record and record[key] is not None:
-            return record[key]
-    return default
 
 
 def _normalize_text(value: Any) -> str:
@@ -232,19 +226,13 @@ def _build_redteam(raw_redteam: Any) -> Redteam | None:
 
 
 def _build_inputs(record: Mapping[str, Any], *, idx: int = 0) -> Inputs:
-    case_id = _normalize_text(_pick_first(record, ["case_id", "id"], f"record-{idx}"))
-    generation_text = _normalize_text(
-        _pick_first(record, ["generation", "response", "answer", "output", "completion"])
-    )
-    question_text = _normalize_text(_pick_first(record, ["question", "query", "prompt"]))
-    reference_text = _normalize_text(
-        _pick_first(record, ["reference", "ground_truth", "gold_answer", "label"])
-    )
-    context_text = _normalize_context_text(
-        _pick_first(record, ["context", "contexts", "documents"])
-    )
-    geval = _build_geval(_pick_first(record, ["geval"]))
-    redteam = _build_redteam(_pick_first(record, ["redteam"]))
+    case_id = _normalize_text(resolve_alias(record, "case_id", f"record-{idx}"))
+    generation_text = _normalize_text(resolve_alias(record, "generation"))
+    question_text = _normalize_text(resolve_alias(record, "question"))
+    reference_text = _normalize_text(resolve_alias(record, "reference"))
+    context_text = _normalize_context_text(resolve_alias(record, "context"))
+    geval = _build_geval(resolve_alias(record, "geval"))
+    redteam = _build_redteam(resolve_alias(record, "redteam"))
 
     return Inputs(
         case_id=case_id,
@@ -284,7 +272,8 @@ def scan(
 
     result: GraphEvalCase = dict(case) if case is not None else {}
     result.setdefault(
-        "case_id", _normalize_text(_pick_first(record, ["case_id", "id"], f"record-{idx}"))
+        "case_id",
+        _normalize_text(resolve_alias(record, "case_id", f"record-{idx}")),
     )
     result.setdefault("dataset", DEFAULT_DATASET_NAME)
     result.setdefault("split", DEFAULT_SPLIT)

@@ -6,6 +6,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from copy import deepcopy
 from typing import Any, Iterable, Iterator, Mapping
 
+from ng_core.aliases import resolve_alias
 from ng_core.cache import NodeCacheBackend, cache_read_allowed, cache_write_allowed
 from ng_core.constants import DEFAULT_CHUNKER_STRATEGY, DEFAULT_REFINER_STRATEGY, REFINER_TOP_K
 from ng_core.types import EvalCase
@@ -44,12 +45,12 @@ def _build_initial_state(
     """Construct the initial :class:`EvalCase` state from a raw input record."""
     record = {
         "case_id": _case_id(case),
-        "generation": _case_value(case, "generation"),
-        "question": _case_value(case, "question"),
-        "reference": _case_value(case, "reference"),
-        "context": _case_value(case, "context") or [],
-        "geval": _case_value(case, "geval"),
-        "redteam": _case_value(case, "redteam"),
+        "generation": resolve_alias(case, "generation"),
+        "question": resolve_alias(case, "question"),
+        "reference": resolve_alias(case, "reference"),
+        "context": resolve_alias(case, "context") or [],
+        "geval": resolve_alias(case, "geval"),
+        "redteam": resolve_alias(case, "redteam"),
     }
     initial_state = EvalCase(
         record=record,
@@ -473,7 +474,6 @@ class CachedNodeRunner:
             max_workers=workers,
             max_in_flight=max_in_flight,
         )
-
         if workers == 1:
             for idx, case in enumerate(cases):
                 case_id = _case_id(case)
@@ -497,7 +497,6 @@ class CachedNodeRunner:
                     if not continue_on_error:
                         return
             return
-
         case_iter = iter(cases)
         submit_index = 0
         emit_index = 0
@@ -519,7 +518,6 @@ class CachedNodeRunner:
                     except StopIteration:
                         source_exhausted = True
                         break
-
                     idx = submit_index
                     submit_index += 1
                     case_id = _case_id(case)

@@ -38,6 +38,7 @@ from typing import Any, Callable, Iterable, Iterator, Optional
 
 import typer
 from adapters import create_dataset_adapter
+from ng_core.aliases import extend_aliases
 from ng_core.cache import CacheStore, NoOpCacheStore
 from ng_core.constants import DEFAULT_CHUNKER_STRATEGY, DEFAULT_REFINER_STRATEGY, REFINER_TOP_K
 from ng_graph.llm.gateway import set_llm_concurrency
@@ -51,6 +52,7 @@ from .util import (
     _case_progress,
     _is_case_eligible_for_target_path,
     _is_node_eligible_for_inputs,
+    _parse_field_overrides,
     _plan_nodes_for_target,
     _print_llm_routing_summary,
     _print_node_timings_summary,
@@ -165,6 +167,16 @@ def run(
         "--hf-revision",
         help="Optional Hugging Face dataset revision/tag/commit.",
     ),
+    field: list[str] = typer.Option(
+        (),
+        "--field",
+        help=(
+            "Repeatable column mapping LOGICAL=COLUMN to extend the input field "
+            "alias table at runtime. Logical keys: case_id, generation, question, "
+            "reference, context, geval, redteam. "
+            "Example: --field generation=text --field question=q."
+        ),
+    ),
     llm_model: list[str] = typer.Option(
         (),
         "--llm-model",
@@ -266,6 +278,12 @@ def run(
     debug = bool(getattr(debug, "default", debug))
 
     target_node = _resolve_target_node(node_name)
+
+    field_map, field_warnings = _parse_field_overrides(field)
+    if field_map:
+        extend_aliases(field_map)
+    for warning in field_warnings:
+        console.print(f"[yellow]{warning}[/yellow]")
 
     effective_primary_model, llm_overrides, llm_warnings = _resolve_runtime_llm_overrides(
         target_node=target_node,

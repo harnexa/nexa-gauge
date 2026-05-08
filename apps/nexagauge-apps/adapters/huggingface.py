@@ -31,12 +31,7 @@ class HuggingFaceDatasetAdapter(DatasetAdapter):
         seed: int = 42,
     ):
         del seed  # stable source order
-        try:
-            from datasets import load_dataset
-        except ImportError as exc:
-            raise InputParseError(
-                "datasets package is required for hf:// adapters. Install with `uv add datasets`."
-            ) from exc
+        from datasets import load_dataset
 
         dataset = load_dataset(
             path=self.dataset_id,
@@ -45,12 +40,12 @@ class HuggingFaceDatasetAdapter(DatasetAdapter):
             revision=self.revision,
         )
 
-        rows = dataset
         if limit is not None:
-            rows = islice(dataset, limit)
+            dataset = islice(dataset, limit)
 
-        for idx, record in enumerate(rows):
+        for idx, record in enumerate(dataset):
             row = dict(record)
+
             try:
                 yield row
             except InputParseError as exc:
