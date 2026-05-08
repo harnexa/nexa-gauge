@@ -2,7 +2,6 @@
 
 from itertools import islice
 
-from datasets import load_dataset
 from ng_core.errors import InputParseError
 
 from .base import DatasetAdapter
@@ -32,6 +31,8 @@ class HuggingFaceDatasetAdapter(DatasetAdapter):
         seed: int = 42,
     ):
         del seed  # stable source order
+        from datasets import load_dataset
+
         dataset = load_dataset(
             path=self.dataset_id,
             name=self.config_name,
