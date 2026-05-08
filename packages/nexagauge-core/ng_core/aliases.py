@@ -27,6 +27,29 @@ INPUT_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
 }
 
 
+def extend_aliases(user_field_map: Mapping[str, str]) -> None:
+    """Prepend user-supplied source columns to ``INPUT_FIELD_ALIASES`` in place.
+
+    Each ``(canonical, source)`` pair makes ``source`` the highest-priority
+    alias for ``canonical`` so that :func:`resolve_alias` picks it before the
+    built-in vocabulary. Idempotent: re-adding the same pair is a no-op.
+
+    Raises ``ValueError`` if ``canonical`` is not a known logical key, or if
+    ``source`` is empty.
+    """
+    for canonical, source in user_field_map.items():
+        if canonical not in INPUT_FIELD_ALIASES:
+            valid = ", ".join(sorted(INPUT_FIELD_ALIASES))
+            raise ValueError(
+                f"Unknown logical key '{canonical}' in field mapping. Allowed: {valid}."
+            )
+        if not source:
+            raise ValueError(f"Field mapping for '{canonical}' has empty source column name.")
+        existing = INPUT_FIELD_ALIASES[canonical]
+        if source not in existing:
+            INPUT_FIELD_ALIASES[canonical] = (source,) + existing
+
+
 def resolve_alias(record: Any, logical_key: str, default: Any = None) -> Any:
     """Read ``logical_key`` from ``record`` using ``INPUT_FIELD_ALIASES`` order.
 

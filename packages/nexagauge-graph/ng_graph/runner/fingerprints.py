@@ -37,6 +37,7 @@ def _case_id(case: Any) -> str:
         return text
     return f"case-{_compute_case_fingerprint(case)[:16]}"
 
+
 def _stable_json(obj: Any) -> str:
     """Deterministic JSON encoding for hashing (sorted keys, compact, Pydantic-aware).
 

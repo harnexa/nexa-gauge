@@ -170,6 +170,7 @@ def _parse_model_overrides(
     *,
     option_name: str,
 ) -> tuple[Optional[str], dict[str, str], list[str]]:
+    raw_values = getattr(raw_values, "default", raw_values)
     values = list(raw_values or [])
     global_model: Optional[str] = None
     node_models: dict[str, str] = {}
@@ -211,6 +212,42 @@ def _parse_model_overrides(
         node_models[node] = model
 
     return global_model, node_models, warnings
+
+
+def _parse_field_overrides(
+    raw_values: list[str] | tuple[str, ...] | None,
+) -> tuple[dict[str, str], list[str]]:
+    """Parse repeatable ``--field LOGICAL=COLUMN`` tokens into a mapping.
+
+    Returns ``(field_map, warnings)``. Validation of canonical keys is
+    delegated to :func:`ng_core.aliases.extend_aliases`; this only enforces
+    syntactic shape and warns on duplicate logical keys (last wins).
+    """
+    raw_values = getattr(raw_values, "default", raw_values)
+    values = list(raw_values or [])
+    field_map: dict[str, str] = {}
+    warnings: list[str] = []
+
+    for raw in values:
+        token = str(raw).strip()
+        if not token:
+            continue
+        if "=" not in token:
+            raise ValueError(f"Invalid --field value '{token}'. Expected 'LOGICAL=COLUMN'.")
+        raw_logical, raw_source = token.split("=", 1)
+        logical = raw_logical.strip()
+        source = raw_source.strip()
+        if not logical or not source:
+            raise ValueError(
+                f"Invalid --field value '{token}'. Both LOGICAL and COLUMN must be non-empty."
+            )
+        if logical in field_map and field_map[logical] != source:
+            warnings.append(
+                f"--field: duplicate mapping for '{logical}', last value '{source}' wins."
+            )
+        field_map[logical] = source
+
+    return field_map, warnings
 
 
 def _resolve_runtime_llm_overrides(

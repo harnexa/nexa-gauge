@@ -2,8 +2,8 @@
 
 from itertools import islice
 
-from ng_core.errors import InputParseError
 from datasets import load_dataset
+from ng_core.errors import InputParseError
 
 from .base import DatasetAdapter
 
