@@ -228,19 +228,12 @@ def node_metadata_scanner(state: EvalCase) -> dict[str, Any]:
     """
     # Per-record scan only: hydrate `inputs` from the current state payload.
     records = state["record"]
-
     raw_record = {
-        "case_id": records.get("case_id") or "record-0",
-        "generation": records.get("generation"),
-        "question": records.get("question"),
-        "reference": records.get("reference"),
-        "context": records.get("context"),
-        "geval": records.get("geval"),
+        **records,
         "reference_files": state.get("reference_files") or [],
     }
 
     case = scan_record(raw_record, idx=0)
-
     return {"inputs": case.get("inputs")}
 
 

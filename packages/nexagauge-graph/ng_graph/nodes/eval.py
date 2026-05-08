@@ -51,6 +51,15 @@ class EvalMetricSpec:
     aggregation: str = "mean"
     weight: float = 1.0
 
+# Single source of truth for eval-row extraction behavior.
+# Future averaging/weighting behavior should be changed here only.
+EVAL_METRIC_SPECS: dict[str, EvalMetricSpec] = {
+    "grounding": EvalMetricSpec(state_key="grounding_metrics"),
+    "geval": EvalMetricSpec(state_key="geval_metrics"),
+    "relevance": EvalMetricSpec(state_key="relevance_metrics"),
+    "reference": EvalMetricSpec(state_key="reference_metrics"),
+    "redteam": EvalMetricSpec(state_key="redteam_metrics"),
+}
 
 @dataclass
 class _AggregateStats:
@@ -109,15 +118,7 @@ class _AggregateStats:
         }
 
 
-# Single source of truth for eval-row extraction behavior.
-# Future averaging/weighting behavior should be changed here only.
-EVAL_METRIC_SPECS: dict[str, EvalMetricSpec] = {
-    "grounding": EvalMetricSpec(state_key="grounding_metrics"),
-    "geval": EvalMetricSpec(state_key="geval_metrics"),
-    "relevance": EvalMetricSpec(state_key="relevance_metrics"),
-    "reference": EvalMetricSpec(state_key="reference_metrics"),
-    "redteam": EvalMetricSpec(state_key="redteam_metrics"),
-}
+
 
 
 def _to_float(value: Any) -> float | None:

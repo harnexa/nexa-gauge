@@ -4,6 +4,7 @@ import hashlib
 import json
 from typing import Any, Mapping
 
+from ng_core.aliases import resolve_alias
 from ng_core.cache import build_node_cache_key, compute_case_hash
 from ng_core.config import config as cfg
 
@@ -23,15 +24,18 @@ def _case_value(case: Any, key: str, default: Any = None) -> Any:
 
 
 def _case_id(case: Any) -> str:
-    """Return a non-empty, stripped case id, falling back to ``"unknown-case"``.
+    """Return a non-empty, stripped case id, deriving one from content if missing.
 
-    Used for cache keys, log lines, and :class:`CaseRunOutcome` reporting, so
-    it must never be the empty string.
+    When ``case_id`` is absent we hash the case content (same fields as
+    :func:`_compute_case_fingerprint`) so identical cases collapse to the same
+    id across runs — preserving cache reuse — while distinct cases stay
+    distinct.
     """
-    value = _case_value(case, "case_id", "")
+    value = resolve_alias(case, "case_id", "")
     text = str(value).strip()
-    return text or "unknown-case"
-
+    if text:
+        return text
+    return f"case-{_compute_case_fingerprint(case)[:16]}"
 
 def _stable_json(obj: Any) -> str:
     """Deterministic JSON encoding for hashing (sorted keys, compact, Pydantic-aware).
@@ -59,12 +63,12 @@ def _compute_case_fingerprint(case: dict[str, Any]) -> str:
     in ``ng_core.cache`` so core and graph packages agree on the hash.
     """
     return compute_case_hash(
-        generation=_case_value(case, "generation", ""),
-        question=_case_value(case, "question"),
-        reference=_case_value(case, "reference"),
-        geval=_case_value(case, "geval"),
-        redteam=_case_value(case, "redteam"),
-        context=_case_value(case, "context") or [],
+        generation=resolve_alias(case, "generation", ""),
+        question=resolve_alias(case, "question"),
+        reference=resolve_alias(case, "reference"),
+        geval=resolve_alias(case, "geval"),
+        redteam=resolve_alias(case, "redteam"),
+        context=resolve_alias(case, "context") or [],
         reference_files=_case_value(case, "reference_files") or [],
     )
 
