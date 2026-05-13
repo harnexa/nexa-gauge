@@ -8,7 +8,7 @@ from ng_core.constants import AVG_CLAIM_INPUT_TOKENS, DEFAULT_JUDGE_MODEL
 from ng_core.types import Chunk, Claim, ClaimArtifacts, CostEstimate, Item
 from ng_core.utils import _count_tokens, template_static_tokens
 from ng_graph.llm.gateway import get_llm
-from ng_graph.llm.pricing import cost_usd, get_model_pricing
+from ng_graph.llm.pricing import cost_usd, get_node_pricing
 from ng_graph.log import get_node_logger
 from ng_graph.nodes.base import BaseNode
 from pydantic import BaseModel, Field
@@ -49,7 +49,11 @@ class ClaimExtractorNode(BaseNode):
     def run(self, chunks: list[Chunk]) -> ClaimArtifacts:
         self._reset_model_usage()
         llm = get_llm("claims", _ClaimList, self.model, llm_overrides=self.llm_overrides)
-        pricing = get_model_pricing(self.model)
+        pricing = get_node_pricing(
+            node_name="claims",
+            model=self.model,
+            llm_overrides=self.llm_overrides,
+        )
 
         all_claims: list[Claim] = []
         costs: list[CostEstimate] = []
@@ -121,7 +125,11 @@ class ClaimExtractorNode(BaseNode):
         output_tokens = len(chunks) * AVG_CLAIM_INPUT_TOKENS
 
         input_tokens = self.static_prompt_tokens + tokens
-        pricing = get_model_pricing(self.model)
+        pricing = get_node_pricing(
+            node_name="claims",
+            model=self.model,
+            llm_overrides=self.llm_overrides,
+        )
 
         return CostEstimate(
             input_tokens=input_tokens,

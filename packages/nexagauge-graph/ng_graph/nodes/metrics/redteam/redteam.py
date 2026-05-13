@@ -21,7 +21,7 @@ from ng_core.types import (
 )
 from ng_core.utils import _count_tokens, template_static_tokens
 from ng_graph.llm.gateway import get_llm
-from ng_graph.llm.pricing import cost_usd, get_model_pricing
+from ng_graph.llm.pricing import cost_usd, get_node_pricing
 from ng_graph.log import get_node_logger
 from ng_graph.nodes.base import BaseMetricNode
 from ng_graph.nodes.metrics.verdicts import verdict_from_passed
@@ -248,7 +248,11 @@ class RedteamNode(BaseMetricNode):
         with self._usage_lock:
             self._record_model_response(response, primary_model=self.judge_model)
 
-        pricing = get_model_pricing(self.judge_model)
+        pricing = get_node_pricing(
+            node_name=self.node_name,
+            model=self.judge_model,
+            llm_overrides=self.llm_overrides,
+        )
         prompt_tokens = float(response["usage"]["prompt_tokens"])
         completion_tokens = float(response["usage"]["completion_tokens"])
         cost = CostEstimate(
@@ -387,7 +391,11 @@ class RedteamNode(BaseMetricNode):
             return CostEstimate(cost=0.0, input_tokens=None, output_tokens=None)
 
         metrics_to_run = self._resolve_metrics(redteam)
-        pricing = get_model_pricing(self.judge_model)
+        pricing = get_node_pricing(
+            node_name=self.node_name,
+            model=self.judge_model,
+            llm_overrides=self.llm_overrides,
+        )
         total_input_tokens = 0.0
         total_output_tokens = 0.0
         total_cost = 0.0

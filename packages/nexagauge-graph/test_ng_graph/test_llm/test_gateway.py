@@ -71,6 +71,23 @@ def test_get_llm_cache_key_includes_temp_and_fallback_overrides() -> None:
     assert with_temp is not with_fallback
 
 
+def test_get_llm_cache_key_changes_with_api_base_override() -> None:
+    _cache.clear()
+    llm_a = get_llm(
+        "claims",
+        _Schema,
+        default_model="default-model",
+        llm_overrides={"api_bases": {"claims": "http://a.local/v1"}},
+    )
+    llm_b = get_llm(
+        "claims",
+        _Schema,
+        default_model="default-model",
+        llm_overrides={"api_bases": {"claims": "http://b.local/v1"}},
+    )
+    assert llm_a is not llm_b
+
+
 def test_set_llm_concurrency_rejects_non_positive_values() -> None:
     with pytest.raises(ValueError, match=">= 1"):
         set_llm_concurrency(0)
@@ -114,3 +131,80 @@ def test_invoke_respects_global_llm_concurrency(monkeypatch: pytest.MonkeyPatch)
         assert max_in_flight <= 2
     finally:
         set_llm_concurrency(previous_limit)
+
+
+def test_invoke_passes_api_base_and_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    _cache.clear()
+    captured: dict[str, object] = {}
+
+    def _fake_completion(**kwargs):  # type: ignore[no-untyped-def]
+        captured.update(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"value":"ok"}'))],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+
+    monkeypatch.setattr("ng_graph.llm.gateway.litellm.completion", _fake_completion)
+
+    llm = get_llm(
+        "claims",
+        _Schema,
+        default_model="openai/local-model",
+        llm_overrides={
+            "api_bases": {"claims": "http://localhost:8080/v1"},
+            "api_keys": {"claims": "secret"},
+        },
+    )
+    llm.invoke([{"role": "user", "content": "hello"}])
+
+    assert captured["api_base"] == "http://localhost:8080/v1"
+    assert captured["api_key"] == "secret"
+
+
+def test_invoke_uses_local_api_key_when_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    _cache.clear()
+    captured: dict[str, object] = {}
+
+    def _fake_completion(**kwargs):  # type: ignore[no-untyped-def]
+        captured.update(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"value":"ok"}'))],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+
+    monkeypatch.setattr("ng_graph.llm.gateway.litellm.completion", _fake_completion)
+
+    llm = get_llm(
+        "claims",
+        _Schema,
+        default_model="openai/local-model",
+        llm_overrides={"api_bases": {"claims": "http://127.0.0.1:8080/v1"}},
+    )
+    llm.invoke([{"role": "user", "content": "hello"}])
+
+    assert captured["api_key"] == "local"
+
+
+def test_invoke_retries_without_response_format_when_unsupported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _cache.clear()
+    call_count = {"n": 0}
+
+    def _fake_completion(**kwargs):  # type: ignore[no-untyped-def]
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise RuntimeError("response_format json_schema not supported")
+        assert "response_format" not in kwargs
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"value":"ok"}'))],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+
+    monkeypatch.setattr("ng_graph.llm.gateway.litellm.completion", _fake_completion)
+
+    llm = get_llm("claims", _Schema, default_model="default-model")
+    response = llm.invoke([{"role": "user", "content": "ping"}])
+
+    assert response["parsed"] is not None
+    assert call_count["n"] == 2

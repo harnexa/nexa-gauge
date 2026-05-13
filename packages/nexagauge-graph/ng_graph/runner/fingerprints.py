@@ -8,7 +8,7 @@ from ng_core.aliases import resolve_alias
 from ng_core.cache import build_node_cache_key, compute_case_hash
 from ng_core.config import config as cfg
 
-from ng_graph.llm.config import get_node_config
+from ng_graph.llm.config import get_node_config, normalize_api_base
 
 
 def _case_value(case: Any, key: str, default: Any = None) -> Any:
@@ -93,6 +93,7 @@ def _node_route_fingerprint(
         "model": resolved_model,
         "fallback_model": node_cfg.fallback_model,
         "temperature": node_cfg.temperature,
+        "api_base": normalize_api_base(node_cfg.api_base),
         "chunker": state.get("chunker"),
         "refiner": state.get("refiner"),
         "refiner_top_k": state.get("refiner_top_k"),

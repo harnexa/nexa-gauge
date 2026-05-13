@@ -6,8 +6,9 @@ from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Mapping, Optional
+from urllib.parse import urlparse
 
-from ng_core.constants import DEFAULT_FALLBACK_LLM, DEFAULT_PRIMARY_LLM
+from ng_core.constants import DEFAULT_FALLBACK_LLM, DEFAULT_PRIMARY_LLM, HOST_MODEL_ROUTE
 from ng_core.types import CostEstimate
 from ng_graph.llm.config import get_judge_model, normalize_node_name
 from ng_graph.nodes.scanner import scan
@@ -17,6 +18,7 @@ from rich.progress import BarColumn, MofNCompleteColumn, Progress, TaskProgressC
 from rich.table import Table
 
 console = Console()
+
 
 
 def _progress_total_from_bounds(*, start: int, end: int | None) -> int | None:
@@ -255,6 +257,8 @@ def _resolve_runtime_llm_overrides(
     target_node: str,
     llm_model_values: list[str] | tuple[str, ...] | None,
     llm_fallback_values: list[str] | tuple[str, ...] | None,
+    host_model_url: Optional[str] = None,
+    host_model_api_key: Optional[str] = None,
 ) -> tuple[str, dict[str, dict[str, str]], list[str]]:
     warnings: list[str] = []
     global_model_from_flag, model_overrides, model_warnings = _parse_model_overrides(
@@ -276,6 +280,8 @@ def _resolve_runtime_llm_overrides(
 
     resolved_models = {node: global_primary for node in branch_nodes}
     resolved_fallbacks = {node: global_fallback for node in branch_nodes}
+    resolved_api_bases: dict[str, str] = {}
+    resolved_api_keys: dict[str, str] = {}
 
     for node, model in model_overrides.items():
         if node not in branch_set:
@@ -293,9 +299,37 @@ def _resolve_runtime_llm_overrides(
             continue
         resolved_fallbacks[node] = model
 
+    raw_host_model_url = getattr(host_model_url, "default", host_model_url)
+    host_url = _validate_and_normalize_host_model_url(raw_host_model_url)
+    if host_url is not None:
+        if global_model_from_flag is not None or model_overrides:
+            warnings.append(
+                "Ignoring --llm-model because --host-model-url is set (host-model routing wins)."
+            )
+        if global_fallback_from_flag is not None or fallback_overrides:
+            warnings.append(
+                "Ignoring --llm-fallback because --host-model-url is set (host-model routing wins)."
+            )
+
+        resolved_models = {node: HOST_MODEL_ROUTE for node in branch_nodes}
+        resolved_fallbacks = {node: HOST_MODEL_ROUTE for node in branch_nodes}
+        resolved_api_bases = {node: host_url for node in branch_nodes}
+
+        raw_host_model_api_key = getattr(host_model_api_key, "default", host_model_api_key)
+        explicit_api_key = str(raw_host_model_api_key or "").strip() or None
+        if explicit_api_key is not None:
+            resolved_api_keys = {node: explicit_api_key for node in branch_nodes}
+        elif _is_local_host_model_url(host_url):
+            resolved_api_keys = {node: "local" for node in branch_nodes}
+
     return (
-        global_primary,
-        {"models": resolved_models, "fallback_models": resolved_fallbacks},
+        (HOST_MODEL_ROUTE if host_url is not None else global_primary),
+        {
+            "models": resolved_models,
+            "fallback_models": resolved_fallbacks,
+            "api_bases": resolved_api_bases,
+            "api_keys": resolved_api_keys,
+        },
         warnings,
     )
 
@@ -345,19 +379,48 @@ def _print_llm_routing_summary(
 ) -> None:
     models = llm_overrides.get("models", {})
     fallbacks = llm_overrides.get("fallback_models", {})
+    api_bases = llm_overrides.get("api_bases", {})
     branch_nodes = _plan_nodes_for_target(target_node)
 
     table = Table(title=f"LLM Routing (target={target_node})", show_header=True)
     table.add_column("Node", style="cyan")
     table.add_column("Primary", style="green")
     table.add_column("Fallback", style="yellow")
+    table.add_column("API Base", style="magenta")
     for node in branch_nodes:
         table.add_row(
             node,
             models.get(node, global_primary),
             fallbacks.get(node, DEFAULT_FALLBACK_LLM),
+            api_bases.get(node, "—"),
         )
     console.print(table)
+
+
+def _validate_and_normalize_host_model_url(raw_value: Optional[str]) -> Optional[str]:
+    text = str(raw_value or "").strip()
+    if not text:
+        return None
+    parsed = urlparse(text)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError(
+            f"Invalid --host-model-url value '{text}'. Expected a full http(s) URL like "
+            "'http://localhost:8080/v1'."
+        )
+
+    normalized = text.rstrip("/")
+    normalized_path = (urlparse(normalized).path or "").rstrip("/")
+    if normalized_path != "/v1":
+        raise ValueError(
+            f"Invalid --host-model-url value '{text}'. Expected an OpenAI-compatible base ending "
+            "with '/v1'."
+        )
+    return normalized
+
+
+def _is_local_host_model_url(url: str) -> bool:
+    hostname = (urlparse(url).hostname or "").lower()
+    return hostname in {"localhost", "127.0.0.1", "::1"}
 
 
 def _format_cost(value: float) -> str:

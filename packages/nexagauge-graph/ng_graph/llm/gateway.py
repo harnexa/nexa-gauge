@@ -17,6 +17,7 @@ Usage:
 
 from threading import BoundedSemaphore, Lock
 from typing import Any, Dict, List, Mapping, Optional, Type, TypeVar
+from urllib.parse import urlparse
 
 import litellm
 from ng_core.constants import LLM_CALL_TIMEOUT_SECONDS
@@ -73,38 +74,84 @@ class StructuredLLM:
         model: str,
         temperature: float,
         fallback_model: Optional[str],
+        api_base: Optional[str],
+        api_key: Optional[str],
     ):
         self.node_name = node_name
         self.schema = schema
         self.model = model
         self.temperature = temperature
         self.fallback_model = fallback_model
+        self.api_base = api_base
+        self.api_key = _resolve_api_key(api_base=api_base, api_key=api_key)
 
     # ── Internal helpers ───────────────────────────────────────────────────
 
     def _call(self, messages: List[Dict[str, str]], model: str) -> Any:
-        return litellm.completion(
-            model=model,
-            messages=messages,
-            temperature=self.temperature,
-            response_format=self.schema,
-            timeout=LLM_CALL_TIMEOUT_SECONDS,
-            metadata={"node_name": self.node_name},
-        )
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": self.temperature,
+            "response_format": self.schema,
+            "timeout": LLM_CALL_TIMEOUT_SECONDS,
+            "metadata": {"node_name": self.node_name},
+        }
+        if self.api_base:
+            kwargs["api_base"] = self.api_base
+        if self.api_key:
+            kwargs["api_key"] = self.api_key
+        return litellm.completion(**kwargs)
+
+    def _call_unstructured(self, messages: List[Dict[str, str]], model: str) -> Any:
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": self.temperature,
+            "timeout": LLM_CALL_TIMEOUT_SECONDS,
+            "metadata": {"node_name": self.node_name},
+        }
+        if self.api_base:
+            kwargs["api_base"] = self.api_base
+        if self.api_key:
+            kwargs["api_key"] = self.api_key
+        return litellm.completion(**kwargs)
 
     def _call_with_logprobs(
         self, messages: List[Dict[str, str]], model: str, top_logprobs: int
     ) -> Any:
-        return litellm.completion(
-            model=model,
-            messages=messages,
-            temperature=self.temperature,
-            response_format=self.schema,
-            logprobs=True,
-            top_logprobs=top_logprobs,
-            timeout=LLM_CALL_TIMEOUT_SECONDS,
-            metadata={"node_name": self.node_name},
-        )
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": self.temperature,
+            "response_format": self.schema,
+            "logprobs": True,
+            "top_logprobs": top_logprobs,
+            "timeout": LLM_CALL_TIMEOUT_SECONDS,
+            "metadata": {"node_name": self.node_name},
+        }
+        if self.api_base:
+            kwargs["api_base"] = self.api_base
+        if self.api_key:
+            kwargs["api_key"] = self.api_key
+        return litellm.completion(**kwargs)
+
+    def _call_with_logprobs_unstructured(
+        self, messages: List[Dict[str, str]], model: str, top_logprobs: int
+    ) -> Any:
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": self.temperature,
+            "logprobs": True,
+            "top_logprobs": top_logprobs,
+            "timeout": LLM_CALL_TIMEOUT_SECONDS,
+            "metadata": {"node_name": self.node_name},
+        }
+        if self.api_base:
+            kwargs["api_base"] = self.api_base
+        if self.api_key:
+            kwargs["api_key"] = self.api_key
+        return litellm.completion(**kwargs)
 
     # ── Public API ─────────────────────────────────────────────────────────
 
@@ -121,12 +168,12 @@ class StructuredLLM:
         """
         with _LLM_SEMAPHORE:
             try:
-                response = self._call(messages, self.model)
+                response = self._invoke_with_schema_fallback(messages, self.model)
                 used_model = self.model
             except Exception:
                 # Primary model failed (quota, auth, network, etc.); retry on fallback if configured.
                 if self.fallback_model:
-                    response = self._call(messages, self.fallback_model)
+                    response = self._invoke_with_schema_fallback(messages, self.fallback_model)
                     used_model = self.fallback_model
                 else:
                     raise
@@ -171,17 +218,27 @@ class StructuredLLM:
         used_model = self.model
         with _LLM_SEMAPHORE:
             try:
-                response = self._call_with_logprobs(messages, self.model, top_logprobs)
+                response = self._invoke_with_schema_fallback(
+                    messages,
+                    self.model,
+                    with_logprobs=True,
+                    top_logprobs=top_logprobs,
+                )
             except Exception:
                 # Primary logprobs call failed — try fallback, then retry without logprobs.
                 try:
                     if not self.fallback_model:
                         raise
-                    response = self._call_with_logprobs(messages, self.fallback_model, top_logprobs)
+                    response = self._invoke_with_schema_fallback(
+                        messages,
+                        self.fallback_model,
+                        with_logprobs=True,
+                        top_logprobs=top_logprobs,
+                    )
                     used_model = self.fallback_model
                 except Exception:
                     # Provider likely doesn't support logprobs (e.g. Ollama) — degrade gracefully.
-                    response = self._call(messages, self.model)
+                    response = self._invoke_with_schema_fallback(messages, self.model)
                     logprobs_supported = False
 
         choice = response.choices[0]
@@ -208,6 +265,26 @@ class StructuredLLM:
             "model": used_model,
             "logprobs": logprobs_payload,
         }
+
+    def _invoke_with_schema_fallback(
+        self,
+        messages: List[Dict[str, str]],
+        model: str,
+        *,
+        with_logprobs: bool = False,
+        top_logprobs: int = 20,
+    ) -> Any:
+        """Call LiteLLM with schema output; retry without schema when unsupported."""
+        try:
+            if with_logprobs:
+                return self._call_with_logprobs(messages, model, top_logprobs)
+            return self._call(messages, model)
+        except Exception as exc:
+            if not _is_response_format_unsupported_error(exc):
+                raise
+            if with_logprobs:
+                return self._call_with_logprobs_unstructured(messages, model, top_logprobs)
+            return self._call_unstructured(messages, model)
 
 
 # ── Public factory ──────────────────────────────────────────────────────────
@@ -236,7 +313,7 @@ def get_llm(
     resolved_model = cfg.model or default_model
     key = (
         f"{canonical_node_name}:{schema.__name__}:"
-        f"{resolved_model}:{cfg.fallback_model or ''}:{cfg.temperature}"
+        f"{resolved_model}:{cfg.fallback_model or ''}:{cfg.temperature}:{cfg.api_base or ''}"
     )
     if key not in _cache:
         _cache[key] = StructuredLLM(
@@ -245,6 +322,8 @@ def get_llm(
             model=resolved_model,
             temperature=cfg.temperature,
             fallback_model=cfg.fallback_model,
+            api_base=cfg.api_base,
+            api_key=cfg.api_key,
         )
     return _cache[key]
 
@@ -279,3 +358,34 @@ def _extract_logprobs(choice: Any) -> Optional[List[Dict[str, Any]]]:
             }
         )
     return out
+
+
+def _is_response_format_unsupported_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    markers = (
+        "response_format",
+        "json_schema",
+        "schema",
+        "not supported",
+        "unsupported",
+        "invalid parameter",
+    )
+    if "response_format" not in message and "json_schema" not in message:
+        return False
+    return any(marker in message for marker in markers)
+
+
+def _is_local_api_base(api_base: Optional[str]) -> bool:
+    if not api_base:
+        return False
+    parsed = urlparse(api_base)
+    hostname = (parsed.hostname or "").lower()
+    return hostname in {"localhost", "127.0.0.1", "::1"}
+
+
+def _resolve_api_key(*, api_base: Optional[str], api_key: Optional[str]) -> Optional[str]:
+    if api_key and str(api_key).strip():
+        return str(api_key).strip()
+    if _is_local_api_base(api_base):
+        return "local"
+    return None

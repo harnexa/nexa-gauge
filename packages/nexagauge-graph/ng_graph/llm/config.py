@@ -30,6 +30,8 @@ class NodeModelConfig:
     model: Optional[str]  # None = use job's judge_model
     temperature: float
     fallback_model: Optional[str]
+    api_base: Optional[str]
+    api_key: Optional[str]
 
 
 class RuntimeLLMOverrides(TypedDict, total=False):
@@ -38,6 +40,8 @@ class RuntimeLLMOverrides(TypedDict, total=False):
     models: dict[str, str]
     fallback_models: dict[str, str]
     temperatures: dict[str, float]
+    api_bases: dict[str, str]
+    api_keys: dict[str, str]
 
 
 _KNOWN_NODES: frozenset[str] = frozenset(
@@ -74,6 +78,8 @@ def normalize_runtime_overrides(
     models: dict[str, str] = {}
     fallback_models: dict[str, str] = {}
     temperatures: dict[str, float] = {}
+    api_bases: dict[str, str] = {}
+    api_keys: dict[str, str] = {}
 
     raw_models = llm_overrides.get("models")
     if isinstance(raw_models, Mapping):
@@ -100,15 +106,47 @@ def normalize_runtime_overrides(
         for node_name, temp in raw_temps.items():
             temperatures[normalize_node_name(node_name)] = float(temp)
 
+    raw_api_bases = llm_overrides.get("api_bases")
+    if isinstance(raw_api_bases, Mapping):
+        for node_name, api_base in raw_api_bases.items():
+            if api_base is None:
+                continue
+            api_base_text = str(api_base).strip()
+            if not api_base_text:
+                continue
+            api_bases[normalize_node_name(node_name)] = api_base_text
+
+    raw_api_keys = llm_overrides.get("api_keys")
+    if isinstance(raw_api_keys, Mapping):
+        for node_name, api_key in raw_api_keys.items():
+            if api_key is None:
+                continue
+            api_key_text = str(api_key).strip()
+            if not api_key_text:
+                continue
+            api_keys[normalize_node_name(node_name)] = api_key_text
+
     return RuntimeLLMOverrides(
         models=models,
         fallback_models=fallback_models,
         temperatures=temperatures,
+        api_bases=api_bases,
+        api_keys=api_keys,
     )
 
 
 def _env_prefix(node_name: str) -> str:
     return normalize_node_name(node_name).upper()
+
+
+def normalize_api_base(api_base: Optional[str]) -> Optional[str]:
+    """Normalize API base URLs used in routing and cache fingerprints."""
+    if api_base is None:
+        return None
+    text = str(api_base).strip()
+    if not text:
+        return None
+    return text.rstrip("/")
 
 
 def get_node_config(
@@ -132,6 +170,8 @@ def get_node_config(
     fallback = os.getenv(f"LLM_{key}_FALLBACK_MODEL") or None
     temp_raw = os.getenv(f"LLM_{key}_TEMPERATURE")
     temperature = float(temp_raw) if temp_raw is not None else 0.0
+    api_base = os.getenv(f"LLM_{key}_API_BASE") or os.getenv("LLM_API_BASE") or None
+    api_key = os.getenv(f"LLM_{key}_API_KEY") or os.getenv("LLM_API_KEY") or None
 
     if llm_overrides:
         normalized_overrides = normalize_runtime_overrides(llm_overrides)
@@ -139,8 +179,16 @@ def get_node_config(
         fallback = normalized_overrides.get("fallback_models", {}).get(normalized, fallback)
         if normalized in normalized_overrides.get("temperatures", {}):
             temperature = float(normalized_overrides["temperatures"][normalized])
+        api_base = normalized_overrides.get("api_bases", {}).get(normalized, api_base)
+        api_key = normalized_overrides.get("api_keys", {}).get(normalized, api_key)
 
-    return NodeModelConfig(model=model, temperature=temperature, fallback_model=fallback)
+    return NodeModelConfig(
+        model=model,
+        temperature=temperature,
+        fallback_model=fallback,
+        api_base=normalize_api_base(api_base),
+        api_key=str(api_key).strip() if api_key is not None and str(api_key).strip() else None,
+    )
 
 
 def get_judge_model(
