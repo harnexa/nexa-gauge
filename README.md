@@ -160,7 +160,7 @@ Common flags:
 | Area | Flags |
 | --- | --- |
 | Data selection | `--input`, `--adapter`, `--start`, `--end`, `--limit` |
-| Model routing | `--model`, `--llm-model`, `--llm-fallback` |
+| Model routing | `--model`, `--llm-model`, `--llm-fallback`, `--host-model-url`, `--host-model-api-key` |
 | Strategy routing | `--chunker`, `--refiner`, `--refiner-top-k` |
 | Caching | `--force`, `--no-cache` |
 | Execution | `--max-workers`, `--max-in-flight`, `--llm-concurrency`, `--continue-on-error` |
@@ -291,6 +291,13 @@ nexagauge run eval \
   --llm-model openai/gpt-4o-mini \
   --llm-model grounding=openai/gpt-4o \
   --llm-fallback openai/gpt-4o
+
+# Route all LLM calls through a local or hosted OpenAI-compatible endpoint
+nexagauge run eval \
+  --input sample.json \
+  --host-model-url http://localhost:8080/v1 \
+  --llm-concurrency 1 \
+  --max-in-flight 1
 ```
 
 ---

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import ng_cli.main as main_module
 import ng_cli.run as run_module
+import ng_cli.util as util_module
 import pytest
 from ng_cli.main import (
     DEFAULT_FALLBACK_LLM,
@@ -93,6 +94,61 @@ def test_resolve_runtime_llm_overrides_applies_global_then_node_override() -> No
     assert overrides["fallback_models"]["grounding"] == DEFAULT_FALLBACK_LLM
 
 
+def test_resolve_runtime_llm_overrides_host_model_url_autofills_local_route() -> None:
+    effective, overrides, warnings = _resolve_runtime_llm_overrides(
+        target_node="grounding",
+        llm_model_values=("openai/gpt-4o",),
+        llm_fallback_values=("openai/gpt-4o-mini",),
+        host_model_url="http://localhost:8080/v1",
+    )
+    expected_nodes = {"scan", "chunk", "refiner", "claims", "grounding"}
+    assert effective == "openai/local-model"
+    assert set(overrides["models"]) == expected_nodes
+    assert set(overrides["fallback_models"]) == expected_nodes
+    assert set(overrides["api_bases"]) == expected_nodes
+    assert set(overrides["api_keys"]) == expected_nodes
+    assert all(model == "openai/local-model" for model in overrides["models"].values())
+    assert all(model == "openai/local-model" for model in overrides["fallback_models"].values())
+    assert all(url == "http://localhost:8080/v1" for url in overrides["api_bases"].values())
+    assert all(key == "local" for key in overrides["api_keys"].values())
+    assert len(warnings) == 2
+    assert "Ignoring --llm-model" in warnings[0]
+    assert "Ignoring --llm-fallback" in warnings[1]
+
+
+def test_resolve_runtime_llm_overrides_host_model_url_remote_without_key() -> None:
+    _, overrides, warnings = _resolve_runtime_llm_overrides(
+        target_node="grounding",
+        llm_model_values=(),
+        llm_fallback_values=(),
+        host_model_url="https://host.example.com/v1",
+    )
+    assert warnings == []
+    assert overrides["api_keys"] == {}
+    assert all(url == "https://host.example.com/v1" for url in overrides["api_bases"].values())
+
+
+def test_resolve_runtime_llm_overrides_host_model_url_uses_explicit_api_key() -> None:
+    _, overrides, _ = _resolve_runtime_llm_overrides(
+        target_node="grounding",
+        llm_model_values=(),
+        llm_fallback_values=(),
+        host_model_url="https://host.example.com/v1",
+        host_model_api_key="secret-key",
+    )
+    assert all(key == "secret-key" for key in overrides["api_keys"].values())
+
+
+def test_resolve_runtime_llm_overrides_host_model_url_requires_v1() -> None:
+    with pytest.raises(ValueError, match="ending with '/v1'"):
+        _resolve_runtime_llm_overrides(
+            target_node="grounding",
+            llm_model_values=(),
+            llm_fallback_values=(),
+            host_model_url="http://localhost:8080",
+        )
+
+
 def test_collect_estimate_rows_includes_all_branch_nodes_with_status() -> None:
     rows = _collect_estimate_rows(
         target_node="grounding",
@@ -140,6 +196,26 @@ def test_collect_estimate_rows_includes_all_branch_nodes_with_status() -> None:
         ("claims", DEFAULT_PRIMARY_LLM, "zero_cost", "1 / 2", "0 / 2", "0 / 2", "0.0%", 0.0),
         ("grounding", DEFAULT_PRIMARY_LLM, "cached_only", "0 / 2", "1 / 2", "0 / 2", "0.0%", 0.0),
     ]
+
+
+def test_print_llm_routing_summary_includes_api_base_column(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[object] = []
+    monkeypatch.setattr(util_module.console, "print", lambda obj: captured.append(obj))
+    util_module._print_llm_routing_summary(
+        target_node="grounding",
+        global_primary=DEFAULT_PRIMARY_LLM,
+        llm_overrides={
+            "models": {"grounding": "openai/local-model"},
+            "fallback_models": {"grounding": "openai/local-model"},
+            "api_bases": {"grounding": "http://localhost:8080/v1"},
+        },
+    )
+    assert captured
+    table = captured[0]
+    headers = [column.header for column in table.columns]
+    assert "API Base" in headers
 
 
 def test_collect_estimate_rows_excludes_eval_aggregator() -> None:
@@ -249,6 +325,65 @@ def test_estimate_command_uses_estimate_execution_mode(monkeypatch: pytest.Monke
     assert captured["execution_mode"] == "estimate"
     assert captured["node_name"] == "grounding"
     assert captured["debug"] is True
+
+
+def test_estimate_command_host_model_url_injects_api_base_and_local_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_case: dict[str, object] = {}
+
+    class _Adapter:
+        def iter_cases(self, split: str = "train", limit: int | None = None):
+            del split, limit
+            yield {"case_id": "c1", "generation": "hello", "context": "ctx"}
+
+    class _Runner:
+        def __init__(self, cache_store):
+            del cache_store
+
+        def run_cases_iter(self, **kwargs):
+            case = next(iter(kwargs["cases"]))
+            captured_case.update(case)
+            yield SimpleNamespace(
+                case_id=case["case_id"],
+                error=None,
+                result=SimpleNamespace(
+                    final_state={"estimated_costs": {}},
+                    executed_nodes=["scan"],
+                    cached_nodes=[],
+                ),
+            )
+
+    monkeypatch.setattr(main_module, "create_dataset_adapter", lambda **kwargs: _Adapter())
+    monkeypatch.setattr(main_module, "CachedNodeRunner", _Runner)
+
+    main_module.estimate(
+        node_name="grounding",
+        input="dummy.json",
+        split="train",
+        start=0,
+        end=None,
+        limit=1,
+        adapter="auto",
+        hf_config=None,
+        hf_revision=None,
+        llm_model=[],
+        llm_fallback=[],
+        host_model_url="http://localhost:8080/v1",
+        host_model_api_key=None,
+        continue_on_error=True,
+        max_workers=1,
+        max_in_flight=None,
+        force=False,
+        no_cache=True,
+        cache_dir=None,
+    )
+
+    llm_overrides = captured_case["llm_overrides"]
+    assert llm_overrides["models"]["grounding"] == "openai/local-model"
+    assert llm_overrides["fallback_models"]["grounding"] == "openai/local-model"
+    assert llm_overrides["api_bases"]["grounding"] == "http://localhost:8080/v1"
+    assert llm_overrides["api_keys"]["grounding"] == "local"
 
 
 def test_estimate_command_filters_ineligible_cases_for_grounding(
@@ -414,6 +549,65 @@ def test_run_command_filters_ineligible_cases_for_grounding(
     )
 
     assert captured_case_ids == ["with-context"]
+
+
+def test_run_command_host_model_url_injects_api_base_and_local_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured_case: dict[str, object] = {}
+
+    class _Adapter:
+        def iter_cases(self, split: str = "train", limit: int | None = None):
+            del split, limit
+            yield {"case_id": "with-context", "generation": "hello", "context": "ctx"}
+
+    class _Runner:
+        def __init__(self, cache_store):
+            del cache_store
+
+        def run_cases_iter(self, **kwargs):
+            case = next(iter(kwargs["cases"]))
+            captured_case.update(case)
+            yield SimpleNamespace(
+                case_id=case["case_id"],
+                error=None,
+                result=SimpleNamespace(
+                    case_id=case["case_id"],
+                    executed_nodes=["scan"],
+                    cached_nodes=[],
+                    final_state={},
+                ),
+            )
+
+    monkeypatch.setattr(main_module, "create_dataset_adapter", lambda **kwargs: _Adapter())
+    monkeypatch.setattr(main_module, "CachedNodeRunner", _Runner)
+
+    main_module.run(
+        node_name="grounding",
+        input="dummy.json",
+        start=0,
+        end=None,
+        limit=1,
+        adapter="auto",
+        hf_config=None,
+        hf_revision=None,
+        llm_model=[],
+        llm_fallback=[],
+        host_model_url="http://localhost:8080/v1",
+        host_model_api_key=None,
+        continue_on_error=True,
+        max_workers=1,
+        max_in_flight=None,
+        force=False,
+        no_cache=True,
+        output_dir=None,
+    )
+
+    llm_overrides = captured_case["llm_overrides"]
+    assert llm_overrides["models"]["grounding"] == "openai/local-model"
+    assert llm_overrides["fallback_models"]["grounding"] == "openai/local-model"
+    assert llm_overrides["api_bases"]["grounding"] == "http://localhost:8080/v1"
+    assert llm_overrides["api_keys"]["grounding"] == "local"
 
 
 def test_run_command_does_not_prefetch_all_cases(monkeypatch: pytest.MonkeyPatch) -> None:

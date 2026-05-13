@@ -37,7 +37,7 @@ from ng_core.types import (
 )
 from ng_core.utils import _count_tokens, template_static_tokens
 from ng_graph.llm.gateway import get_llm
-from ng_graph.llm.pricing import cost_usd, get_model_pricing
+from ng_graph.llm.pricing import cost_usd, get_node_pricing
 from ng_graph.log import get_node_logger
 from ng_graph.nodes.base import BaseMetricNode
 from ng_graph.nodes.metrics.geval.cache import (
@@ -165,7 +165,11 @@ class GevalNode(BaseMetricNode):
         ]
 
     def _cost_from_usage(self, usage: dict[str, Any], model: str) -> float:
-        pricing = get_model_pricing(model or self.judge_model)
+        pricing = get_node_pricing(
+            node_name=self.node_name,
+            model=model or self.judge_model,
+            llm_overrides=self.llm_overrides,
+        )
         prompt_tokens = float(usage.get("prompt_tokens", 0.0) or 0.0)
         completion_tokens = float(usage.get("completion_tokens", 0.0) or 0.0)
         return cost_usd(prompt_tokens, pricing, "input") + cost_usd(
@@ -384,7 +388,11 @@ class GevalNode(BaseMetricNode):
         output_tokens = metric_count * (
             AVG_DEEPEVAL_OUTPUT_REASONING_TOKENS + AVG_DEEPEVAL_OUTPUT_VERDICT
         )
-        pricing = get_model_pricing(self.judge_model)
+        pricing = get_node_pricing(
+            node_name=self.node_name,
+            model=self.judge_model,
+            llm_overrides=self.llm_overrides,
+        )
         estimated_cost = cost_usd(input_tokens, pricing, "input") + cost_usd(
             output_tokens, pricing, "output"
         )

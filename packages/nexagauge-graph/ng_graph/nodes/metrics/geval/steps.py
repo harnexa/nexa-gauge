@@ -19,7 +19,7 @@ from ng_core.types import (
 )
 from ng_core.utils import _count_tokens, template_static_tokens
 from ng_graph.llm.gateway import get_llm
-from ng_graph.llm.pricing import cost_usd, get_model_pricing
+from ng_graph.llm.pricing import cost_usd, get_node_pricing
 from ng_graph.log import get_node_logger
 from ng_graph.nodes.base import BaseMetricNode
 from ng_graph.nodes.metrics.geval.cache import (
@@ -233,7 +233,11 @@ class GevalStepsNode(BaseMetricNode):
         with self._usage_lock:
             self._record_model_response(response, primary_model=self.judge_model)
 
-        pricing = get_model_pricing(self.judge_model)
+        pricing = get_node_pricing(
+            node_name=self.node_name,
+            model=self.judge_model,
+            llm_overrides=self.llm_overrides,
+        )
         prompt_tokens = float(response["usage"]["prompt_tokens"])
         completion_tokens = float(response["usage"]["completion_tokens"])
         cost = CostEstimate(
@@ -384,7 +388,11 @@ class GevalStepsNode(BaseMetricNode):
 
     def estimate(self, input_tokens: float, output_tokens: float) -> CostEstimate:  # type: ignore[override]
         self._reset_model_usage()
-        pricing = get_model_pricing(self.judge_model)
+        pricing = get_node_pricing(
+            node_name=self.node_name,
+            model=self.judge_model,
+            llm_overrides=self.llm_overrides,
+        )
         billable_input = self.static_prompt_tokens + input_tokens
         return CostEstimate(
             input_tokens=billable_input,

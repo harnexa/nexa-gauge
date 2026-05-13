@@ -14,6 +14,7 @@ published API pricing pages.
 """
 
 from dataclasses import dataclass
+from typing import Any, Mapping, Optional
 
 import tokencost
 from ng_core.constants import (
@@ -21,6 +22,8 @@ from ng_core.constants import (
     COST_FALLBACK_PER_CALL_USD,
     DEFAULT_LLM_PROVIDER,
 )
+
+from ng_graph.llm.config import get_node_config, normalize_api_base
 
 
 @dataclass(frozen=True)
@@ -81,8 +84,10 @@ _FALLBACK_PRICING = ModelPricing(
     output_per_1k=COST_FALLBACK_PER_CALL_USD / (COST_AVG_JUDGE_TOKENS / 1000) * 3,
 )
 
+_ZERO_PRICING = ModelPricing(input_per_1k=0.0, output_per_1k=0.0)
 
-def get_model_pricing(model: str) -> ModelPricing:
+
+def get_model_pricing(model: str, *, api_base: Optional[str] = None) -> ModelPricing:
     """Return pricing for *model*.
 
     Lookup order:
@@ -94,7 +99,12 @@ def get_model_pricing(model: str) -> ModelPricing:
     Args:
         model: Model name, with or without a provider prefix
                (e.g. ``"gpt-4o-mini"`` or ``"openai/gpt-4o-mini"``).
+        api_base: Optional explicit endpoint route. When set, this is treated
+               as a self-hosted path and returns zero USD pricing.
     """
+    if normalize_api_base(api_base):
+        return _ZERO_PRICING
+
     key = str(model).strip()
 
     if key in MODEL_PRICING:
@@ -118,6 +128,17 @@ def get_model_pricing(model: str) -> ModelPricing:
     except Exception:
         # tokencost lacks a pricing entry for this model (e.g. private deployment) — use fallback.
         return _FALLBACK_PRICING
+
+
+def get_node_pricing(
+    *,
+    node_name: str,
+    model: str,
+    llm_overrides: Optional[Mapping[str, Any]] = None,
+) -> ModelPricing:
+    """Resolve node route, then return pricing for that route/model pair."""
+    node_cfg = get_node_config(node_name, llm_overrides=llm_overrides)
+    return get_model_pricing(model, api_base=node_cfg.api_base)
 
 
 def cost_usd(n_tokens: float, pricing: ModelPricing, token_type: str) -> float:

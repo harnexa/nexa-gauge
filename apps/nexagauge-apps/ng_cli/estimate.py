@@ -99,6 +99,22 @@ def estimate(
             f"--llm-fallback grounding={DEFAULT_PRIMARY_LLM})."
         ),
     ),
+    host_model_url: Optional[str] = typer.Option(
+        None,
+        "--host-model-url",
+        help=(
+            "OpenAI-compatible host endpoint URL (for example: http://localhost:8080/v1). "
+            "When set, nexa-gauge auto-routes all branch nodes via this endpoint."
+        ),
+    ),
+    host_model_api_key: Optional[str] = typer.Option(
+        None,
+        "--host-model-api-key",
+        help=(
+            "Optional API key paired with --host-model-url. If omitted for localhost hosts, "
+            "nexa-gauge defaults to api_key=local."
+        ),
+    ),
     chunker: str = typer.Option(
         DEFAULT_CHUNKER_STRATEGY,
         "--chunker",
@@ -168,6 +184,8 @@ def estimate(
         target_node=target_node,
         llm_model_values=llm_model,
         llm_fallback_values=llm_fallback,
+        host_model_url=host_model_url,
+        host_model_api_key=host_model_api_key,
     )
 
     _print_llm_routing_summary(
