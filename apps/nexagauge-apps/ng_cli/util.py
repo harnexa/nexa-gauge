@@ -20,7 +20,6 @@ from rich.table import Table
 console = Console()
 
 
-
 def _progress_total_from_bounds(*, start: int, end: int | None) -> int | None:
     if end is None:
         return None
