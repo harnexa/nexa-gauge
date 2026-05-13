@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.11](https://github.com/harnexa/nexa-gauge/compare/v0.1.10...v0.1.11) (2026-05-13)
+
+
+### Features
+
+* route LLM calls through OpenAI-compatible self-hosted endpoints ([#44](https://github.com/harnexa/nexa-gauge/issues/44)) ([4feb5cf](https://github.com/harnexa/nexa-gauge/commit/4feb5cfd0d4cb0a7bc42bea5e250fd0fdd07358c))
+
 ## [0.1.10](https://github.com/harnexa/nexa-gauge/compare/v0.1.9...v0.1.10) (2026-05-08)
 
 
