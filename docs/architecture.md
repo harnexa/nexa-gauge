@@ -12,6 +12,15 @@ Source of truth for node dependencies and input gating: `packages/nexagauge-grap
 - `ng_graph.graph` + `ng_graph.nodes.*` - node implementations.
 - `ng_graph.nodes.report` - topology-driven report projection from final state.
 
+## Cache Concurrency Model
+
+- Cache writes use **writer-unique temp files** in the target directory plus `os.replace(...)` into the final cache path. This prevents cross-thread/process collisions on a shared `.tmp` name while preserving atomic publish semantics.
+- Runner execution uses **in-process single-flight** keyed by per-step `cache_key`. If two cases request the same uncached step concurrently, one leader executes the node and followers await the leader result instead of issuing duplicate LLM work.
+- This combination provides layered protection:
+  - storage layer stays race-safe even if duplicate writes happen,
+  - runner layer avoids redundant compute and usually redundant writes.
+- Duplicate `case_id` input policy is unchanged. Coalescing is keyed by cache fingerprint (`cache_key`), not by `case_id`.
+
 ## Top-Down Pipeline Diagram
 
 - Built from `PIPELINE` in `topology.py`, with strategy containers for `chunk` and `refiner`.

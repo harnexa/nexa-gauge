@@ -202,6 +202,7 @@ TL;DR  —  "I want to add a new cache dimension"
 import hashlib
 import json
 import os
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, Protocol, TypedDict, runtime_checkable
@@ -538,9 +539,12 @@ class CacheStore:
             "node_output": _serialize(node_output),
             "metadata": metadata or {},
         }
-        tmp_path = p.with_suffix(".json.tmp")
-        tmp_path.write_text(json.dumps(envelope, indent=2))
-        os.replace(tmp_path, p)
+        tmp_path = p.with_name(f"{p.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            tmp_path.write_text(json.dumps(envelope, indent=2))
+            os.replace(tmp_path, p)
+        finally:
+            tmp_path.unlink(missing_ok=True)
 
 
 class NoOpCacheStore(CacheStore):

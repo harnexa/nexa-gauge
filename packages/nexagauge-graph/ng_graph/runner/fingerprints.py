@@ -9,6 +9,7 @@ from ng_core.cache import build_node_cache_key, compute_case_hash
 from ng_core.config import config as cfg
 
 from ng_graph.llm.config import get_node_config, normalize_api_base
+from ng_graph.nodes.scanner import scan
 
 
 def _case_value(case: Any, key: str, default: Any = None) -> Any:
@@ -62,14 +63,22 @@ def _compute_case_fingerprint(case: dict[str, Any]) -> str:
     Excludes run-time concerns (target node, execution_mode, model routing);
     those enter via :func:`_step_fingerprint` further down. The delegate lives
     in ``ng_core.cache`` so core and graph packages agree on the hash.
+
+    Inputs are first run through :func:`scan` so the fingerprint sees the
+    same normalized field values as the rest of the graph. This keeps the
+    case-hash contract aligned with the typed ``Inputs`` produced by the
+    scanner and avoids type-mismatch crashes when raw record fields (e.g.
+    a scalar ``context: 42``) reach the cache layer.
     """
+    inputs = scan(case)["inputs"]
+    context_text = inputs.context.text if inputs.context else ""
     return compute_case_hash(
-        generation=resolve_alias(case, "generation", ""),
-        question=resolve_alias(case, "question"),
-        reference=resolve_alias(case, "reference"),
-        geval=resolve_alias(case, "geval"),
-        redteam=resolve_alias(case, "redteam"),
-        context=resolve_alias(case, "context") or [],
+        generation=inputs.generation.text if inputs.generation else "",
+        question=inputs.question.text if inputs.question else None,
+        reference=inputs.reference.text if inputs.reference else None,
+        geval=inputs.geval,
+        redteam=inputs.redteam,
+        context=[context_text] if context_text else [],
         reference_files=_case_value(case, "reference_files") or [],
     )
 

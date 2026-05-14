@@ -1,5 +1,6 @@
 import hashlib
 import json
+from concurrent.futures import ThreadPoolExecutor
 
 from ng_core.cache import (
     CacheStore,
@@ -214,3 +215,26 @@ def test_eval_and_report_nodes_are_non_cacheable() -> None:
     assert cache_write_allowed(execution_mode="run", node_name="eval") is False
     assert cache_read_allowed(execution_mode="estimate", node_name="report") is False
     assert cache_write_allowed(execution_mode="estimate", node_name="report") is False
+
+
+def test_cache_put_by_key_is_safe_under_concurrent_same_key_writes(tmp_path) -> None:
+    store = CacheStore(tmp_path)
+    cache_key = "v2:run:scan:same-case:same-route"
+
+    def _write_once(i: int) -> None:
+        store.put_by_key(
+            cache_key,
+            "scan",
+            {"marker": i},
+            metadata={"writer": str(i)},
+        )
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(_write_once, range(50)))
+
+    entry = store.get_entry_by_key(cache_key)
+    assert entry is not None
+    assert entry["cache_key"] == cache_key
+    assert entry["node_name"] == "scan"
+    assert isinstance(entry["node_output"]["marker"], int)
+    assert all(not p.name.endswith(".tmp") for p in tmp_path.rglob("*"))

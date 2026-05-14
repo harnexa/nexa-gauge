@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 import time
 from pathlib import Path
+from threading import Lock
 
 import pytest
 from ng_core.cache import CacheStore, NoOpCacheStore
@@ -753,3 +754,101 @@ def test_run_cases_iter_updates_eval_collector_in_parallel(monkeypatch) -> None:
     assert summary["by_node"]["grounding"]["metrics"] == 3
     assert summary["by_node"]["reference"]["metrics"] == 3
     assert summary["by_metric"]["reference"]["rouge_l"]["avg_score"] == pytest.approx(0.8)
+
+
+def test_run_cases_iter_singleflight_coalesces_duplicate_step_cache_keys(
+    monkeypatch, tmp_path
+) -> None:
+    scan_calls = 0
+    lock = Lock()
+
+    def _scan(_state: dict) -> dict:
+        nonlocal scan_calls
+        with lock:
+            scan_calls += 1
+        time.sleep(0.08)
+        return {"inputs": None}
+
+    monkeypatch.setitem(runner_module.NODE_FNS, "scan", _scan)
+
+    runner = CachedNodeRunner(cache_store=CacheStore(tmp_path))
+    cases = [
+        {"case_id": "case-0", "generation": "same text"},
+        {"case_id": "case-1", "generation": "same text"},
+    ]
+    outcomes = list(
+        runner.run_cases_iter(
+            cases=cases,
+            node_name="scan",
+            max_workers=2,
+            max_in_flight=2,
+            continue_on_error=True,
+        )
+    )
+
+    assert all(outcome.result is not None for outcome in outcomes)
+    executed, cached = _node_execution_counts(outcomes, "scan")
+    assert executed == 1
+    assert cached == 1
+    assert scan_calls == 1
+
+
+def test_run_cases_iter_singleflight_cleans_up_inflight_entry_after_failure(
+    monkeypatch, tmp_path
+) -> None:
+    failing_calls = 0
+    lock = Lock()
+
+    def _failing_scan(_state: dict) -> dict:
+        nonlocal failing_calls
+        with lock:
+            failing_calls += 1
+        time.sleep(0.08)
+        raise RuntimeError("boom")
+
+    monkeypatch.setitem(runner_module.NODE_FNS, "scan", _failing_scan)
+    runner = CachedNodeRunner(cache_store=CacheStore(tmp_path))
+    cases = [
+        {"case_id": "case-0", "generation": "same text"},
+        {"case_id": "case-1", "generation": "same text"},
+    ]
+
+    failed = list(
+        runner.run_cases_iter(
+            cases=cases,
+            node_name="scan",
+            max_workers=2,
+            max_in_flight=2,
+            continue_on_error=True,
+        )
+    )
+
+    assert failing_calls == 1
+    assert all(outcome.result is None for outcome in failed)
+    assert all("boom" in (outcome.error or "") for outcome in failed)
+
+    succeeding_calls = 0
+
+    def _ok_scan(_state: dict) -> dict:
+        nonlocal succeeding_calls
+        with lock:
+            succeeding_calls += 1
+        time.sleep(0.05)
+        return {"inputs": None}
+
+    monkeypatch.setitem(runner_module.NODE_FNS, "scan", _ok_scan)
+    succeeded = list(
+        runner.run_cases_iter(
+            cases=cases,
+            node_name="scan",
+            max_workers=2,
+            max_in_flight=2,
+            continue_on_error=True,
+        )
+    )
+
+    assert all(outcome.result is not None for outcome in succeeded)
+    executed, cached = _node_execution_counts(succeeded, "scan")
+    assert executed == 1
+    assert cached == 1
+    assert succeeding_calls == 1
