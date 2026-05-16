@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import time
 import traceback
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from copy import deepcopy
+from threading import Lock
 from typing import Any, Iterable, Iterator, Mapping
 
 from ng_core.aliases import resolve_alias
-from ng_core.cache import NodeCacheBackend, cache_read_allowed, cache_write_allowed
+from ng_core.cache import NodeCacheBackend, NoOpCacheStore, cache_read_allowed, cache_write_allowed
 from ng_core.constants import DEFAULT_CHUNKER_STRATEGY, DEFAULT_REFINER_STRATEGY, REFINER_TOP_K
 from ng_core.types import EvalCase
 
@@ -93,6 +94,9 @@ class CachedNodeRunner:
 
     def __init__(self, cache_store: NodeCacheBackend) -> None:
         self._cache = cache_store
+        self._singleflight_enabled = not isinstance(cache_store, NoOpCacheStore)
+        self._singleflight_lock = Lock()
+        self._singleflight_in_flight: dict[str, Future[dict[str, Any]]] = {}
 
     @staticmethod
     def _build_run_plan_context(*, node_name: str) -> _RunPlanContext:
@@ -144,6 +148,71 @@ class CachedNodeRunner:
                 "cache_schema": "v2",
             },
         )
+
+    def _run_step_singleflight(
+        self,
+        *,
+        cache_key: str,
+        step_name: str,
+        snapshot: dict[str, Any],
+    ) -> tuple[dict[str, Any], float, bool]:
+        """Run one node with in-process single-flight keyed by cache key.
+
+        Why this exists:
+        - Batch runs can execute many cases in parallel.
+        - Different cases may resolve to the *same* step ``cache_key`` when
+          inputs/fingerprints are equivalent.
+        - Without coalescing, those threads all launch duplicate LLM work and
+          race to write the same cache entry.
+
+        Concurrency model:
+        - First caller for a key becomes the leader, executes the node once,
+          and publishes the result into a shared ``Future``.
+        - Later callers become followers and block on that ``Future``.
+        - Followers return ``reused=True`` so scheduling/reporting can treat
+          the step like a cache-equivalent reuse (zero local execution time).
+
+        Failure and cleanup guarantees:
+        - Leader exceptions are set on the shared ``Future`` and propagated to
+          every follower, so all duplicate requests fail consistently.
+        - In-flight registry entries are always removed in ``finally`` to avoid
+          deadlocking future attempts on stale keys.
+
+        Scope:
+        - This is intentionally process-local coordination. It deduplicates
+          work across threads within one runner instance.
+        - Cross-process safety is still handled at storage layer by atomic
+          cache writes in ``CacheStore.put_by_key``.
+
+        Returns:
+            output patch, elapsed_ms, reused
+        where ``reused=True`` means this caller reused another in-flight
+        execution result instead of running the node directly.
+        """
+        with self._singleflight_lock:
+            in_flight = self._singleflight_in_flight.get(cache_key)
+            if in_flight is None:
+                in_flight = Future()
+                self._singleflight_in_flight[cache_key] = in_flight
+                leader = True
+            else:
+                leader = False
+
+        if not leader:
+            return in_flight.result(), 0.0, True
+
+        node_t0 = time.monotonic()
+        try:
+            out = NODE_FNS[step_name](snapshot)
+            elapsed_ms = (time.monotonic() - node_t0) * 1000
+            in_flight.set_result(out)
+            return out, elapsed_ms, False
+        except Exception as exc:
+            in_flight.set_exception(exc)
+            raise
+        finally:
+            with self._singleflight_lock:
+                self._singleflight_in_flight.pop(cache_key, None)
 
     def run_case(
         self,
@@ -348,12 +417,17 @@ class CachedNodeRunner:
                     ready.add(dependent)
 
         def _timed_step_run(
-            step_name: str, snapshot: dict[str, Any]
-        ) -> tuple[dict[str, Any], float]:
-            # Node function reads from an isolated snapshot and returns a patch.
-            node_t0 = time.monotonic()
-            out = NODE_FNS[step_name](snapshot)
-            return out, (time.monotonic() - node_t0) * 1000
+            step_name: str, snapshot: dict[str, Any], cache_key: str
+        ) -> tuple[dict[str, Any], float, bool]:
+            if not self._singleflight_enabled:
+                node_t0 = time.monotonic()
+                out = NODE_FNS[step_name](snapshot)
+                return out, (time.monotonic() - node_t0) * 1000, False
+            return self._run_step_singleflight(
+                cache_key=cache_key,
+                step_name=step_name,
+                snapshot=snapshot,
+            )
 
         def _build_step_snapshot(step_name: str) -> dict[str, Any]:
             """Build a consistent per-node snapshot with prerequisite outputs merged.
@@ -410,7 +484,12 @@ class CachedNodeRunner:
                     # Snapshot-per-node: concurrent workers do not share mutable state.
                     # Include resolved prerequisite outputs even when canonical state
                     # merge is still blocked by earlier plan-index nodes.
-                    future = pool.submit(_timed_step_run, step, _build_step_snapshot(step))
+                    future = pool.submit(
+                        _timed_step_run,
+                        step,
+                        _build_step_snapshot(step),
+                        cache_keys[step],
+                    )
                     in_flight[future] = step
                     submitted.add(step)
                     made_progress = True
@@ -428,11 +507,11 @@ class CachedNodeRunner:
                 done, _ = wait(set(in_flight.keys()), return_when=FIRST_COMPLETED)
                 for future in done:
                     step = in_flight.pop(future)
-                    output, elapsed_ms = future.result()
+                    output, elapsed_ms, reused = future.result()
                     _resolve_step(
                         step_name=step,
                         output=output,
-                        was_cached=False,
+                        was_cached=reused,
                         elapsed_ms=elapsed_ms,
                     )
 
