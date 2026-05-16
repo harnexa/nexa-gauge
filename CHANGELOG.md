@@ -82,3 +82,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 ### Changed
 - README refreshed with pip install and release workflow guidance.
 - Setup and Makefile messaging updated to reflect CLI-first current architecture.
+
+### Fixed
+- Cache store writes now use writer-unique temp paths before atomic replace, preventing concurrent same-key write collisions on shared `.tmp` filenames.
+- Runner now coalesces concurrent same-key step execution with in-process single-flight, reducing duplicate LLM calls and duplicate cache writes.
