@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.12](https://github.com/harnexa/nexa-gauge/compare/v0.1.11...v0.1.12) (2026-05-16)
+
+
+### Bug Fixes
+
+* eliminate cache write races and duplicate work under high concurrency ([#46](https://github.com/harnexa/nexa-gauge/issues/46)) ([762937e](https://github.com/harnexa/nexa-gauge/commit/762937ecdcc96ad4fa8e34e801ca75c02380d4c0))
+
 ## [0.1.11](https://github.com/harnexa/nexa-gauge/compare/v0.1.10...v0.1.11) (2026-05-13)
 
 
