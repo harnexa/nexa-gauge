@@ -9,7 +9,6 @@ import textwrap
 from pathlib import Path
 
 import pytest
-
 from ng_core.errors import InputParseError
 from ng_core.extensions import (
     get_transform,

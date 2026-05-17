@@ -328,9 +328,7 @@ def run(
         load_extension_file(ext_path)
     if transform:
         transform_fn = get_transform(transform)
-        console.print(
-            f"[green]Applying transform '{transform}' per record before scan.[/green]"
-        )
+        console.print(f"[green]Applying transform '{transform}' per record before scan.[/green]")
 
     effective_primary_model, llm_overrides, llm_warnings = _resolve_runtime_llm_overrides(
         target_node=target_node,

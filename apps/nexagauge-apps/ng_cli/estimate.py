@@ -6,7 +6,6 @@ from typing import Optional
 
 import typer
 from adapters import create_dataset_adapter
-
 from ng_core.aliases import extend_aliases
 from ng_core.cache import CacheStore, NoOpCacheStore
 from ng_core.constants import DEFAULT_CHUNKER_STRATEGY, DEFAULT_REFINER_STRATEGY, REFINER_TOP_K
@@ -208,9 +207,7 @@ def estimate(
         load_extension_file(ext_path)
     if transform:
         transform_fn = get_transform(transform)
-        console.print(
-            f"[green]Applying transform '{transform}' per record before scan.[/green]"
-        )
+        console.print(f"[green]Applying transform '{transform}' per record before scan.[/green]")
 
     effective_primary_model, llm_overrides, llm_warnings = _resolve_runtime_llm_overrides(
         target_node=target_node,

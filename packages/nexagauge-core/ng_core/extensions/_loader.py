@@ -38,6 +38,4 @@ def load_extension_file(path: str | Path) -> None:
     try:
         spec.loader.exec_module(module)
     except Exception as exc:
-        raise InputParseError(
-            f"Failed to import extension file {file_path}: {exc}"
-        ) from exc
+        raise InputParseError(f"Failed to import extension file {file_path}: {exc}") from exc
