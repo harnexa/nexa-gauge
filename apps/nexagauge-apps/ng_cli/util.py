@@ -9,6 +9,8 @@ from typing import Any, Mapping, Optional
 from urllib.parse import urlparse
 
 from ng_core.constants import DEFAULT_FALLBACK_LLM, DEFAULT_PRIMARY_LLM, HOST_MODEL_ROUTE
+from ng_core.errors import InputParseError
+from ng_core.extensions import TransformFn
 from ng_core.types import CostEstimate
 from ng_graph.llm.config import get_judge_model, normalize_node_name
 from ng_graph.nodes.scanner import scan
@@ -465,6 +467,39 @@ def _is_node_eligible_for_inputs(node_name: str, inputs: Any) -> bool:
     if spec.requires_reference and not bool(getattr(inputs, "has_reference", False)):
         return False
     return True
+
+
+def _apply_transform_iter(
+    upstream: Iterator[Any],
+    *,
+    transform_fn: TransformFn,
+    transform_name: str,
+) -> Iterator[Any]:
+    """Wrap an adapter iterator, applying ``transform_fn`` to each record.
+
+    Failures (transform raises, returns non-dict) surface as
+    :class:`InputParseError` with ``record_index=idx`` so the existing CLI
+    continue-on-error / fail-fast paths handle them uniformly.
+    """
+    for idx, record in enumerate(upstream):
+        try:
+            out = transform_fn(record)
+        except InputParseError:
+            raise
+        except Exception as exc:
+            raise InputParseError(
+                f"Transform '{transform_name}' raised on record {idx}: {exc}",
+                record_index=idx,
+            ) from exc
+        if not isinstance(out, Mapping):
+            raise InputParseError(
+                (
+                    f"Transform '{transform_name}' returned {type(out).__name__} "
+                    f"on record {idx}, expected a dict."
+                ),
+                record_index=idx,
+            )
+        yield dict(out)
 
 
 def _scan_inputs_from_case(case: Any) -> Any:
