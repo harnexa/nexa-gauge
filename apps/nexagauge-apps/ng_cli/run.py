@@ -41,6 +41,7 @@ from adapters import create_dataset_adapter
 from ng_core.aliases import extend_aliases
 from ng_core.cache import CacheStore, NoOpCacheStore
 from ng_core.constants import DEFAULT_CHUNKER_STRATEGY, DEFAULT_REFINER_STRATEGY, REFINER_TOP_K
+from ng_core.extensions import get_transform, load_extension_file
 from ng_graph.llm.gateway import set_llm_concurrency
 from ng_graph.log import set_node_logging_enabled
 from ng_graph.nodes import eval as eval_node
@@ -49,6 +50,7 @@ from ng_graph.runner import CachedNodeRunner
 from .util import (
     DEFAULT_FALLBACK_LLM,
     DEFAULT_PRIMARY_LLM,
+    _apply_transform_iter,
     _case_progress,
     _is_case_eligible_for_target_path,
     _is_node_eligible_for_inputs,
@@ -177,6 +179,24 @@ def run(
             "Example: --field generation=text --field question=q."
         ),
     ),
+    extension_file: list[Path] = typer.Option(
+        (),
+        "--extension-file",
+        help=(
+            "Repeatable. Path to a Python file with @register_* decorators "
+            "(transforms today; prompts/metrics in the future). Each file is "
+            "imported once before iteration so its decorators register."
+        ),
+    ),
+    transform: Optional[str] = typer.Option(
+        None,
+        "--transform",
+        help=(
+            "Name of a registered transform to apply per record before scanning. "
+            "Use to reshape datasets whose columns don't map 1:1 to nexa-gauge "
+            "inputs (e.g. hotpot_qa context). See docs/dataset-transforms.md."
+        ),
+    ),
     llm_model: list[str] = typer.Option(
         (),
         "--llm-model",
@@ -301,6 +321,15 @@ def run(
     for warning in field_warnings:
         console.print(f"[yellow]{warning}[/yellow]")
 
+    extension_file = getattr(extension_file, "default", extension_file)
+    transform = getattr(transform, "default", transform)
+    transform_fn = None
+    for ext_path in extension_file or ():
+        load_extension_file(ext_path)
+    if transform:
+        transform_fn = get_transform(transform)
+        console.print(f"[green]Applying transform '{transform}' per record before scan.[/green]")
+
     effective_primary_model, llm_overrides, llm_warnings = _resolve_runtime_llm_overrides(
         target_node=target_node,
         llm_model_values=llm_model,
@@ -363,6 +392,12 @@ def run(
         start,
         effective_end,
     )
+    if transform_fn is not None:
+        selected_cases = _apply_transform_iter(
+            selected_cases,
+            transform_fn=transform_fn,
+            transform_name=transform or "",
+        )
     set_node_logging_enabled(debug)
     try:
         with _case_progress(
