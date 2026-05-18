@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.13](https://github.com/harnexa/nexa-gauge/compare/v0.1.12...v0.1.13) (2026-05-17)
+
+
+### Features
+
+* user-defined record transforms for arbitrary dataset schemas ([#48](https://github.com/harnexa/nexa-gauge/issues/48)) ([300142f](https://github.com/harnexa/nexa-gauge/commit/300142fc6f07820b8cb20f92eb9e8e435145e02a))
+
 ## [0.1.12](https://github.com/harnexa/nexa-gauge/compare/v0.1.11...v0.1.12) (2026-05-16)
 
 
