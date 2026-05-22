@@ -19,8 +19,11 @@ def _claims() -> list[Claim]:
 
 
 def test_run_returns_metric_and_cost_with_mocked_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured_messages = []
+
     class FakeLLM:
-        def invoke(self, _messages):
+        def invoke(self, messages):
+            captured_messages.extend(messages)
             return {
                 "parsed": SimpleNamespace(
                     verdicts=[
@@ -53,6 +56,13 @@ def test_run_returns_metric_and_cost_with_mocked_llm(monkeypatch: pytest.MonkeyP
     assert result.cost.input_tokens == 110
     assert result.cost.output_tokens == 20
     assert result.cost.cost > 0
+
+    system_prompt = captured_messages[0]["content"]
+    user_prompt = captured_messages[1]["content"]
+    assert "Do not judge factual correctness" in system_prompt
+    assert "supported by evidence" in system_prompt
+    assert "even if the statement may be factually wrong" in user_prompt
+    assert "unrelated, off-topic" in user_prompt
 
 
 def test_run_skips_when_disabled_or_no_question() -> None:
