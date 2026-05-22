@@ -9,6 +9,7 @@ from ng_core.cache import build_node_cache_key, compute_case_hash
 from ng_core.config import config as cfg
 
 from ng_graph.llm.config import get_node_config, normalize_api_base
+from ng_graph.llm.host_model import resolve_host_model_identity
 from ng_graph.nodes.scanner import scan
 
 
@@ -96,17 +97,25 @@ def _node_route_fingerprint(
     llm_overrides = state.get("llm_overrides")
     node_cfg = get_node_config(node_name, llm_overrides=llm_overrides)
     resolved_model = node_cfg.model or cfg.LLM_MODEL
+    api_base = normalize_api_base(node_cfg.api_base)
     payload = {
         "execution_mode": execution_mode,
         "node": node_name,
         "model": resolved_model,
         "fallback_model": node_cfg.fallback_model,
         "temperature": node_cfg.temperature,
-        "api_base": normalize_api_base(node_cfg.api_base),
+        "api_base": api_base,
         "chunker": state.get("chunker"),
         "refiner": state.get("refiner"),
         "refiner_top_k": state.get("refiner_top_k"),
     }
+    # Self-hosted OpenAI-compatible endpoints (e.g. llama.cpp / vLLM on
+    # localhost) may reuse the same URL for whatever model is currently loaded.
+    # The static ``model`` field doesn't distinguish them, so probe the
+    # server's /v1/models endpoint for an identity tag. Best-effort: None on
+    # failure leaves the fingerprint unchanged.
+    if api_base:
+        payload["host_served_model"] = resolve_host_model_identity(api_base)
     return hashlib.sha256(_stable_json(payload).encode()).hexdigest()[:16]
 
 

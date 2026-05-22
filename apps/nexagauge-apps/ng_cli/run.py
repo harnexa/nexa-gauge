@@ -220,7 +220,10 @@ def run(
         "--host-model-url",
         help=(
             "OpenAI-compatible host endpoint URL (for example: http://localhost:8080/v1). "
-            "When set, nexa-gauge auto-routes all branch nodes via this endpoint."
+            "When set, nexa-gauge auto-routes all branch nodes via this endpoint. "
+            "The cache fingerprint auto-disambiguates loaded models by querying "
+            "{url}/models; pass --llm-model NAME to override or supply an explicit tag "
+            "when the server doesn't expose /v1/models."
         ),
     ),
     host_model_api_key: Optional[str] = typer.Option(

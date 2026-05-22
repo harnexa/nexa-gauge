@@ -13,6 +13,7 @@ from ng_core.errors import InputParseError
 from ng_core.extensions import TransformFn
 from ng_core.types import CostEstimate
 from ng_graph.llm.config import get_judge_model, normalize_node_name
+from ng_graph.llm.host_model import resolve_host_model_identity
 from ng_graph.nodes.scanner import scan
 from ng_graph.topology import NODE_ORDER, NODES_BY_NAME, transitive_prerequisites
 from rich.console import Console
@@ -253,6 +254,22 @@ def _parse_field_overrides(
     return field_map, warnings
 
 
+def _detect_host_default_model(host_url: str) -> str:
+    """Return the default model id for a self-hosted endpoint.
+
+    Probes ``{host_url}/models`` once (cached per process by
+    :func:`resolve_host_model_identity`). When the server reports a single
+    served model, returns ``openai/<served-id>`` so the routing summary and
+    the actual litellm call both reflect what's loaded. Falls back to the
+    :data:`HOST_MODEL_ROUTE` sentinel when the probe fails, returns nothing,
+    or reports multiple models (we can't pick one).
+    """
+    probed = resolve_host_model_identity(host_url)
+    if not probed or "|" in probed:
+        return HOST_MODEL_ROUTE
+    return f"openai/{probed}"
+
+
 def _resolve_runtime_llm_overrides(
     *,
     target_node: str,
@@ -303,19 +320,24 @@ def _resolve_runtime_llm_overrides(
     raw_host_model_url = getattr(host_model_url, "default", host_model_url)
     host_url = _validate_and_normalize_host_model_url(raw_host_model_url)
     if host_url is not None:
-        if global_model_from_flag is not None or model_overrides:
-            warnings.append(
-                "Ignoring --llm-model because --host-model-url is set (host-model routing wins)."
-            )
-        if global_fallback_from_flag is not None or fallback_overrides:
-            warnings.append(
-                "Ignoring --llm-fallback because --host-model-url is set (host-model routing wins)."
-            )
-
-        resolved_models = {node: HOST_MODEL_ROUTE for node in branch_nodes}
-        resolved_fallbacks = {node: HOST_MODEL_ROUTE for node in branch_nodes}
+        # --host-model-url wins on api_base/api_key routing, but --llm-model /
+        # --llm-fallback are honoured so the user can tag the served model.
+        # When no explicit model name is supplied, probe {url}/models so the
+        # routing summary and litellm call both reflect what the server is
+        # actually serving. Falls back to the HOST_MODEL_ROUTE sentinel when
+        # the probe fails or the server reports multiple models.
+        host_default = _detect_host_default_model(host_url)
+        host_primary = global_model_from_flag or host_default
+        host_fallback = global_fallback_from_flag or host_default
+        resolved_models = {node: host_primary for node in branch_nodes}
+        resolved_fallbacks = {node: host_fallback for node in branch_nodes}
+        for node, model in model_overrides.items():
+            if node in branch_set:
+                resolved_models[node] = model
+        for node, model in fallback_overrides.items():
+            if node in branch_set:
+                resolved_fallbacks[node] = model
         resolved_api_bases = {node: host_url for node in branch_nodes}
-
         raw_host_model_api_key = getattr(host_model_api_key, "default", host_model_api_key)
         explicit_api_key = str(raw_host_model_api_key or "").strip() or None
         if explicit_api_key is not None:
@@ -323,8 +345,11 @@ def _resolve_runtime_llm_overrides(
         elif _is_local_host_model_url(host_url):
             resolved_api_keys = {node: "local" for node in branch_nodes}
 
+    effective_primary = (
+        (global_model_from_flag or host_default) if host_url is not None else global_primary
+    )
     return (
-        (HOST_MODEL_ROUTE if host_url is not None else global_primary),
+        effective_primary,
         {
             "models": resolved_models,
             "fallback_models": resolved_fallbacks,
