@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.14](https://github.com/harnexa/nexa-gauge/compare/v0.1.13...v0.1.14) (2026-05-23)
+
+
+### Bug Fixes
+
+* self-hosted model cache disambiguation, litellm 1.85, relevance prompt ([#53](https://github.com/harnexa/nexa-gauge/issues/53)) ([2e550cc](https://github.com/harnexa/nexa-gauge/commit/2e550cc1863dd76bd2df5b7f84deb5d1de417839))
+
 ## [0.1.13](https://github.com/harnexa/nexa-gauge/compare/v0.1.12...v0.1.13) (2026-05-17)
 
 
