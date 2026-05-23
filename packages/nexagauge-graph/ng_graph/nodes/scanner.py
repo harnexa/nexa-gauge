@@ -23,8 +23,8 @@ from ng_core.types import (
 )
 from ng_core.utils import _count_tokens
 
-_GEVAL_ITEM_FIELDS = {"question", "generation", "reference", "context"}
-_REDTEAM_ITEM_FIELDS = {"question", "generation", "reference", "context"}
+_GEVAL_ITEM_FIELDS = {"input", "output", "reference", "context"}
+_REDTEAM_ITEM_FIELDS = {"input", "output", "reference", "context"}
 
 
 class GraphEvalCase(TypedDict, total=False):
@@ -122,7 +122,7 @@ def _build_geval(raw_geval: Any) -> Geval | None:
                 if normalized_field in _GEVAL_ITEM_FIELDS:
                     item_fields.append(normalized_field)
         if not item_fields:
-            item_fields = ["generation"]
+            item_fields = ["output"]
 
         raw_criteria = metric_raw.get("criteria")
         if hasattr(raw_criteria, "model_dump"):
@@ -210,7 +210,7 @@ def _build_redteam(raw_redteam: Any) -> Redteam | None:
                 if normalized_field in _REDTEAM_ITEM_FIELDS:
                     item_fields.append(normalized_field)
         if not item_fields:
-            item_fields = ["generation"]
+            item_fields = ["output"]
 
         metrics.append(
             RedteamMetricInput(
@@ -227,8 +227,8 @@ def _build_redteam(raw_redteam: Any) -> Redteam | None:
 
 def _build_inputs(record: Mapping[str, Any], *, idx: int = 0) -> Inputs:
     case_id = _normalize_text(resolve_alias(record, "case_id", f"record-{idx}"))
-    generation_text = _normalize_text(resolve_alias(record, "generation"))
-    question_text = _normalize_text(resolve_alias(record, "question"))
+    output_text = _normalize_text(resolve_alias(record, "output"))
+    input_text = _normalize_text(resolve_alias(record, "input"))
     reference_text = _normalize_text(resolve_alias(record, "reference"))
     context_text = _normalize_context_text(resolve_alias(record, "context"))
     geval = _build_geval(resolve_alias(record, "geval"))
@@ -236,11 +236,9 @@ def _build_inputs(record: Mapping[str, Any], *, idx: int = 0) -> Inputs:
 
     return Inputs(
         case_id=case_id,
-        generation=Item(text=generation_text, tokens=float(_count_tokens(generation_text))),
-        question=(
-            Item(text=question_text, tokens=float(_count_tokens(question_text)))
-            if question_text
-            else None
+        output=Item(text=output_text, tokens=float(_count_tokens(output_text))),
+        input=(
+            Item(text=input_text, tokens=float(_count_tokens(input_text))) if input_text else None
         ),
         reference=(
             Item(text=reference_text, tokens=float(_count_tokens(reference_text)))
@@ -254,8 +252,8 @@ def _build_inputs(record: Mapping[str, Any], *, idx: int = 0) -> Inputs:
         ),
         geval=geval,
         redteam=redteam,
-        has_generation=bool(generation_text),
-        has_question=bool(question_text),
+        has_output=bool(output_text),
+        has_input=bool(input_text),
         has_reference=bool(reference_text),
         has_context=bool(context_text),
         has_geval=geval is not None,

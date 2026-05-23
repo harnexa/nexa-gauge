@@ -227,23 +227,23 @@ def test_report_for_grounding_target_includes_inputs_and_branch_nodes(graph_modu
         "target_node": "grounding",
         "record": {
             "case_id": "case-1",
-            "generation": "Paris is the capital of France.",
-            "question": "What is the capital of France?",
+            "output": "Paris is the capital of France.",
+            "input": "What is the capital of France?",
             "reference": "Paris",
             "context": "France has Paris as its capital.",
         },
         "inputs": Inputs(
             case_id="case-1",
-            generation=Item(text="Paris is the capital of France.", tokens=7.0),
-            question=Item(text="What is the capital of France?", tokens=7.0),
+            output=Item(text="Paris is the capital of France.", tokens=7.0),
+            input=Item(text="What is the capital of France?", tokens=7.0),
             context=Item(text="France has Paris as its capital.", tokens=7.0),
             reference=Item(text="Paris", tokens=1.0),
-            has_generation=True,
-            has_question=True,
+            has_output=True,
+            has_input=True,
             has_context=True,
             has_reference=True,
         ),
-        "generation_chunk": ChunkArtifacts(
+        "output_chunk": ChunkArtifacts(
             chunks=[
                 Chunk(
                     index=0,
@@ -255,7 +255,7 @@ def test_report_for_grounding_target_includes_inputs_and_branch_nodes(graph_modu
             ],
             cost=CostEstimate(cost=0.0, input_tokens=0.0, output_tokens=0.0),
         ),
-        "generation_claims": ClaimArtifacts(
+        "output_claims": ClaimArtifacts(
             claims=[
                 Claim(
                     item=Item(text="Paris is the capital of France.", tokens=7.0),
@@ -265,7 +265,7 @@ def test_report_for_grounding_target_includes_inputs_and_branch_nodes(graph_modu
             ],
             cost=CostEstimate(cost=0.001, input_tokens=10.0, output_tokens=3.0),
         ),
-        "generation_refined_chunks": ChunkArtifacts(
+        "output_refined_chunks": ChunkArtifacts(
             chunks=[
                 Chunk(
                     index=0,
@@ -310,20 +310,20 @@ def test_report_for_grounding_target_includes_inputs_and_branch_nodes(graph_modu
     # Always-present sections
     assert report["target_node"] == "grounding"
     assert report["input"]["case_id"] == "case-1"
-    assert report["input"]["question"] == "What is the capital of France?"
-    assert report["input"]["generation"] == "Paris is the capital of France."
+    assert report["input"]["input"] == "What is the capital of France?"
+    assert report["input"]["output"] == "Paris is the capital of France."
     assert report["input"]["context"] == "France has Paris as its capital."
     assert report["input"]["reference"] == "Paris"
 
     # Chunk section
-    assert report["generation_chunk"]["text"] == ["Paris is the capital of France."]
+    assert report["output_chunk"]["text"] == ["Paris is the capital of France."]
 
     # Claims section
-    assert report["generation_claims"]["text"] == ["Paris is the capital of France."]
-    assert report["generation_claims"]["cost"]["cost"] == pytest.approx(0.001)
+    assert report["output_claims"]["text"] == ["Paris is the capital of France."]
+    assert report["output_claims"]["cost"]["cost"] == pytest.approx(0.001)
 
     # Refined chunks section
-    assert report["generation_refined_chunks"]["text"] == ["Paris is the capital of France."]
+    assert report["output_refined_chunks"]["text"] == ["Paris is the capital of France."]
 
     # Grounding section
     assert isinstance(report["grounding_metrics"]["metrics"], list)

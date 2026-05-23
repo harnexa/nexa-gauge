@@ -8,7 +8,7 @@ Sometimes your Logs or a HuggingFace dataset doesn't fit nexa-gauge's expected i
 
 | Mismatch | Use |
 |---|---|
-| Same data, different column name (`text` → `generation`) | `--field generation=text` |
+| Same data, different column name (`text` → `output`) | `--field output=text` |
 | Structural reshape (nested dict, multiple source columns → one field, etc.) | `--extension-file ... --transform ...` |
 | Both | Both — transform runs first, then aliases resolve column names on the result. |
 
@@ -30,8 +30,8 @@ def hotpot_qa(record: dict) -> dict:
     ]
     return {
         "case_id":    record.get("id"),
-        "question":   record["question"],
-        "generation": record["answer"],
+        "input":   record["input"],
+        "output": record["answer"],
         "context":    paragraphs,
         "reference":  record["answer"],
     }
@@ -40,7 +40,7 @@ def hotpot_qa(record: dict) -> dict:
 The contract:
 
 - **Input:** one raw record dict (whatever the adapter yields).
-- **Output:** a dict with any subset of `case_id`, `question`, `generation`, `context`, `reference`. Keys not listed are ignored.
+- **Output:** a dict with any subset of `case_id`, `input`, `output`, `context`, `reference`. Keys not listed are ignored.
 - **Pure and threadsafe.** No I/O, no shared mutable state.
 - **Errors** raise as `InputParseError` with the record index, so they show up in the CLI error path uniformly.
 
@@ -69,7 +69,7 @@ nexagauge run eval \
   --input hf://my-team/dataset \
   --extension-file ./my_transforms.py \
   --transform team_dataset \
-  --field question=user_question
+  --field input=user_question
 ```
 
 The transform runs first, then `--field` aliases resolve column names on the transformed dict.

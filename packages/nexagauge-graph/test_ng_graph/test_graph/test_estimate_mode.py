@@ -4,12 +4,12 @@ import pytest
 from ng_core.types import ChunkArtifacts, CostEstimate, Inputs, Item
 
 
-def test_node_generation_claims_estimate_calls_estimate_without_chunks(
+def test_node_output_claims_estimate_calls_estimate_without_chunks(
     graph_module, monkeypatch
 ) -> None:
     """Verify claims node estimate mode calls estimate() with zero chunks.
 
-    Run: uv run pytest -s packages/nexagauge-graph/test_ng_graph/test_graph/test_estimate_mode.py::test_node_generation_claims_estimate_calls_estimate_without_chunks
+    Run: uv run pytest -s packages/nexagauge-graph/test_ng_graph/test_graph/test_estimate_mode.py::test_node_output_claims_estimate_calls_estimate_without_chunks
     """
     captured: dict[str, object] = {}
 
@@ -37,24 +37,24 @@ def test_node_generation_claims_estimate_calls_estimate_without_chunks(
         "execution_mode": "estimate",
         "inputs": Inputs(
             case_id="case-estimate-claims",
-            generation=Item(text="Paris is in France.", tokens=4),
-            has_generation=True,
+            output=Item(text="Paris is in France.", tokens=4),
+            has_output=True,
         ),
-        "generation_chunk": ChunkArtifacts(
+        "output_chunk": ChunkArtifacts(
             chunks=[],
             cost=CostEstimate(cost=0.0, input_tokens=None, output_tokens=None),
         ),
         "llm_overrides": llm_overrides,
     }
 
-    out = graph_module.node_generation_claims(state)
+    out = graph_module.node_output_claims(state)
 
     assert captured["resolved_node_name"] == "claims"
     assert captured["constructor_model"] == "resolved-claims-model"
     assert captured["constructor_overrides"] == llm_overrides
     assert captured["estimate_chunk_count"] == 0
-    assert out["generation_claims"].claims == []
-    assert out["generation_claims"].cost.cost == 0.123
+    assert out["output_claims"].claims == []
+    assert out["output_claims"].cost.cost == 0.123
     assert out["estimated_costs"]["claims"].cost == 0.123
 
 
@@ -91,12 +91,12 @@ def test_node_grounding_estimate_calls_estimate_without_claim_artifact(
         "execution_mode": "estimate",
         "inputs": Inputs(
             case_id="case-estimate-grounding",
-            generation=Item(text="Paris is in France.", tokens=4),
+            output=Item(text="Paris is in France.", tokens=4),
             context=None,
-            has_generation=True,
+            has_output=True,
             has_context=False,
         ),
-        "generation_claims": None,
+        "output_claims": None,
         "llm_overrides": llm_overrides,
     }
 
@@ -126,11 +126,11 @@ def test_node_relevance_estimate_calls_estimate_with_claims_and_question(
             captured["constructor_model"] = judge_model
             captured["constructor_overrides"] = llm_overrides
 
-        def run(self, claims, question):
+        def run(self, claims, input):
             raise AssertionError("run() should not be called in estimate mode")
 
-        def estimate(self, question) -> CostEstimate:
-            captured["estimate_question"] = question
+        def estimate(self, input) -> CostEstimate:
+            captured["estimate_question"] = input
             return CostEstimate(cost=0.234, input_tokens=0.0, output_tokens=0.0)
 
     monkeypatch.setattr(graph_module, "get_judge_model", _fake_get_judge_model)
@@ -141,12 +141,12 @@ def test_node_relevance_estimate_calls_estimate_with_claims_and_question(
         "execution_mode": "estimate",
         "inputs": Inputs(
             case_id="case-estimate-relevance",
-            generation=Item(text="Paris is in France.", tokens=4),
-            question=Item(text="Where is Paris?", tokens=4),
-            has_generation=True,
-            has_question=True,
+            output=Item(text="Paris is in France.", tokens=4),
+            input=Item(text="Where is Paris?", tokens=4),
+            has_output=True,
+            has_input=True,
         ),
-        "generation_claims": None,
+        "output_claims": None,
         "llm_overrides": llm_overrides,
     }
 
@@ -155,7 +155,7 @@ def test_node_relevance_estimate_calls_estimate_with_claims_and_question(
     assert captured["resolved_node_name"] == "relevance"
     assert captured["constructor_model"] == "resolved-relevance-model"
     assert captured["constructor_overrides"] == llm_overrides
-    assert captured["estimate_question"] == state["inputs"].question
+    assert captured["estimate_question"] == state["inputs"].input
     assert out["relevance_metrics"].metrics == []
     assert out["relevance_metrics"].cost.cost == 0.234
     assert out["estimated_costs"]["relevance"].cost == 0.234

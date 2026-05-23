@@ -124,8 +124,8 @@ class GevalStepsNode(BaseMetricNode):
       produce "Verify the summary …" against a criterion that has no summary
       field. Phase 2 has nothing to fill in.
     - **Cache collision.** Two metrics with the same criteria but different
-      ``item_fields`` (one with ``["generation"]``, one with
-      ``["generation", "reference"]``) used to collide on signature and reuse
+      ``item_fields`` (one with ``["output"]``, one with
+      ``["output", "reference"]``) used to collide on signature and reuse
       the wrong steps. ``item_fields`` is now part of the signature.
     """
 
@@ -253,7 +253,7 @@ class GevalStepsNode(BaseMetricNode):
         ]
         if len(raw_steps) < 2:
             raise RuntimeError(
-                f"GEval steps generation for metric '{metric_name}' produced "
+                f"GEval steps output for metric '{metric_name}' produced "
                 f"{len(raw_steps)} steps (need at least 2)."
             )
 

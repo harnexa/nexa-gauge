@@ -46,8 +46,8 @@ def _build_initial_state(
     """Construct the initial :class:`EvalCase` state from a raw input record."""
     record = {
         "case_id": _case_id(case),
-        "generation": resolve_alias(case, "generation"),
-        "question": resolve_alias(case, "question"),
+        "output": resolve_alias(case, "output"),
+        "input": resolve_alias(case, "input"),
         "reference": resolve_alias(case, "reference"),
         "context": resolve_alias(case, "context") or [],
         "geval": resolve_alias(case, "geval"),

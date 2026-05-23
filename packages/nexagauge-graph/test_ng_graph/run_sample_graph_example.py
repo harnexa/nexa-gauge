@@ -86,21 +86,21 @@ def _run_mocked_graph_eval() -> None:
     def fake_scan(state: dict[str, Any]) -> dict[str, Any]:
         return {
             "inputs": {
-                "generation": state.get("generation"),
-                "question": state.get("question"),
+                "output": state.get("output"),
+                "input": state.get("input"),
                 "reference": state.get("reference"),
                 "context": state.get("context"),
             }
         }
 
     def fake_chunk(_state: dict[str, Any]) -> dict[str, Any]:
-        return {"generation_chunk": {"chunks": [{"text": "chunk-1"}]}}
+        return {"output_chunk": {"chunks": [{"text": "chunk-1"}]}}
 
     def fake_claims(_state: dict[str, Any]) -> dict[str, Any]:
-        return {"generation_claims": {"claims": [{"id": "c1"}], "cost": []}}
+        return {"output_claims": {"claims": [{"id": "c1"}], "cost": []}}
 
     def fake_refiner(_state: dict[str, Any]) -> dict[str, Any]:
-        return {"generation_refined_chunks": {"chunks": [{"text": "chunk-1"}], "cost": []}}
+        return {"output_refined_chunks": {"chunks": [{"text": "chunk-1"}], "cost": []}}
 
     def fake_geval_steps(_state: dict[str, Any]) -> dict[str, Any]:
         return {"geval_steps_by_signature": {}}
@@ -148,9 +148,9 @@ def _run_mocked_graph_eval() -> None:
         return {}
 
     graph.node_metadata_scanner = fake_scan
-    graph.node_generation_chunk = fake_chunk
-    graph.node_generation_claims = fake_claims
-    graph.node_generation_refiner = fake_refiner
+    graph.node_output_chunk = fake_chunk
+    graph.node_output_claims = fake_claims
+    graph.node_output_refiner = fake_refiner
     graph.node_geval_steps = fake_geval_steps
     graph.node_relevance = fake_relevance
     graph.node_grounding = fake_grounding
@@ -165,8 +165,8 @@ def _run_mocked_graph_eval() -> None:
     first = records[0]
     state = {
         "case_id": first.get("case_id", "case-0"),
-        "generation": first.get("generation"),
-        "question": first.get("question"),
+        "output": first.get("output"),
+        "input": first.get("input"),
         "reference": first.get("reference"),
         "context": first.get("context"),
         "cost_estimate": None,

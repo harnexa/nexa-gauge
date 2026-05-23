@@ -13,8 +13,8 @@ def test_compute_case_fingerprint_handles_scalar_context() -> None:
     """
     case = {
         "case_id": "scalar-ctx",
-        "generation": "g",
-        "question": "q",
+        "output": "g",
+        "input": "q",
         "context": 42,
     }
     fp = _compute_case_fingerprint(case)
@@ -25,15 +25,15 @@ def test_compute_case_fingerprint_stable_across_alias_spellings() -> None:
     """Same logical content under different alias keys hashes identically."""
     a = {
         "case_id": "c1",
-        "generation": "the answer",
-        "question": "the question",
+        "output": "the answer",
+        "input": "the input",
         "reference": "the truth",
         "context": "some context",
     }
     b = {
         "case_id": "c1",
         "answer": "the answer",
-        "query": "the question",
+        "query": "the input",
         "gold_answer": "the truth",
         "documents": "some context",
     }

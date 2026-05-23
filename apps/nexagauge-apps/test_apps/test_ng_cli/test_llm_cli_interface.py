@@ -322,14 +322,14 @@ def test_is_case_eligible_for_target_path_requires_full_grounding_branch() -> No
     assert (
         _is_case_eligible_for_target_path(
             target_node="grounding",
-            case={"case_id": "c1", "generation": "hello", "context": "ctx"},
+            case={"case_id": "c1", "output": "hello", "context": "ctx"},
         )
         is True
     )
     assert (
         _is_case_eligible_for_target_path(
             target_node="grounding",
-            case={"case_id": "c2", "generation": "hello"},
+            case={"case_id": "c2", "output": "hello"},
         )
         is False
     )
@@ -339,7 +339,7 @@ def test_is_case_eligible_for_eval_keeps_non_intersection_records() -> None:
     assert (
         _is_case_eligible_for_target_path(
             target_node="eval",
-            case={"case_id": "c1", "generation": "hello"},
+            case={"case_id": "c1", "output": "hello"},
         )
         is True
     )
@@ -360,7 +360,7 @@ def test_estimate_command_uses_estimate_execution_mode(monkeypatch: pytest.Monke
     class _Adapter:
         def iter_cases(self, split: str = "train", limit: int | None = None):
             del split, limit
-            yield {"case_id": "c1", "generation": "hello", "context": "ctx"}
+            yield {"case_id": "c1", "output": "hello", "context": "ctx"}
 
     class _Runner:
         def __init__(self, cache_store):
@@ -419,7 +419,7 @@ def test_estimate_command_host_model_url_injects_api_base_and_local_model(
     class _Adapter:
         def iter_cases(self, split: str = "train", limit: int | None = None):
             del split, limit
-            yield {"case_id": "c1", "generation": "hello", "context": "ctx"}
+            yield {"case_id": "c1", "output": "hello", "context": "ctx"}
 
     class _Runner:
         def __init__(self, cache_store):
@@ -478,8 +478,8 @@ def test_estimate_command_filters_ineligible_cases_for_grounding(
     class _Adapter:
         def iter_cases(self, split: str = "train", limit: int | None = None):
             del split, limit
-            yield {"case_id": "no-context", "generation": "hello"}
-            yield {"case_id": "with-context", "generation": "hello", "context": "ctx"}
+            yield {"case_id": "no-context", "output": "hello"}
+            yield {"case_id": "with-context", "output": "hello", "context": "ctx"}
 
     class _Runner:
         def __init__(self, cache_store):
@@ -528,8 +528,8 @@ def test_estimate_command_uses_all_selected_records_as_denominator(
     class _Adapter:
         def iter_cases(self, split: str = "train", limit: int | None = None):
             del split, limit
-            yield {"case_id": "no-context", "generation": "hello"}
-            yield {"case_id": "with-context", "generation": "hello", "context": "ctx"}
+            yield {"case_id": "no-context", "output": "hello"}
+            yield {"case_id": "with-context", "output": "hello", "context": "ctx"}
 
     class _Runner:
         def __init__(self, cache_store):
@@ -543,7 +543,7 @@ def test_estimate_command_uses_all_selected_records_as_denominator(
                     result=SimpleNamespace(
                         final_state={
                             "estimated_costs": {},
-                            "inputs": SimpleNamespace(has_generation=True, has_context=True),
+                            "inputs": SimpleNamespace(has_output=True, has_context=True),
                         },
                         executed_nodes=["scan"],
                         cached_nodes=[],
@@ -589,8 +589,8 @@ def test_run_command_filters_ineligible_cases_for_grounding(
     class _Adapter:
         def iter_cases(self, split: str = "train", limit: int | None = None):
             del split, limit
-            yield {"case_id": "no-context", "generation": "hello"}
-            yield {"case_id": "with-context", "generation": "hello", "context": "ctx"}
+            yield {"case_id": "no-context", "output": "hello"}
+            yield {"case_id": "with-context", "output": "hello", "context": "ctx"}
 
     class _Runner:
         def __init__(self, cache_store):
@@ -643,7 +643,7 @@ def test_run_command_host_model_url_injects_api_base_and_local_model(
     class _Adapter:
         def iter_cases(self, split: str = "train", limit: int | None = None):
             del split, limit
-            yield {"case_id": "with-context", "generation": "hello", "context": "ctx"}
+            yield {"case_id": "with-context", "output": "hello", "context": "ctx"}
 
     class _Runner:
         def __init__(self, cache_store):
@@ -700,7 +700,7 @@ def test_run_command_does_not_prefetch_all_cases(monkeypatch: pytest.MonkeyPatch
     class _Adapter:
         def iter_cases(self, split: str = "train", limit: int | None = None):
             del split, limit
-            yield {"case_id": "c1", "generation": "hello", "context": "ctx"}
+            yield {"case_id": "c1", "output": "hello", "context": "ctx"}
             raise AssertionError("run() should not prefetch additional records")
 
     class _Runner:
@@ -752,7 +752,7 @@ def test_run_command_sets_llm_concurrency(monkeypatch: pytest.MonkeyPatch) -> No
     class _Adapter:
         def iter_cases(self, split: str = "train", limit: int | None = None):
             del split, limit
-            yield {"case_id": "c1", "generation": "hello", "context": "ctx"}
+            yield {"case_id": "c1", "output": "hello", "context": "ctx"}
 
     class _Runner:
         def __init__(self, cache_store):
@@ -810,11 +810,11 @@ def test_run_debug_summary_uses_per_node_eligible_counts(
             del split, limit
             yield {
                 "case_id": "with-context",
-                "generation": "hello",
-                "question": "q",
+                "output": "hello",
+                "input": "q",
                 "context": "ctx",
             }
-            yield {"case_id": "no-context", "generation": "hello", "question": "q"}
+            yield {"case_id": "no-context", "output": "hello", "input": "q"}
 
     class _Runner:
         def __init__(self, cache_store):
@@ -885,7 +885,7 @@ def test_run_command_passes_eval_collector_and_renders_from_snapshot(
     class _Adapter:
         def iter_cases(self, split: str = "train", limit: int | None = None):
             del split, limit
-            yield {"case_id": "c1", "generation": "hello"}
+            yield {"case_id": "c1", "output": "hello"}
 
     class _Runner:
         def __init__(self, cache_store):
@@ -966,7 +966,7 @@ def test_run_command_writes_case_report_and_metric_breakdowns(
     class _Adapter:
         def iter_cases(self, split: str = "train", limit: int | None = None):
             del split, limit
-            yield {"case_id": "c1", "generation": "hello"}
+            yield {"case_id": "c1", "output": "hello"}
 
     class _Runner:
         def __init__(self, cache_store):
@@ -1047,7 +1047,7 @@ def test_run_command_forwards_chunker_and_refiner_overrides(
     class _Adapter:
         def iter_cases(self, split: str = "train", limit: int | None = None):
             del split, limit
-            yield {"case_id": "c1", "generation": "hello", "context": "ctx"}
+            yield {"case_id": "c1", "output": "hello", "context": "ctx"}
 
     class _Runner:
         def __init__(self, cache_store):

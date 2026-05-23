@@ -12,9 +12,9 @@ def test_run_returns_reference_metrics_for_item_inputs() -> None:
     node = ReferenceNode()
 
     result = node.run(
-        generation=Item(text="Paris is the capital of France.", tokens=7),
+        output=Item(text="Paris is the capital of France.", tokens=7),
         reference=Item(text="Paris is the capital of France.", tokens=7),
-        enable_generation_metrics=True,
+        enable_output_metrics=True,
     )
 
     assert len(result.metrics) == 5
@@ -31,9 +31,9 @@ def test_run_accepts_string_inputs() -> None:
     node = ReferenceNode()
 
     result = node.run(
-        generation="The sky is blue.",
+        output="The sky is blue.",
         reference="The sky is blue.",
-        enable_generation_metrics=True,
+        enable_output_metrics=True,
     )
 
     assert len(result.metrics) == 5
@@ -43,15 +43,15 @@ def test_run_accepts_string_inputs() -> None:
 def test_run_skips_when_disabled_or_reference_missing() -> None:
     node = ReferenceNode()
 
-    disabled = node.run(generation="answer", reference="reference", enable_generation_metrics=False)
+    disabled = node.run(output="answer", reference="reference", enable_output_metrics=False)
     assert disabled.metrics == []
     assert disabled.cost.cost == 0.0
 
-    no_reference = node.run(generation="answer", reference=None, enable_generation_metrics=True)
+    no_reference = node.run(output="answer", reference=None, enable_output_metrics=True)
     assert no_reference.metrics == []
     assert no_reference.cost.cost == 0.0
 
-    blank_reference = node.run(generation="answer", reference="   ", enable_generation_metrics=True)
+    blank_reference = node.run(output="answer", reference="   ", enable_output_metrics=True)
     assert blank_reference.metrics == []
     assert blank_reference.cost.cost == 0.0
 
@@ -78,9 +78,9 @@ def test_run_meteor_falls_back_when_wordnet_path_errors(monkeypatch) -> None:
     monkeypatch.setattr(reference_module, "meteor_score", _fake_meteor_score)
 
     result = node.run(
-        generation="Paris is the capital of France.",
+        output="Paris is the capital of France.",
         reference="Paris is the capital of France.",
-        enable_generation_metrics=True,
+        enable_output_metrics=True,
     )
 
     meteor = next(m for m in result.metrics if m.name == "meteor")

@@ -39,7 +39,7 @@ class FakeLLM:
 
 
 def _three_metric_fields() -> list[str]:
-    return ["generation"]
+    return ["output"]
 
 
 @pytest.fixture
@@ -88,8 +88,8 @@ def test_successful_scoring_with_logprobs(
     node = GevalNode(judge_model="gpt-4o-mini")
     result = node.run(
         resolved_artifacts=resolved_artifacts,
-        generation=Item(text="Paris is the capital of France.", tokens=8),
-        question=Item(text="What is France's capital?", tokens=6),
+        output=Item(text="Paris is the capital of France.", tokens=8),
+        input=Item(text="What is France's capital?", tokens=6),
         reference=Item(text="The capital of France is Paris.", tokens=7),
         context=Item(text="France is in Europe.", tokens=5),
     )
@@ -119,8 +119,8 @@ def test_successful_scoring_without_logprobs(
     node = GevalNode(judge_model="gpt-4o-mini")
     result = node.run(
         resolved_artifacts=resolved_artifacts,
-        generation=Item(text="Paris.", tokens=2),
-        question=None,
+        output=Item(text="Paris.", tokens=2),
+        input=None,
         reference=None,
         context=None,
     )
@@ -135,15 +135,15 @@ def test_missing_required_fields(
     monkeypatch: pytest.MonkeyPatch,
     resolved_artifacts: list[GevalStepsResolved],
 ) -> None:
-    # Artifact requires "generation"; pass empty Item.
+    # Artifact requires "output"; pass empty Item.
     fake = FakeLLM(parsed=_GevalScoreResponse(score=5, reason="noop"))
     _install_fake_llm(monkeypatch, fake)
 
     node = GevalNode(judge_model="gpt-4o-mini")
     result = node.run(
         resolved_artifacts=resolved_artifacts,
-        generation=Item(text="   ", tokens=0),
-        question=None,
+        output=Item(text="   ", tokens=0),
+        input=None,
         reference=None,
         context=None,
     )
@@ -151,7 +151,7 @@ def test_missing_required_fields(
     m = result.metrics[0]
     assert m.score is None
     assert m.error is not None
-    assert "generation" in m.error
+    assert "output" in m.error
     assert m.verdict is None
     assert fake.captured_messages == []
 
@@ -166,8 +166,8 @@ def test_parse_error_yields_metric_error(
     node = GevalNode(judge_model="gpt-4o-mini")
     result = node.run(
         resolved_artifacts=resolved_artifacts,
-        generation=Item(text="Paris.", tokens=2),
-        question=None,
+        output=Item(text="Paris.", tokens=2),
+        input=None,
         reference=None,
         context=None,
     )
@@ -190,8 +190,8 @@ def test_pass_threshold_boundary(
     node = GevalNode(judge_model="gpt-4o-mini")
     result = node.run(
         resolved_artifacts=resolved_artifacts,
-        generation=Item(text="Paris.", tokens=2),
-        question=None,
+        output=Item(text="Paris.", tokens=2),
+        input=None,
         reference=None,
         context=None,
     )
@@ -206,8 +206,8 @@ def test_pass_threshold_boundary(
     node2 = GevalNode(judge_model="gpt-4o-mini")
     result2 = node2.run(
         resolved_artifacts=resolved_artifacts,
-        generation=Item(text="Paris.", tokens=2),
-        question=None,
+        output=Item(text="Paris.", tokens=2),
+        input=None,
         reference=None,
         context=None,
     )
@@ -226,8 +226,8 @@ def test_prompt_contains_evaluation_steps(
     node = GevalNode(judge_model="gpt-4o-mini")
     node.run(
         resolved_artifacts=resolved_artifacts,
-        generation=Item(text="Paris.", tokens=2),
-        question=None,
+        output=Item(text="Paris.", tokens=2),
+        input=None,
         reference=None,
         context=None,
     )
@@ -235,7 +235,7 @@ def test_prompt_contains_evaluation_steps(
     user_content = fake.captured_messages[0][1]["content"]
     for step in resolved_artifacts[0].evaluation_steps:
         assert step.text.strip() in user_content
-    assert "Actual Output" in user_content
+    assert "Output" in user_content
 
 
 def test_judge_model_prefix_accepted(
@@ -250,8 +250,8 @@ def test_judge_model_prefix_accepted(
     node = GevalNode(judge_model="openai/gpt-4o-mini")
     result = node.run(
         resolved_artifacts=resolved_artifacts,
-        generation=Item(text="Paris.", tokens=2),
-        question=None,
+        output=Item(text="Paris.", tokens=2),
+        input=None,
         reference=None,
         context=None,
     )
@@ -266,7 +266,7 @@ def test_multi_metric_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:
         GevalStepsResolved(
             key=name,
             name=name,
-            item_fields=["generation"],
+            item_fields=["output"],
             evaluation_steps=[
                 Item(text="Step A.", tokens=2),
                 Item(text="Step B.", tokens=2),
@@ -281,8 +281,8 @@ def test_multi_metric_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:
     node = GevalNode(judge_model="gpt-4o-mini")
     result = node.run(
         resolved_artifacts=artifacts,
-        generation=Item(text="Paris.", tokens=2),
-        question=None,
+        output=Item(text="Paris.", tokens=2),
+        input=None,
         reference=None,
         context=None,
     )

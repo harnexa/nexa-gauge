@@ -46,15 +46,15 @@ class NodeSpec:
     """
 
     # ── Eligibility ───────────────────────────────────────────────────────
-    requires_generation: bool = False
+    requires_output: bool = False
 
     # ── Eligibility ───────────────────────────────────────────────────────
     requires_context: bool = False
     """Skip this node when the case has no context passages."""
 
     # ── Eligibility ───────────────────────────────────────────────────────
-    requires_question: bool = False
-    """Skip this node when the case has no question text."""
+    requires_input: bool = False
+    """Skip this node when the case has no input text."""
 
     requires_geval: bool = False
     """Skip this node when the case has no GEval metrics."""
@@ -73,7 +73,7 @@ class NodeSpec:
 
     # ── Artifact contract ───────────────────────────────────────────────────
     stream: str | None = None
-    """Namespace prefix for state keys, e.g. ``generation`` or ``context``."""
+    """Namespace prefix for state keys, e.g. ``output`` or ``context``."""
 
     state_key: str | None = None
     """Primary output state key for this node."""
@@ -131,9 +131,9 @@ PIPELINE: list[NodeSpec] = [
     NodeSpec(
         name="chunk",
         prerequisites=("scan",),
-        requires_generation=True,
-        stream="generation",
-        state_key="generation_chunk",
+        requires_output=True,
+        stream="output",
+        state_key="output_chunk",
         artifact_in_kind="inputs",
         artifact_out_kind="chunks",
         color="blue",
@@ -143,9 +143,9 @@ PIPELINE: list[NodeSpec] = [
     NodeSpec(
         name="refiner",
         prerequisites=("chunk",),
-        requires_generation=True,
-        stream="generation",
-        state_key="generation_refined_chunks",
+        requires_output=True,
+        stream="output",
+        state_key="output_refined_chunks",
         artifact_in_kind="chunks",
         artifact_out_kind="chunks",
         is_transform=True,
@@ -157,9 +157,9 @@ PIPELINE: list[NodeSpec] = [
     NodeSpec(
         name="claims",
         prerequisites=("refiner",),
-        requires_generation=True,
-        stream="generation",
-        state_key="generation_claims",
+        requires_output=True,
+        stream="output",
+        state_key="output_claims",
         artifact_in_kind="chunks",
         artifact_out_kind="claims",
         route_via_artifact_graph=True,
@@ -170,7 +170,7 @@ PIPELINE: list[NodeSpec] = [
     NodeSpec(
         name="geval_steps",
         prerequisites=("scan",),
-        requires_generation=True,
+        requires_output=True,
         requires_geval=True,
         state_key="geval_steps",
         artifact_in_kind="inputs",
@@ -182,8 +182,8 @@ PIPELINE: list[NodeSpec] = [
     NodeSpec(
         name="relevance",
         prerequisites=("claims",),
-        requires_generation=True,
-        requires_question=True,
+        requires_output=True,
+        requires_input=True,
         state_key="relevance_metrics",
         artifact_in_kind="claims",
         artifact_out_kind="metric_results",
@@ -195,7 +195,7 @@ PIPELINE: list[NodeSpec] = [
     NodeSpec(
         name="grounding",
         prerequisites=("claims",),
-        requires_generation=True,
+        requires_output=True,
         requires_context=True,
         state_key="grounding_metrics",
         artifact_in_kind="claims",
@@ -208,7 +208,7 @@ PIPELINE: list[NodeSpec] = [
     NodeSpec(
         name="redteam",
         prerequisites=("scan",),
-        requires_generation=True,
+        requires_output=True,
         state_key="redteam_metrics",
         artifact_in_kind="inputs",
         artifact_out_kind="metric_results",
@@ -219,7 +219,7 @@ PIPELINE: list[NodeSpec] = [
     NodeSpec(
         name="geval",
         prerequisites=("geval_steps",),
-        requires_generation=True,
+        requires_output=True,
         requires_geval=True,
         state_key="geval_metrics",
         artifact_in_kind="geval_steps",
@@ -231,7 +231,7 @@ PIPELINE: list[NodeSpec] = [
     NodeSpec(
         name="reference",
         prerequisites=("scan",),
-        requires_generation=True,
+        requires_output=True,
         requires_reference=True,
         state_key="reference_metrics",
         artifact_in_kind="inputs",

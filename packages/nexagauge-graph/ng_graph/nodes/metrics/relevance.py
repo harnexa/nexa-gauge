@@ -36,23 +36,23 @@ class RelevanceNode(BaseMetricNode):
     node_name = "relevance"
     SYSTEM_PROMPT = (
         "You are an answer relevance judge. Evaluate only whether each statement "
-        "addresses the user's question. Do not judge factual correctness, truth, "
+        "addresses the user's input. Do not judge factual correctness, truth, "
         "or whether the statement is supported by evidence."
     )
     USER_PROMPT = (
-        "Question: {question}\n\n"
+        "Input: {input}\n\n"
         "Statements extracted from an answer (one per line):\n{claims}\n\n"
         "For each statement, return true if it is on-topic and responsive to the "
-        "question, even if the statement may be factually wrong. Return false only "
+        "input, even if the statement may be factually wrong. Return false only "
         "if the statement is unrelated, off-topic, or does not help answer the "
-        "question.\n\n"
+        "input.\n\n"
         "Return a JSON object with key 'verdicts' containing a list of booleans "
         "(true = relevant, false = not relevant) in the same order."
     )
     static_prompt_tokens: int = _count_tokens(SYSTEM_PROMPT) + template_static_tokens(USER_PROMPT)
 
     def _answer_relevancy(
-        self, claims: list[Claim], question: str
+        self, claims: list[Claim], input: str
     ) -> Tuple[MetricResult, CostEstimate]:
         numbered = "\n".join(f"{i + 1}. {c.item.text}" for i, c in enumerate(claims))
         response = get_llm(
@@ -65,7 +65,7 @@ class RelevanceNode(BaseMetricNode):
                 {"role": "system", "content": self.SYSTEM_PROMPT},
                 {
                     "role": "user",
-                    "content": self.USER_PROMPT.format(question=question, claims=numbered),
+                    "content": self.USER_PROMPT.format(input=input, claims=numbered),
                 },
             ]
         )
@@ -119,7 +119,7 @@ class RelevanceNode(BaseMetricNode):
     def run(  # type: ignore[override]
         self,
         claims: list[Claim],
-        question: Item | str | None,
+        input: Item | str | None,
         enable_relevance: bool = True,
     ) -> RelevanceMetrics:
         self._reset_model_usage()
@@ -130,24 +130,22 @@ class RelevanceNode(BaseMetricNode):
                 cost=zero_cost,
             )
 
-        if isinstance(question, Item):
-            question_text = question.text
+        if isinstance(input, Item):
+            input_text = input.text
         else:
-            question_text = question or ""
+            input_text = input or ""
 
-        if not question_text.strip():
-            log.info("No question provided — skipping answer relevancy")
+        if not input_text.strip():
+            log.info("No input provided — skipping answer relevancy")
             return RelevanceMetrics(metrics=[], cost=zero_cost)
 
-        result, cost = self._answer_relevancy(claims=claims, question=question_text)
+        result, cost = self._answer_relevancy(claims=claims, input=input_text)
         return RelevanceMetrics(metrics=[result], cost=cost)
 
-    def estimate(self, question: Item | str | None) -> CostEstimate:
+    def estimate(self, input: Item | str | None) -> CostEstimate:
         self._reset_model_usage()
         question_tokens = (
-            float(question.tokens)
-            if isinstance(question, Item)
-            else float(_count_tokens(question or ""))
+            float(input.tokens) if isinstance(input, Item) else float(_count_tokens(input or ""))
         )
         input_tokens = (
             self.static_prompt_tokens

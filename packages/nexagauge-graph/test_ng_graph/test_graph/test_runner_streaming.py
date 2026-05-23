@@ -130,7 +130,7 @@ def test_run_cases_iter_keeps_input_order_with_concurrency(monkeypatch) -> None:
     monkeypatch.setitem(runner_module.NODE_FNS, "scan", _fake_scan)
 
     runner = CachedNodeRunner(cache_store=NoOpCacheStore())
-    cases = [{"case_id": f"case-{i}", "generation": "hello"} for i in range(4)]
+    cases = [{"case_id": f"case-{i}", "output": "hello"} for i in range(4)]
     outcomes = list(
         runner.run_cases_iter(
             cases=cases,
@@ -161,7 +161,7 @@ def test_run_cases_iter_fail_fast_stops_after_first_ordered_failure(monkeypatch)
     monkeypatch.setitem(runner_module.NODE_FNS, "scan", _fake_scan)
 
     runner = CachedNodeRunner(cache_store=NoOpCacheStore())
-    cases = [{"case_id": f"case-{i}", "generation": "hello"} for i in range(5)]
+    cases = [{"case_id": f"case-{i}", "output": "hello"} for i in range(5)]
     outcomes = list(
         runner.run_cases_iter(
             cases=cases,
@@ -209,7 +209,7 @@ def test_report_target_parallelizes_independent_branches(monkeypatch) -> None:
 
     runner = CachedNodeRunner(cache_store=NoOpCacheStore())
     result = runner.run_case(
-        case={"case_id": "case-report", "generation": "hello"},
+        case={"case_id": "case-report", "output": "hello"},
         node_name="report",
         execution_mode="run",
         force=True,
@@ -280,7 +280,7 @@ def test_dependent_snapshot_includes_unmerged_prereq_outputs(monkeypatch) -> Non
 
     runner = CachedNodeRunner(cache_store=NoOpCacheStore())
     result = runner.run_case(
-        case={"case_id": "case-dependency", "generation": "hello"},
+        case={"case_id": "case-dependency", "output": "hello"},
         node_name="eval",
         execution_mode="run",
         force=True,
@@ -325,7 +325,7 @@ def test_estimate_mode_reuses_run_cache_for_shared_prerequisites(monkeypatch, tm
     monkeypatch.setitem(runner_module.NODE_FNS, "relevance", _fake_relevance)
 
     runner = CachedNodeRunner(cache_store=CacheStore(tmp_path))
-    case = {"case_id": "same-case", "generation": "hello world"}
+    case = {"case_id": "same-case", "output": "hello world"}
 
     run_result = runner.run_case(case=case, node_name="grounding", execution_mode="run")
     assert "grounding" in run_result.executed_nodes
@@ -387,8 +387,8 @@ def test_estimate_mode_only_executes_for_uncached_new_records(monkeypatch, tmp_p
     monkeypatch.setitem(runner_module.NODE_FNS, "grounding", _fake_grounding)
 
     runner = CachedNodeRunner(cache_store=CacheStore(tmp_path))
-    cached_case = {"case_id": "case-0", "generation": "same text"}
-    new_case = {"case_id": "case-1", "generation": "different text"}
+    cached_case = {"case_id": "case-0", "output": "same text"}
+    new_case = {"case_id": "case-1", "output": "different text"}
 
     runner.run_case(case=cached_case, node_name="grounding", execution_mode="run")
 
@@ -470,7 +470,7 @@ def test_eval_estimate_mode_merges_parallel_metric_estimated_costs(monkeypatch) 
     monkeypatch.setitem(runner_module.NODE_FNS, "report", _ok)
 
     runner = CachedNodeRunner(cache_store=NoOpCacheStore())
-    case = {"case_id": "merge-case", "generation": "hello world"}
+    case = {"case_id": "merge-case", "output": "hello world"}
     result = runner.run_case(case=case, node_name="eval", execution_mode="estimate", force=True)
 
     costs = result.final_state.get("estimated_costs", {})
@@ -518,7 +518,7 @@ def test_estimate_mode_does_not_write_cache_by_default(monkeypatch, tmp_path) ->
     monkeypatch.setitem(runner_module.NODE_FNS, "grounding", _fake_grounding)
 
     runner = CachedNodeRunner(cache_store=CacheStore(tmp_path))
-    case = {"case_id": "case-estimate", "generation": "fresh text"}
+    case = {"case_id": "case-estimate", "output": "fresh text"}
 
     first = runner.run_case(
         case=case, node_name="grounding", execution_mode="estimate", force=False
@@ -541,9 +541,9 @@ def test_eval_estimate_reuses_cached_grounding_from_run_branch(
 
     runner = CachedNodeRunner(cache_store=CacheStore(isolated_cache_dir))
     cases = [
-        {"case_id": "case-0", "generation": "same text", "question": "q", "context": ["ctx-0"]},
-        {"case_id": "case-1", "generation": "same text", "question": "q", "context": ["ctx-1"]},
-        {"case_id": "case-2", "generation": "same text", "question": "q"},
+        {"case_id": "case-0", "output": "same text", "input": "q", "context": ["ctx-0"]},
+        {"case_id": "case-1", "output": "same text", "input": "q", "context": ["ctx-1"]},
+        {"case_id": "case-2", "output": "same text", "input": "q"},
     ]
 
     run_grounding = list(
@@ -596,14 +596,14 @@ def test_eval_estimate_executes_grounding_when_case_content_changes(
     runner = CachedNodeRunner(cache_store=CacheStore(isolated_cache_dir))
     run_case = {
         "case_id": "case-0",
-        "generation": "same text",
-        "question": "q",
+        "output": "same text",
+        "input": "q",
         "context": ["ctx-0"],
     }
     changed_case = {
         "case_id": "case-0",
-        "generation": "same text with update",
-        "question": "q",
+        "output": "same text with update",
+        "input": "q",
         "context": ["ctx-0"],
     }
 
@@ -624,8 +624,8 @@ def test_eval_and_report_are_never_cache_hits(
     runner = CachedNodeRunner(cache_store=CacheStore(isolated_cache_dir))
     case = {
         "case_id": "case-eval-cache-policy",
-        "generation": "hello",
-        "question": "q",
+        "output": "hello",
+        "input": "q",
         "context": ["ctx"],
     }
 
@@ -669,9 +669,9 @@ def test_run_cases_iter_updates_eval_collector_in_serial(monkeypatch) -> None:
     runner = CachedNodeRunner(cache_store=NoOpCacheStore())
     collector = eval_node.EvalBatchCollector()
     cases = [
-        {"case_id": "case-0", "generation": "hello"},
-        {"case_id": "case-1", "generation": "hello"},
-        {"case_id": "case-2", "generation": "hello"},
+        {"case_id": "case-0", "output": "hello"},
+        {"case_id": "case-1", "output": "hello"},
+        {"case_id": "case-2", "output": "hello"},
     ]
 
     outcomes = list(
@@ -732,7 +732,7 @@ def test_run_cases_iter_updates_eval_collector_in_parallel(monkeypatch) -> None:
 
     runner = CachedNodeRunner(cache_store=NoOpCacheStore())
     collector = eval_node.EvalBatchCollector()
-    cases = [{"case_id": f"case-{i}", "generation": "hello"} for i in range(3)]
+    cases = [{"case_id": f"case-{i}", "output": "hello"} for i in range(3)]
 
     outcomes = list(
         runner.run_cases_iter(
@@ -773,8 +773,8 @@ def test_run_cases_iter_singleflight_coalesces_duplicate_step_cache_keys(
 
     runner = CachedNodeRunner(cache_store=CacheStore(tmp_path))
     cases = [
-        {"case_id": "case-0", "generation": "same text"},
-        {"case_id": "case-1", "generation": "same text"},
+        {"case_id": "case-0", "output": "same text"},
+        {"case_id": "case-1", "output": "same text"},
     ]
     outcomes = list(
         runner.run_cases_iter(
@@ -809,8 +809,8 @@ def test_run_cases_iter_singleflight_cleans_up_inflight_entry_after_failure(
     monkeypatch.setitem(runner_module.NODE_FNS, "scan", _failing_scan)
     runner = CachedNodeRunner(cache_store=CacheStore(tmp_path))
     cases = [
-        {"case_id": "case-0", "generation": "same text"},
-        {"case_id": "case-1", "generation": "same text"},
+        {"case_id": "case-0", "output": "same text"},
+        {"case_id": "case-1", "output": "same text"},
     ]
 
     failed = list(

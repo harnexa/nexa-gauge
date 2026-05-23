@@ -1,17 +1,17 @@
 """Shared display-name mapping for G-Eval item fields.
 
-The step-generation and scoring prompts both refer to case fields by
+The step-output and scoring prompts both refer to case fields by
 human-readable names. Keeping the map in one module guarantees the two prompts
-stay consistent — if scoring renames ``"Actual Output"`` to ``"Generation"``,
-step generation follows automatically.
+stay consistent — if scoring renames ``"Output"`` to ``"Generation"``,
+step output follows automatically.
 """
 
 from __future__ import annotations
 
 FIELD_DISPLAY_NAMES: dict[str, str] = {
-    "question": "Input",
-    "generation": "Actual Output",
-    "reference": "Expected Output",
+    "input": "Input",
+    "output": "Output",
+    "reference": "Reference",
     "context": "Context",
 }
 

@@ -39,7 +39,7 @@ class LocalFileDatasetAdapter(DatasetAdapter):
             raise InputParseError("JSON dataset must be an object or array of objects.")
 
         # Fallback: treat as raw text single case
-        return [{"generation": self.path.read_text()}]
+        return [{"output": self.path.read_text()}]
 
     def _iter_records(self) -> Iterator[dict[str, Any]]:
         """Stream records when possible; fallback to eager paths when required."""

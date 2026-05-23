@@ -79,7 +79,7 @@ class _EvaluationResult(BaseModel):
 
 
 class GevalNode(BaseMetricNode):
-    """Evaluate generation quality against resolved GEval metrics."""
+    """Evaluate output quality against resolved GEval metrics."""
 
     node_name = "geval"
     prompt_version = GEVAL_SCORE_PROMPT_VERSION
@@ -110,15 +110,15 @@ class GevalNode(BaseMetricNode):
     def _missing_required_fields(
         *,
         item_fields: list[str],
-        generation: str,
-        question: Optional[str],
+        output: str,
+        input: Optional[str],
         reference: Optional[str],
         context: Optional[str],
     ) -> list[str]:
         missing: list[str] = []
         values = {
-            "generation": generation,
-            "question": question,
+            "output": output,
+            "input": input,
             "reference": reference,
             "context": context,
         }
@@ -131,8 +131,8 @@ class GevalNode(BaseMetricNode):
     @staticmethod
     def _build_messages(
         metric: GevalStepsResolved,
-        generation: str,
-        question: Optional[str],
+        output: str,
+        input: Optional[str],
         reference: Optional[str],
         context: Optional[str],
     ) -> list[dict[str, str]]:
@@ -143,8 +143,8 @@ class GevalNode(BaseMetricNode):
         )
 
         values = {
-            "generation": generation,
-            "question": question,
+            "output": output,
+            "input": input,
             "reference": reference,
             "context": context,
         }
@@ -189,8 +189,8 @@ class GevalNode(BaseMetricNode):
         self,
         *,
         metric: GevalStepsResolved,
-        generation: str,
-        question: Optional[str],
+        output: str,
+        input: Optional[str],
         reference: Optional[str],
         context: Optional[str],
     ) -> _EvaluationResult:
@@ -211,8 +211,8 @@ class GevalNode(BaseMetricNode):
 
         missing = self._missing_required_fields(
             item_fields=list(metric.item_fields),
-            generation=generation,
-            question=question,
+            output=output,
+            input=input,
             reference=reference,
             context=context,
         )
@@ -236,7 +236,7 @@ class GevalNode(BaseMetricNode):
             self.judge_model,
             llm_overrides=self.llm_overrides,
         )
-        messages = self._build_messages(metric, generation, question, reference, context)
+        messages = self._build_messages(metric, output, input, reference, context)
 
         response = await asyncio.to_thread(llm.invoke_with_logprobs, messages)
         self._record_model_response(response, primary_model=self.judge_model)
@@ -298,8 +298,8 @@ class GevalNode(BaseMetricNode):
     def run(
         self,
         resolved_artifacts: list[GevalStepsResolved],
-        generation: Item,
-        question: Optional[Item],
+        output: Item,
+        input: Optional[Item],
         reference: Optional[Item],
         context: Optional[Item],
     ) -> GevalMetrics:  # type: ignore[override]
@@ -309,8 +309,8 @@ class GevalNode(BaseMetricNode):
         if not resolved_artifacts:
             return GevalMetrics(metrics=[], cost=None)
 
-        generation_text = generation.text if generation else ""
-        question_text = question.text if question else None
+        output_text = output.text if output else ""
+        input_text = input.text if input else None
         reference_text = reference.text if reference else None
         context_text = context.text if context else None
 
@@ -318,8 +318,8 @@ class GevalNode(BaseMetricNode):
             tasks = [
                 self._evaluate_metric(
                     metric=metric,
-                    generation=generation_text,
-                    question=question_text,
+                    output=output_text,
+                    input=input_text,
                     reference=reference_text,
                     context=context_text,
                 )
@@ -356,8 +356,8 @@ class GevalNode(BaseMetricNode):
 
     def estimate(
         self,
-        generation: Item,
-        question: Optional[Item],
+        output: Item,
+        input: Optional[Item],
         reference: Optional[Item],
         context: Optional[Item],
         geval: Optional[Geval],
@@ -380,8 +380,8 @@ class GevalNode(BaseMetricNode):
         input_tokens = (
             metric_count * AVG_DEEPEVAL_PROMPT_TOKENS
             + steps_tokens
-            + float(generation.tokens)
-            + (float(question.tokens) if question else 0.0)
+            + float(output.tokens)
+            + (float(input.tokens) if input else 0.0)
             + (float(reference.tokens) if reference else 0.0)
             + (float(context.tokens) if context else 0.0)
         )

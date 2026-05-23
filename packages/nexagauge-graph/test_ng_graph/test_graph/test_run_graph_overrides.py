@@ -74,7 +74,7 @@ def test_graph_forwards_llm_overrides_to_nodes(graph_module, monkeypatch) -> Non
             self.judge_model = judge_model
             self.llm_overrides = llm_overrides
 
-        def run(self, claims, question):
+        def run(self, claims, input):
             return graph_module.RelevanceMetrics(
                 metrics=[MetricResult(name="relevance", category=MetricCategory.ANSWER, score=1.0)],
                 cost=CostEstimate(cost=0.0, input_tokens=None, output_tokens=None),
@@ -85,7 +85,7 @@ def test_graph_forwards_llm_overrides_to_nodes(graph_module, monkeypatch) -> Non
             self.judge_model = judge_model
             self.llm_overrides = llm_overrides
 
-        def run(self, generation, question, reference, context, redteam):
+        def run(self, output, input, reference, context, redteam):
             return graph_module.RedteamMetrics(
                 metrics=[MetricResult(name="redteam", category=MetricCategory.ANSWER, score=1.0)],
                 cost=CostEstimate(cost=0.0, input_tokens=None, output_tokens=None),
@@ -108,7 +108,7 @@ def test_graph_forwards_llm_overrides_to_nodes(graph_module, monkeypatch) -> Non
             self.judge_model = judge_model
             self.llm_overrides = llm_overrides
 
-        def run(self, resolved_artifacts, generation, question, reference, context):
+        def run(self, resolved_artifacts, output, input, reference, context):
             return graph_module.GevalMetrics(
                 metrics=[MetricResult(name="geval", category=MetricCategory.ANSWER, score=1.0)],
                 cost=CostEstimate(cost=0.0, input_tokens=None, output_tokens=None),
@@ -125,15 +125,15 @@ def test_graph_forwards_llm_overrides_to_nodes(graph_module, monkeypatch) -> Non
     llm_overrides = {"models": {"claims": "openai/gpt-4o-mini"}}
     inputs = Inputs(
         case_id="t1",
-        generation=Item(text="The sky is blue.", tokens=4),
-        question=Item(text="What color is the sky?", tokens=6),
+        output=Item(text="The sky is blue.", tokens=4),
+        input=Item(text="What color is the sky?", tokens=6),
         reference=Item(text="Sky appears blue due to Rayleigh scattering.", tokens=8),
         context=Item(text="Atmospheric scattering context.", tokens=4),
         geval=Geval(
             metrics=[
                 GevalMetricInput(
                     name="factuality",
-                    item_fields=["generation", "reference"],
+                    item_fields=["output", "reference"],
                     criteria=Item(text="Must be factually correct.", tokens=5),
                     evaluation_steps=[Item(text="Check factual alignment", tokens=3)],
                 )
@@ -144,7 +144,7 @@ def test_graph_forwards_llm_overrides_to_nodes(graph_module, monkeypatch) -> Non
                 RedteamMetricInput(
                     name="toxicity",
                     rubric=RedteamRubric(goal="No toxicity", violations=["abusive language"]),
-                    item_fields=["generation"],
+                    item_fields=["output"],
                 )
             ]
         ),
@@ -160,19 +160,19 @@ def test_graph_forwards_llm_overrides_to_nodes(graph_module, monkeypatch) -> Non
     base_state = {
         "inputs": inputs,
         "llm_overrides": llm_overrides,
-        "generation_chunk": ChunkArtifacts(
+        "output_chunk": ChunkArtifacts(
             chunks=[chunk],
             cost=CostEstimate(cost=0.0, input_tokens=None, output_tokens=None),
         ),
-        "generation_refined_chunks": ChunkArtifacts(
+        "output_refined_chunks": ChunkArtifacts(
             chunks=[chunk],
             cost=CostEstimate(cost=0.0, input_tokens=None, output_tokens=None),
         ),
     }
 
-    claims_out = graph_module.node_generation_claims(base_state)["generation_claims"]
-    graph_module.node_grounding({**base_state, "generation_claims": claims_out})
-    graph_module.node_relevance({**base_state, "generation_claims": claims_out})
+    claims_out = graph_module.node_output_claims(base_state)["output_claims"]
+    graph_module.node_grounding({**base_state, "output_claims": claims_out})
+    graph_module.node_relevance({**base_state, "output_claims": claims_out})
     graph_module.node_redteam(base_state)
     steps_out = graph_module.node_geval_steps(base_state)["geval_steps"]
     graph_module.node_geval({**base_state, "geval_steps": steps_out})

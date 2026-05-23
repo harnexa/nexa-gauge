@@ -3,7 +3,7 @@
 import hashlib
 
 import semchunk
-from ng_core.constants import CHUNK_MIN_TOKENS_FOR_SPLIT, GENERATION_CHUNK_SIZE_TOKENS
+from ng_core.constants import CHUNK_MIN_TOKENS_FOR_SPLIT, OUTPUT_CHUNK_SIZE_TOKENS
 from ng_core.types import Chunk, ChunkArtifacts, CostEstimate, Item
 from ng_core.utils import _count_tokens
 from ng_graph.log import get_node_logger
@@ -15,7 +15,7 @@ log = get_node_logger("chunk")
 class ChunkExtractorNode(BaseNode):
     node_name = "chunk"
 
-    def __init__(self, chunk_size: int = GENERATION_CHUNK_SIZE_TOKENS) -> None:
+    def __init__(self, chunk_size: int = OUTPUT_CHUNK_SIZE_TOKENS) -> None:
         self.chunk_size = chunk_size
 
     def run(self, item: Item) -> ChunkArtifacts:  # type: ignore[override]

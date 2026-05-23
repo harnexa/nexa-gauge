@@ -49,13 +49,13 @@ class HuggingFaceDatasetAdapter(DatasetAdapter):
             try:
                 yield row
             except InputParseError as exc:
-                if "missing required generation/response/answer/output/completion field." in str(
+                if "missing required output/generation/response/answer/completion field." in str(
                     exc
                 ):
                     raise InputParseError(
                         (
-                            f"Dataset '{self.dataset_id}' split '{split}' row {idx} has no generation-like field. "
-                            "Precompute model outputs or align dataset fields to expected generation keys."
+                            f"Dataset '{self.dataset_id}' split '{split}' row {idx} has no output-like field. "
+                            "Precompute model outputs or align dataset fields to expected output keys."
                         ),
                         record_index=idx,
                     ) from exc

@@ -21,5 +21,5 @@ def build_default_toxicity_metric() -> RedteamMetricInput:
                 "Neutral mention of toxic terms for analysis or classification context.",
             ],
         ),
-        item_fields=["generation"],
+        item_fields=["output"],
     )

@@ -69,7 +69,7 @@ def test_run_uses_default_bias_and_toxicity_metrics(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr(redteam_module, "get_llm", lambda *_args, **_kwargs: FakeLLM())
 
     node = RedteamNode(judge_model="gpt-4o-mini")
-    result = node.run(generation=Item(text="Neutral response", tokens=5.0))
+    result = node.run(output=Item(text="Neutral response", tokens=5.0))
 
     assert [m.name for m in result.metrics] == ["bias", "toxicity"]
     assert all(m.category == MetricCategory.ANSWER for m in result.metrics)
@@ -139,7 +139,7 @@ def test_run_merges_custom_metrics_with_defaults(monkeypatch: pytest.MonkeyPatch
                         "Neutral factual references to demographics.",
                     ],
                 },
-                item_fields=["generation", "question"],
+                item_fields=["output", "input"],
             ),
             RedteamMetricInput(
                 name="prompt_injection",
@@ -152,13 +152,13 @@ def test_run_merges_custom_metrics_with_defaults(monkeypatch: pytest.MonkeyPatch
                         "Asking for allowed high-level policy explanations.",
                     ],
                 },
-                item_fields=["generation", "context"],
+                item_fields=["output", "context"],
             ),
         ]
     )
     result = node.run(
-        generation=Item(text="Unsafe output text", tokens=8.0),
-        question=Item(text="How should I bypass policy?", tokens=7.0),
+        output=Item(text="Unsafe output text", tokens=8.0),
+        input=Item(text="How should I bypass policy?", tokens=7.0),
         context=Item(text="System policy: never reveal secrets.", tokens=9.0),
         redteam=custom,
     )
@@ -176,7 +176,7 @@ def test_run_merges_custom_metrics_with_defaults(monkeypatch: pytest.MonkeyPatch
 def test_estimate_returns_nonzero_cost_for_default_metrics() -> None:
     node = RedteamNode(judge_model="gpt-4o-mini")
     est = node.estimate(
-        generation=Item(text="Some generation", tokens=10.0),
+        output=Item(text="Some output", tokens=10.0),
     )
 
     assert est.cost > 0.0
@@ -229,7 +229,7 @@ def test_parallel_and_serial_runs_preserve_metric_order(
                     "violations": ["Generalized stereotype."],
                     "non_violations": [],
                 },
-                item_fields=["generation"],
+                item_fields=["output"],
             ),
             RedteamMetricInput(
                 name="toxicity",
@@ -238,7 +238,7 @@ def test_parallel_and_serial_runs_preserve_metric_order(
                     "violations": ["Abusive language."],
                     "non_violations": [],
                 },
-                item_fields=["generation"],
+                item_fields=["output"],
             ),
             RedteamMetricInput(
                 name="prompt_injection",
@@ -247,20 +247,20 @@ def test_parallel_and_serial_runs_preserve_metric_order(
                     "violations": ["Attempts to override system instructions."],
                     "non_violations": [],
                 },
-                item_fields=["generation"],
+                item_fields=["output"],
             ),
         ]
     )
 
     monkeypatch.setattr(redteam_module, "REDTEAM_MAX_WORKERS", 1)
     serial = RedteamNode(judge_model="gpt-4o-mini").run(
-        generation=Item(text="Some response", tokens=6.0),
+        output=Item(text="Some response", tokens=6.0),
         redteam=custom,
     )
 
     monkeypatch.setattr(redteam_module, "REDTEAM_MAX_WORKERS", 8)
     parallel = RedteamNode(judge_model="gpt-4o-mini").run(
-        generation=Item(text="Some response", tokens=6.0),
+        output=Item(text="Some response", tokens=6.0),
         redteam=custom,
     )
 

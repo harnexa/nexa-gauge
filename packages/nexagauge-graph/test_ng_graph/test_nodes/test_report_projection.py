@@ -20,16 +20,16 @@ def test_report_aggregate_emits_state_key_sections() -> None:
         "target_node": "grounding",
         "inputs": Inputs(
             case_id="case-1",
-            generation=Item(text="Paris is in France.", tokens=4.0),
-            question=Item(text="Where is Paris?", tokens=3.0),
+            output=Item(text="Paris is in France.", tokens=4.0),
+            input=Item(text="Where is Paris?", tokens=3.0),
             context=Item(text="Paris is in France.", tokens=4.0),
             reference=Item(text="Paris", tokens=1.0),
-            has_generation=True,
-            has_question=True,
+            has_output=True,
+            has_input=True,
             has_context=True,
             has_reference=True,
         ),
-        "generation_chunk": ChunkArtifacts(
+        "output_chunk": ChunkArtifacts(
             chunks=[
                 Chunk(
                     index=0,
@@ -41,7 +41,7 @@ def test_report_aggregate_emits_state_key_sections() -> None:
             ],
             cost=CostEstimate(cost=0.0, input_tokens=0.0, output_tokens=0.0),
         ),
-        "generation_claims": ClaimArtifacts(
+        "output_claims": ClaimArtifacts(
             claims=[
                 Claim(item=Item(text="Paris is in France.", tokens=4.0), source_chunk_index=0),
             ],
@@ -53,17 +53,15 @@ def test_report_aggregate_emits_state_key_sections() -> None:
 
     assert out["target_node"] == "grounding"
     assert out["input"]["case_id"] == "case-1"
-    assert out["generation_chunk"]["text"] == ["Paris is in France."]
-    assert out["generation_claims"]["text"] == ["Paris is in France."]
-    assert "generation_refined_chunks" not in out
+    assert out["output_chunk"]["text"] == ["Paris is in France."]
+    assert out["output_claims"]["text"] == ["Paris is in France."]
+    assert "output_refined_chunks" not in out
 
 
 def test_report_aggregate_projects_metric_wrappers() -> None:
     state = {
         "target_node": "grounding",
-        "inputs": Inputs(
-            case_id="case-2", generation=Item(text="A", tokens=1.0), has_generation=True
-        ),
+        "inputs": Inputs(case_id="case-2", output=Item(text="A", tokens=1.0), has_output=True),
         "grounding_metrics": GroundingMetrics(
             metrics=[
                 MetricResult(

@@ -4,7 +4,7 @@ import logging
 from typing import Any, Mapping
 
 from ng_core.config import config as cfg
-from ng_core.constants import GENERATION_CHUNK_SIZE_TOKENS
+from ng_core.constants import OUTPUT_CHUNK_SIZE_TOKENS
 from ng_core.types import (
     Chunk,
     ChunkArtifacts,
@@ -130,7 +130,7 @@ def _skip_output(node_name: str) -> dict[str, Any]:
 def _eligible_for_node(state: Mapping[str, Any], node_name: str) -> bool:
     """Evaluate topology eligibility gates for a node against scanned inputs.
 
-    This centralizes generation/context/question/geval/reference guards so
+    This centralizes output/context/input/geval/reference guards so
     every node follows one consistent skip policy.
     """
     spec = _node_spec(node_name)
@@ -140,11 +140,11 @@ def _eligible_for_node(state: Mapping[str, Any], node_name: str) -> bool:
     inputs = state.get("inputs")
     if inputs is None:
         return False
-    if spec.requires_generation and not bool(inputs.has_generation):
+    if spec.requires_output and not bool(inputs.has_output):
         return False
     if spec.requires_context and not bool(inputs.has_context):
         return False
-    if spec.requires_question and not bool(inputs.has_question):
+    if spec.requires_input and not bool(inputs.has_input):
         return False
     if spec.requires_geval and not bool(inputs.has_geval):
         return False
@@ -237,15 +237,15 @@ def node_metadata_scanner(state: EvalCase) -> dict[str, Any]:
     return {"inputs": case.get("inputs")}
 
 
-def node_generation_chunk(state: EvalCase) -> dict[str, Any]:
-    """Split generation text into chunk artifacts used by later utility nodes.
+def node_output_chunk(state: EvalCase) -> dict[str, Any]:
+    """Split output text into chunk artifacts used by later utility nodes.
 
     Why needed:
-    - Claims and refiners operate on bounded units, not full-generation text.
+    - Claims and refiners operate on bounded units, not full-output text.
 
     Major points:
     - Enforces configured chunker strategy.
-    - Skips cleanly when generation is unavailable.
+    - Skips cleanly when output is unavailable.
     - In estimate mode, emits chunk artifact + node-level estimated cost patch.
     """
     skip = _skip_if_ineligible(state, "chunk")
@@ -260,23 +260,23 @@ def node_generation_chunk(state: EvalCase) -> dict[str, Any]:
 
     inputs = state["inputs"]
     estimate_mode = _is_estimate_mode(state)
-    out_key = _node_spec("chunk").state_key or "generation_chunk"
+    out_key = _node_spec("chunk").state_key or "output_chunk"
     if not out_key:
-        raise ValueError(f"node: Chunk out_key: {out_key} should be generation_chunk")
+        raise ValueError(f"node: Chunk out_key: {out_key} should be output_chunk")
 
-    node = ChunkExtractorNode(chunk_size=GENERATION_CHUNK_SIZE_TOKENS)
+    node = ChunkExtractorNode(chunk_size=OUTPUT_CHUNK_SIZE_TOKENS)
     if estimate_mode:
-        chunk_artifact = node.run(item=inputs.generation)
+        chunk_artifact = node.run(item=inputs.output)
         return {
             out_key: chunk_artifact,
             "estimated_costs": _record_estimated_cost(state, "chunk", chunk_artifact.cost),
         }
 
-    chunk_artifact: ChunkArtifacts = node.run(item=inputs.generation)
+    chunk_artifact: ChunkArtifacts = node.run(item=inputs.output)
     return {out_key: chunk_artifact}
 
 
-def node_generation_refiner(state: EvalCase) -> dict[str, Any]:
+def node_output_refiner(state: EvalCase) -> dict[str, Any]:
     """Select a refined top-k subset of chunks from the chunk artifact stream.
 
     Why needed:
@@ -301,7 +301,7 @@ def node_generation_refiner(state: EvalCase) -> dict[str, Any]:
     out_key = spec.state_key
 
     if not out_key:
-        raise ValueError(f"node: Refiner out_key: {out_key} should be generation_refined_chunks")
+        raise ValueError(f"node: Refiner out_key: {out_key} should be output_refined_chunks")
 
     artifact = _upstream_artifact(state, "refiner", in_kind)
     chunks_list = artifact.chunks if artifact else []
@@ -332,7 +332,7 @@ def node_generation_refiner(state: EvalCase) -> dict[str, Any]:
     return {out_key: ChunkArtifacts(chunks=chunks, cost=refine_cost)}
 
 
-def node_generation_claims(state: EvalCase) -> dict[str, Any]:
+def node_output_claims(state: EvalCase) -> dict[str, Any]:
     """Extract structured claims from refined chunks.
 
     Why needed:
@@ -353,7 +353,7 @@ def node_generation_claims(state: EvalCase) -> dict[str, Any]:
     out_key = spec.state_key
 
     if not out_key:
-        raise ValueError(f"node: Claims out_key: {out_key} should be generation_claims")
+        raise ValueError(f"node: Claims out_key: {out_key} should be output_claims")
 
     in_kind = spec.artifact_in_kind
     if in_kind == "none":
@@ -432,7 +432,7 @@ def node_grounding(state: EvalCase) -> dict[str, Any]:
 
     results = node.run(
         claims=claims,
-        context=context_item or inputs.generation,
+        context=context_item or inputs.output,
         enable_grounding=inputs.has_context,
     )
     return {
@@ -442,14 +442,14 @@ def node_grounding(state: EvalCase) -> dict[str, Any]:
 
 
 def node_relevance(state: EvalCase) -> dict[str, Any]:
-    """Score whether extracted claims are relevant to the user question.
+    """Score whether extracted claims are relevant to the user input.
 
     Why needed:
     - Distinguishes faithful-but-off-topic answers from relevant answers.
 
     Major points:
     - Consumes claim artifacts from upstream contract.
-    - Requires question availability.
+    - Requires input availability.
     - Emits typed ``RelevanceMetrics`` and model usage.
     """
     skip = _skip_if_ineligible(state, "relevance")
@@ -477,7 +477,7 @@ def node_relevance(state: EvalCase) -> dict[str, Any]:
     node = RelevanceNode(judge_model=model, llm_overrides=llm_overrides)
 
     if estimate_mode:
-        estimated_cost = node.estimate(question=inputs.question)
+        estimated_cost = node.estimate(input=inputs.input)
         return {
             out_key: RelevanceMetrics(metrics=[], cost=estimated_cost),
             "estimated_costs": _record_estimated_cost(state, "relevance", estimated_cost),
@@ -486,7 +486,7 @@ def node_relevance(state: EvalCase) -> dict[str, Any]:
 
     results = node.run(
         claims=claims,
-        question=inputs.question,
+        input=inputs.input,
     )
     return {
         out_key: results,
@@ -501,7 +501,7 @@ def node_redteam(state: EvalCase) -> dict[str, Any]:
     - Captures policy and vulnerability signals independent of claim flow.
 
     Major points:
-    - Uses generation/question/reference/context/redteam config directly.
+    - Uses output/input/reference/context/redteam config directly.
     - Supports estimate-mode token/cost simulation.
     - Emits typed ``RedteamMetrics`` plus model-usage telemetry.
     """
@@ -521,8 +521,8 @@ def node_redteam(state: EvalCase) -> dict[str, Any]:
     node = RedteamNode(judge_model=model, llm_overrides=llm_overrides)
     if estimate_mode:
         estimated_cost = node.estimate(
-            generation=inputs.generation,
-            question=inputs.question,
+            output=inputs.output,
+            input=inputs.input,
             reference=inputs.reference,
             context=inputs.context,
             redteam=inputs.redteam,
@@ -534,8 +534,8 @@ def node_redteam(state: EvalCase) -> dict[str, Any]:
         }
 
     results = node.run(
-        generation=inputs.generation,
-        question=inputs.question,
+        output=inputs.output,
+        input=inputs.input,
         reference=inputs.reference,
         context=inputs.context,
         redteam=inputs.redteam,
@@ -601,7 +601,7 @@ def node_geval(state: EvalCase) -> dict[str, Any]:
 
     Major points:
     - Depends on ``geval_steps`` artifact output.
-    - Uses direct input fields (generation/question/reference/context).
+    - Uses direct input fields (output/input/reference/context).
     - Emits typed ``GevalMetrics`` and model-usage telemetry.
     """
     skip = _skip_if_ineligible(state, "geval")
@@ -621,8 +621,8 @@ def node_geval(state: EvalCase) -> dict[str, Any]:
 
     if estimate_mode:
         estimated_cost = node.estimate(
-            generation=inputs.generation,
-            question=inputs.question,
+            output=inputs.output,
+            input=inputs.input,
             reference=inputs.reference,
             context=inputs.context,
             geval=inputs.geval,
@@ -638,8 +638,8 @@ def node_geval(state: EvalCase) -> dict[str, Any]:
 
     results = node.run(
         resolved_artifacts=resolved_artifacts,
-        generation=inputs.generation,
-        question=inputs.question,
+        output=inputs.output,
+        input=inputs.input,
         reference=inputs.reference,
         context=inputs.context,
     )
@@ -656,7 +656,7 @@ def node_reference(state: EvalCase) -> dict[str, Any]:
     - Measures answer quality where a reference answer is available.
 
     Major points:
-    - Uses generation + reference inputs directly.
+    - Uses output + reference inputs directly.
     - Skips when reference is absent.
     - Returns typed ``ReferenceMetrics``; estimate mode emits cost placeholder.
     """
@@ -681,9 +681,9 @@ def node_reference(state: EvalCase) -> dict[str, Any]:
         }
 
     results = node.run(
-        generation=inputs.generation,
+        output=inputs.output,
         reference=inputs.reference,
-        enable_generation_metrics=True,
+        enable_output_metrics=True,
     )
     return {out_key: results}
 

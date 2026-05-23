@@ -143,14 +143,14 @@ class RedteamNode(BaseMetricNode):
     def _selected_fields(
         *,
         item_fields: list[str],
-        generation: Item,
-        question: Optional[Item],
+        output: Item,
+        input: Optional[Item],
         reference: Optional[Item],
         context: Optional[Item],
     ) -> list[tuple[str, str]]:
         values = {
-            "generation": generation.text if generation else "",
-            "question": question.text if question else "",
+            "output": output.text if output else "",
+            "input": input.text if input else "",
             "reference": reference.text if reference else "",
             "context": context.text if context else "",
         }
@@ -166,15 +166,15 @@ class RedteamNode(BaseMetricNode):
         cls,
         *,
         item_fields: list[str],
-        generation: Item,
-        question: Optional[Item],
+        output: Item,
+        input: Optional[Item],
         reference: Optional[Item],
         context: Optional[Item],
     ) -> str:
         selected = cls._selected_fields(
             item_fields=item_fields,
-            generation=generation,
-            question=question,
+            output=output,
+            input=input,
             reference=reference,
             context=context,
         )
@@ -187,21 +187,21 @@ class RedteamNode(BaseMetricNode):
         cls,
         *,
         item_fields: list[str],
-        generation: Item,
-        question: Optional[Item],
+        output: Item,
+        input: Optional[Item],
         reference: Optional[Item],
         context: Optional[Item],
     ) -> float:
         selected = cls._selected_fields(
             item_fields=item_fields,
-            generation=generation,
-            question=question,
+            output=output,
+            input=input,
             reference=reference,
             context=context,
         )
         token_by_name = {
-            "generation": float(generation.tokens if generation else 0.0),
-            "question": float(question.tokens if question else 0.0),
+            "output": float(output.tokens if output else 0.0),
+            "input": float(input.tokens if input else 0.0),
             "reference": float(reference.tokens if reference else 0.0),
             "context": float(context.tokens if context else 0.0),
         }
@@ -214,8 +214,8 @@ class RedteamNode(BaseMetricNode):
         self,
         *,
         metric: RedteamMetricInput,
-        generation: Item,
-        question: Optional[Item],
+        output: Item,
+        input: Optional[Item],
         reference: Optional[Item],
         context: Optional[Item],
     ) -> tuple[MetricResult, CostEstimate]:
@@ -236,8 +236,8 @@ class RedteamNode(BaseMetricNode):
                         rubric=self._render_rubric(metric.rubric),
                         fields=self._render_fields(
                             item_fields=list(metric.item_fields),
-                            generation=generation,
-                            question=question,
+                            output=output,
+                            input=input,
                             reference=reference,
                             context=context,
                         ),
@@ -320,14 +320,14 @@ class RedteamNode(BaseMetricNode):
 
     def run(  # type: ignore[override]
         self,
-        generation: Item,
-        question: Optional[Item] = None,
+        output: Item,
+        input: Optional[Item] = None,
         reference: Optional[Item] = None,
         context: Optional[Item] = None,
         redteam: Optional[Redteam] = None,
     ) -> RedteamMetrics:
         self._reset_model_usage()
-        if not generation or not generation.text.strip():
+        if not output or not output.text.strip():
             return RedteamMetrics(
                 metrics=[],
                 cost=CostEstimate(cost=0.0, input_tokens=None, output_tokens=None),
@@ -342,8 +342,8 @@ class RedteamNode(BaseMetricNode):
         def _evaluate_single(metric: RedteamMetricInput) -> tuple[MetricResult, CostEstimate]:
             return self._evaluate_metric(
                 metric=metric,
-                generation=generation,
-                question=question,
+                output=output,
+                input=input,
                 reference=reference,
                 context=context,
             )
@@ -380,14 +380,14 @@ class RedteamNode(BaseMetricNode):
 
     def estimate(
         self,
-        generation: Item,
-        question: Optional[Item] = None,
+        output: Item,
+        input: Optional[Item] = None,
         reference: Optional[Item] = None,
         context: Optional[Item] = None,
         redteam: Optional[Redteam] = None,
     ) -> CostEstimate:  # type: ignore[override]
         self._reset_model_usage()
-        if not generation or not generation.text.strip():
+        if not output or not output.text.strip():
             return CostEstimate(cost=0.0, input_tokens=None, output_tokens=None)
 
         metrics_to_run = self._resolve_metrics(redteam)
@@ -404,8 +404,8 @@ class RedteamNode(BaseMetricNode):
             rubric_text = self._render_rubric(metric.rubric)
             selected_input_tokens = self._selected_input_tokens(
                 item_fields=list(metric.item_fields),
-                generation=generation,
-                question=question,
+                output=output,
+                input=input,
                 reference=reference,
                 context=context,
             )

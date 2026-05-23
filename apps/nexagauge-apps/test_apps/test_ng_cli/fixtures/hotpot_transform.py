@@ -13,10 +13,11 @@ def hotpot_qa(record: dict) -> dict:
     titles = ctx.get("title") or []
     sentences = ctx.get("sentences") or []
     paragraphs = [f"{title}\n{' '.join(sents)}" for title, sents in zip(titles, sentences)]
+    output_text = record.get("output") or record.get("answer", "")
     return {
         "case_id": record.get("id"),
-        "question": record.get("question", ""),
-        "generation": record.get("answer", ""),
+        "input": record.get("input", ""),
+        "output": output_text,
         "context": paragraphs,
-        "reference": record.get("answer", ""),
+        "reference": output_text,
     }
