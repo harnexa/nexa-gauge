@@ -34,11 +34,18 @@ class _RelevancyResult(BaseModel):
 
 class RelevanceNode(BaseMetricNode):
     node_name = "relevance"
-    SYSTEM_PROMPT = "You are a relevancy judge."
+    SYSTEM_PROMPT = (
+        "You are an answer relevance judge. Evaluate only whether each statement "
+        "addresses the user's question. Do not judge factual correctness, truth, "
+        "or whether the statement is supported by evidence."
+    )
     USER_PROMPT = (
         "Question: {question}\n\n"
         "Statements extracted from an answer (one per line):\n{claims}\n\n"
-        "For each statement determine whether it is relevant to the question above. "
+        "For each statement, return true if it is on-topic and responsive to the "
+        "question, even if the statement may be factually wrong. Return false only "
+        "if the statement is unrelated, off-topic, or does not help answer the "
+        "question.\n\n"
         "Return a JSON object with key 'verdicts' containing a list of booleans "
         "(true = relevant, false = not relevant) in the same order."
     )

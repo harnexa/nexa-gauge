@@ -19,6 +19,16 @@ from ng_cli.util import _resolve_target_node
 from ng_core.types import CostEstimate
 
 
+@pytest.fixture(autouse=True)
+def _stub_host_model_probe(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Avoid real network calls when tests pass --host-model-url.
+
+    Individual tests can re-monkeypatch ``resolve_host_model_identity`` to
+    return a specific value.
+    """
+    monkeypatch.setattr(util_module, "resolve_host_model_identity", lambda url: None)
+
+
 def test_parse_model_overrides_accepts_global_and_node_values() -> None:
     global_model, per_node, warnings = _parse_model_overrides(
         ["openai/gpt-4o", "grounding=openai/gpt-4o-mini"],
@@ -94,11 +104,11 @@ def test_resolve_runtime_llm_overrides_applies_global_then_node_override() -> No
     assert overrides["fallback_models"]["grounding"] == DEFAULT_FALLBACK_LLM
 
 
-def test_resolve_runtime_llm_overrides_host_model_url_autofills_local_route() -> None:
+def test_resolve_runtime_llm_overrides_host_model_url_defaults_to_sentinel_route() -> None:
     effective, overrides, warnings = _resolve_runtime_llm_overrides(
         target_node="grounding",
-        llm_model_values=("openai/gpt-4o",),
-        llm_fallback_values=("openai/gpt-4o-mini",),
+        llm_model_values=(),
+        llm_fallback_values=(),
         host_model_url="http://localhost:8080/v1",
     )
     expected_nodes = {"scan", "chunk", "refiner", "claims", "grounding"}
@@ -111,9 +121,83 @@ def test_resolve_runtime_llm_overrides_host_model_url_autofills_local_route() ->
     assert all(model == "openai/local-model" for model in overrides["fallback_models"].values())
     assert all(url == "http://localhost:8080/v1" for url in overrides["api_bases"].values())
     assert all(key == "local" for key in overrides["api_keys"].values())
-    assert len(warnings) == 2
-    assert "Ignoring --llm-model" in warnings[0]
-    assert "Ignoring --llm-fallback" in warnings[1]
+    assert warnings == []
+
+
+def test_resolve_runtime_llm_overrides_host_model_url_honours_llm_model_tag() -> None:
+    """--llm-model alongside --host-model-url tags the served model for cache disambiguation."""
+    effective, overrides, warnings = _resolve_runtime_llm_overrides(
+        target_node="grounding",
+        llm_model_values=("llama-3.1-8b-instruct",),
+        llm_fallback_values=("mistral-7b-instruct",),
+        host_model_url="http://localhost:8080/v1",
+    )
+    assert effective == "llama-3.1-8b-instruct"
+    assert all(model == "llama-3.1-8b-instruct" for model in overrides["models"].values())
+    assert all(model == "mistral-7b-instruct" for model in overrides["fallback_models"].values())
+    assert all(url == "http://localhost:8080/v1" for url in overrides["api_bases"].values())
+    assert all("Ignoring --llm-model" not in w for w in warnings)
+    assert all("Ignoring --llm-fallback" not in w for w in warnings)
+
+
+def test_resolve_runtime_llm_overrides_host_model_url_auto_detects_served_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When --host-model-url is set and the server reports one model, use it."""
+    monkeypatch.setattr(
+        util_module, "resolve_host_model_identity", lambda url: "llama-3.1-8b-instruct"
+    )
+    effective, overrides, warnings = _resolve_runtime_llm_overrides(
+        target_node="grounding",
+        llm_model_values=(),
+        llm_fallback_values=(),
+        host_model_url="http://localhost:8080/v1",
+    )
+    assert effective == "openai/llama-3.1-8b-instruct"
+    assert all(m == "openai/llama-3.1-8b-instruct" for m in overrides["models"].values())
+    assert all(m == "openai/llama-3.1-8b-instruct" for m in overrides["fallback_models"].values())
+    assert warnings == []
+
+
+def test_resolve_runtime_llm_overrides_host_model_url_falls_back_when_probe_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(util_module, "resolve_host_model_identity", lambda url: None)
+    effective, overrides, _ = _resolve_runtime_llm_overrides(
+        target_node="grounding",
+        llm_model_values=(),
+        llm_fallback_values=(),
+        host_model_url="http://localhost:8080/v1",
+    )
+    assert effective == "openai/local-model"
+    assert all(m == "openai/local-model" for m in overrides["models"].values())
+
+
+def test_resolve_runtime_llm_overrides_host_model_url_skips_detection_when_multi_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When the server reports multiple models, we can't pick one — use sentinel."""
+    monkeypatch.setattr(util_module, "resolve_host_model_identity", lambda url: "a|b")
+    _, overrides, _ = _resolve_runtime_llm_overrides(
+        target_node="grounding",
+        llm_model_values=(),
+        llm_fallback_values=(),
+        host_model_url="http://localhost:8080/v1",
+    )
+    assert all(m == "openai/local-model" for m in overrides["models"].values())
+
+
+def test_resolve_runtime_llm_overrides_host_model_url_per_node_tag() -> None:
+    """Per-node NODE=MODEL form works alongside --host-model-url."""
+    _, overrides, _ = _resolve_runtime_llm_overrides(
+        target_node="grounding",
+        llm_model_values=("grounding=qwen-2.5-7b",),
+        llm_fallback_values=(),
+        host_model_url="http://localhost:8080/v1",
+    )
+    assert overrides["models"]["grounding"] == "qwen-2.5-7b"
+    # Other branch nodes still get the sentinel default.
+    assert overrides["models"]["claims"] == "openai/local-model"
 
 
 def test_resolve_runtime_llm_overrides_host_model_url_remote_without_key() -> None:

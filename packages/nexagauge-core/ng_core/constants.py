@@ -106,7 +106,7 @@ EVIDENCE_VERDICT_SUPPORTED_THRESHOLD: float = 0.75
 # Score at or above which a metric is considered "passed".
 # Applied uniformly to hallucination, GEval, and bias metrics.
 GROUNDING_METRIC_PASS_THRESHOLD: float = 0.6  # Atleast 60% of claims should be supported
-RELEVANCE_METRIC_PASS_THRESHOLD: float = 0.6  # Atleast 60% of claims should be supported
+RELEVANCE_METRIC_PASS_THRESHOLD: float = 0.6  # At least 60% of claims should be relevant
 GEVAL_METRIC_PASS_THRESHOLD: float = 0.6
 REDTEAM_METRIC_PASS_THRESHOLD: float = 0.6
 
