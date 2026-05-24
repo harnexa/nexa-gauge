@@ -84,7 +84,7 @@ def test_provided_steps_bypass_llm(tmp_path, monkeypatch: pytest.MonkeyPatch) ->
     metrics = [
         GevalMetricInput(
             name="factuality",
-            item_fields=["generation"],
+            item_fields=["output"],
             criteria=None,
             evaluation_steps=[Item(text="Check factual accuracy.", tokens=4)],
         )
@@ -100,7 +100,7 @@ def test_run_uses_cache_without_llm_call(tmp_path, monkeypatch: pytest.MonkeyPat
     store = CacheStore(tmp_path)
     node = GevalStepsNode(judge_model="gpt-4o-mini", artifact_cache_store=store)
     criteria = Item(text="The answer should be factually correct.", tokens=8)
-    item_fields = ["generation"]
+    item_fields = ["output"]
 
     signature = compute_geval_signature(
         criteria=criteria.text,
@@ -117,7 +117,7 @@ def test_run_uses_cache_without_llm_call(tmp_path, monkeypatch: pytest.MonkeyPat
         steps=[
             Item(text="Verify every claim against known facts.", tokens=8),
             Item(text="Penalize unsupported assertions.", tokens=6),
-            Item(text="Check the generation for hallucinations.", tokens=7),
+            Item(text="Check the output for hallucinations.", tokens=7),
         ],
     )
 
@@ -163,7 +163,7 @@ def test_run_generates_steps_then_hits_cache_on_second_run(
     metrics = [
         GevalMetricInput(
             name="factuality",
-            item_fields=["generation"],
+            item_fields=["output"],
             criteria=Item(text="The answer must be factual.", tokens=6),
             evaluation_steps=[],
         )
@@ -216,7 +216,7 @@ def test_no_cache_store_always_generates(
     metrics = [
         GevalMetricInput(
             name="factuality",
-            item_fields=["generation"],
+            item_fields=["output"],
             criteria=Item(text="The answer must be factual.", tokens=6),
             evaluation_steps=[],
         )
@@ -272,7 +272,7 @@ def test_shared_criteria_reuses_generated_steps_across_cases(
         metrics=[
             GevalMetricInput(
                 name="factuality_case_a",
-                item_fields=["generation"],
+                item_fields=["output"],
                 criteria=criteria,
                 evaluation_steps=[],
             )
@@ -288,7 +288,7 @@ def test_shared_criteria_reuses_generated_steps_across_cases(
         metrics=[
             GevalMetricInput(
                 name="factuality_case_b",
-                item_fields=["generation"],
+                item_fields=["output"],
                 criteria=criteria,
                 evaluation_steps=[],
             )
@@ -330,13 +330,13 @@ def test_same_criteria_different_fields_yield_different_cache_entries(
     metrics = [
         GevalMetricInput(
             name="factuality_gen",
-            item_fields=["generation"],
+            item_fields=["output"],
             criteria=criteria,
             evaluation_steps=[],
         ),
         GevalMetricInput(
             name="factuality_ref",
-            item_fields=["generation", "reference"],
+            item_fields=["output", "reference"],
             criteria=criteria,
             evaluation_steps=[],
         ),
@@ -368,7 +368,7 @@ def test_minimum_step_count_enforced(tmp_path, monkeypatch: pytest.MonkeyPatch) 
     metrics = [
         GevalMetricInput(
             name="factuality",
-            item_fields=["generation"],
+            item_fields=["output"],
             criteria=Item(text="Must be factual.", tokens=4),
             evaluation_steps=[],
         )
@@ -394,7 +394,7 @@ def test_prompt_contains_param_names(tmp_path, monkeypatch: pytest.MonkeyPatch) 
     metrics = [
         GevalMetricInput(
             name="factuality",
-            item_fields=["generation", "reference"],
+            item_fields=["output", "reference"],
             criteria=Item(text="Must be factual.", tokens=4),
             evaluation_steps=[],
         )
@@ -402,8 +402,8 @@ def test_prompt_contains_param_names(tmp_path, monkeypatch: pytest.MonkeyPatch) 
     node.run(metrics=metrics, enable_geval=True)
 
     user_content = captured["messages"][0][1]["content"]
-    assert "Actual Output" in user_content
-    assert "Expected Output" in user_content
+    assert "Output" in user_content
+    assert "Reference" in user_content
 
 
 def test_parallel_and_serial_generation_preserve_metric_order(
@@ -442,19 +442,19 @@ def test_parallel_and_serial_generation_preserve_metric_order(
     metrics = [
         GevalMetricInput(
             name="metric_a",
-            item_fields=["generation"],
+            item_fields=["output"],
             criteria=Item(text="criteria-a", tokens=4),
             evaluation_steps=[],
         ),
         GevalMetricInput(
             name="metric_b",
-            item_fields=["generation"],
+            item_fields=["output"],
             criteria=Item(text="criteria-b", tokens=4),
             evaluation_steps=[],
         ),
         GevalMetricInput(
             name="metric_c",
-            item_fields=["generation"],
+            item_fields=["output"],
             criteria=Item(text="criteria-c", tokens=4),
             evaluation_steps=[],
         ),

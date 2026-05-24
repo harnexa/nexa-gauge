@@ -18,15 +18,15 @@ def _kv_path(tmp_path, cache_key: str):
 
 def test_compute_case_hash_changes_when_reference_files_change() -> None:
     h1 = compute_case_hash(
-        generation="answer",
-        question="q",
+        output="answer",
+        input="q",
         reference="gt",
         context=[],
         reference_files=["docs/a.txt"],
     )
     h2 = compute_case_hash(
-        generation="answer",
-        question="q",
+        output="answer",
+        input="q",
         reference="gt",
         context=[],
         reference_files=["docs/b.txt"],
@@ -39,7 +39,7 @@ def test_compute_case_hash_changes_when_geval_steps_change() -> None:
         metrics=[
             GevalMetricSpec(
                 name="factuality",
-                item_fields=["generation"],
+                item_fields=["output"],
                 evaluation_steps=["Check factual correctness."],
             )
         ]
@@ -48,23 +48,23 @@ def test_compute_case_hash_changes_when_geval_steps_change() -> None:
         metrics=[
             GevalMetricSpec(
                 name="factuality",
-                item_fields=["generation"],
+                item_fields=["output"],
                 evaluation_steps=["Check factual correctness.", "Check conciseness."],
             )
         ]
     )
 
     h1 = compute_case_hash(
-        generation="answer",
-        question="q",
+        output="answer",
+        input="q",
         reference="gt",
         geval=geval_a,
         context=[],
         reference_files=[],
     )
     h2 = compute_case_hash(
-        generation="answer",
-        question="q",
+        output="answer",
+        input="q",
         reference="gt",
         geval=geval_b,
         context=[],
@@ -75,15 +75,15 @@ def test_compute_case_hash_changes_when_geval_steps_change() -> None:
 
 def test_compute_case_hash_changes_when_context_changes() -> None:
     h1 = compute_case_hash(
-        generation="answer",
-        question="q",
+        output="answer",
+        input="q",
         reference="gt",
         context=[],
         reference_files=[],
     )
     h2 = compute_case_hash(
-        generation="answer",
-        question="q",
+        output="answer",
+        input="q",
         reference="gt",
         context=["retrieval context"],
         reference_files=[],
@@ -96,7 +96,7 @@ def test_compute_case_hash_changes_when_geval_contract_changes() -> None:
         metrics=[
             GevalMetricSpec(
                 name="factuality",
-                item_fields=["generation"],
+                item_fields=["output"],
                 criteria="Must be factual.",
             )
         ]
@@ -105,23 +105,23 @@ def test_compute_case_hash_changes_when_geval_contract_changes() -> None:
         metrics=[
             GevalMetricSpec(
                 name="factuality",
-                item_fields=["generation"],
+                item_fields=["output"],
                 criteria="Must be concise and factual.",
             )
         ]
     )
 
     h1 = compute_case_hash(
-        generation="answer",
-        question="q",
+        output="answer",
+        input="q",
         reference="gt",
         geval=geval_a,
         context=[],
         reference_files=[],
     )
     h2 = compute_case_hash(
-        generation="answer",
-        question="q",
+        output="answer",
+        input="q",
         reference="gt",
         geval=geval_b,
         context=[],

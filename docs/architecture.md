@@ -76,17 +76,17 @@ flowchart TD
     report([report])
 
     %% Utility chain
-    scan -- "requires: generation" --> chunk_box
-    chunk_box -- "requires: generation" --> refiner_box
-    refiner_box -- "requires: generation" --> claims
-    scan -- "requires: generation + geval" --> geval_steps
+    scan -- "requires: output" --> chunk_box
+    chunk_box -- "requires: output" --> refiner_box
+    refiner_box -- "requires: output" --> claims
+    scan -- "requires: output + geval" --> geval_steps
 
     %% Metric fan-out
-    claims -- "requires: generation + question" --> relevance
-    claims -- "requires: generation + context" --> grounding
-    scan -- "requires: generation" --> redteam
-    geval_steps -- "requires: generation + geval" --> geval
-    scan -- "requires: generation + reference" --> reference
+    claims -- "requires: output + input" --> relevance
+    claims -- "requires: output + context" --> grounding
+    scan -- "requires: output" --> redteam
+    geval_steps -- "requires: output + geval" --> geval
+    scan -- "requires: output + reference" --> reference
 
     %% Join into eval
     chunk_box --> eval
@@ -136,13 +136,13 @@ flowchart TD
 
 Input normalization (`scan`) maps common aliases into canonical `inputs` fields:
 
-- `case_id`, `generation`, `question`, `context`, `reference`, `geval`, `redteam`
+- `case_id`, `output`, `input`, `context`, `reference`, `geval`, `redteam`
 
 Core runtime state includes:
 
 - control: `target_node`, `execution_mode`, `llm_overrides`
 - strategy control: `chunker`, `refiner`, `refiner_top_k`
-- artifacts: `generation_chunk`, `generation_refined_chunks`, `generation_claims`, `geval_steps`, metric outputs
+- artifacts: `output_chunk`, `output_refined_chunks`, `output_claims`, `geval_steps`, metric outputs
 - bookkeeping: `estimated_costs`, `node_model_usage`
 
 Report shape is topology-driven in `ng_graph.nodes.report`: sections are included by non-`None` `state_key` values from `PIPELINE`.

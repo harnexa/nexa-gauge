@@ -59,8 +59,8 @@ Five axes, each orthogonal:
   3. ``case_fingerprint`` — SHA-256 of case content, computed by
      :func:`compute_case_hash`. Controls "is this the same input?".
      **Inputs currently hashed:**
-         generation (str)
-         question (str | None)
+         output (str)
+         input (str | None)
          reference (str | None)
          context (list[str] | None)           ← joined with "|"
          geval metric spec, per metric:       ← name, item_fields,
@@ -114,7 +114,7 @@ Intentionally case-independent: two different cases that share a criterion
 produce the same signature → one cached LLM response, reused N times. This
 is the core cost optimisation from the G-Eval paper applied to our runner.
 
-**Want to add a dimension that invalidates step generation?**
+**Want to add a dimension that invalidates step output?**
 Edit ``compute_geval_signature`` in the graph package. Bumping
 ``GEVAL_STEPS_PROMPT_VERSION`` or ``GEVAL_STEPS_PARSER_VERSION`` there is the
 surgical way to bust only GEval-step artifacts without touching per-node
@@ -238,9 +238,9 @@ from ng_core.types import (
 
 _FIELD_TYPE_MAP: dict[str, Any] = {
     "inputs": Inputs,
-    "generation_chunk": ChunkArtifacts,
-    "generation_refined_chunks": ChunkArtifacts,
-    "generation_claims": ClaimArtifacts,
+    "output_chunk": ChunkArtifacts,
+    "output_refined_chunks": ChunkArtifacts,
+    "output_claims": ClaimArtifacts,
     "chunks": (list, Chunk),
     "raw_claims": (list, Claim),
     "unique_claims": (list, Claim),
@@ -390,8 +390,8 @@ def build_node_cache_key(
 
 
 def compute_case_hash(
-    generation: str,
-    question: Optional[str],
+    output: str,
+    input: Optional[str],
     reference: Optional[str],
     geval: Optional[GevalConfig | Geval] = None,
     redteam: Optional[Redteam] = None,
@@ -400,7 +400,7 @@ def compute_case_hash(
 ) -> str:
     """Stable SHA-256 hash of the case's input content.
 
-    Changing generation / question / reference / context / GEval metrics /
+    Changing output / input / reference / context / GEval metrics /
     reference_files produces a different hash, which causes
     a cache miss for the affected case.
     """
@@ -463,7 +463,7 @@ def compute_case_hash(
     context_text = "|".join([str(c) for c in (context or []) if c is not None])
     reference_text = "|".join(sorted(reference_files or []))
     raw = (
-        f"{generation}\x00{question or ''}\x00{reference or ''}\x00"
+        f"{output}\x00{input or ''}\x00{reference or ''}\x00"
         f"{context_text}\x00{geval_text}\x00{redteam_text}\x00{reference_text}"
     )
     return hashlib.sha256(raw.encode()).hexdigest()[:16]

@@ -2,7 +2,7 @@
 
 A *transform* is a pure function that reshapes one raw record into the dict
 shape the rest of nexa-gauge expects: keys for any subset of ``case_id``,
-``question``, ``generation``, ``context``, ``reference``. ``geval`` and
+``input``, ``output``, ``context``, ``reference``. ``geval`` and
 ``redteam`` are nexa-gauge metric configs (not dataset data) and are
 intentionally out of scope for transforms.
 

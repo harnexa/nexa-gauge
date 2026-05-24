@@ -1,11 +1,15 @@
 """Single-source-of-truth resolver for raw input field aliases.
 
-All callers that need to read a logical input field (``generation``,
-``question``, ``reference``, ``context``, ``geval``, ``redteam``,
-``case_id``) from a raw record must go through :func:`resolve_alias` so
-that adding a new accepted vocabulary in
-:data:`ng_core.constants.INPUT_FIELD_ALIASES` is sufficient — no other
-file edits required.
+All callers that need to read a logical input field (``output``, ``input``,
+``reference``, ``context``, ``geval``, ``redteam``, ``case_id``) from a
+raw record must go through :func:`resolve_alias` so that adding a new
+accepted vocabulary in :data:`INPUT_FIELD_ALIASES` is sufficient — no
+other file edits required.
+
+The canonical names ``output`` and ``input`` are the first-class field
+names. Legacy keys ``generation`` and ``question`` (and their long-time
+aliases ``response``, ``answer``, ``completion``, ``query``, ``prompt``)
+remain accepted as aliases for backward compatibility.
 """
 
 from __future__ import annotations
@@ -18,8 +22,8 @@ from typing import Any, Mapping
 # accepted vocabulary across all adapters/datasets.
 INPUT_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "case_id": ("case_id", "id"),
-    "generation": ("generation", "response", "answer", "output", "completion"),
-    "question": ("question", "query", "prompt"),
+    "output": ("output", "generation", "response", "answer", "completion"),
+    "input": ("input", "question", "query", "prompt"),
     "reference": ("reference", "ground_truth", "gold_answer", "label"),
     "context": ("context", "contexts", "documents"),
     "geval": ("geval",),

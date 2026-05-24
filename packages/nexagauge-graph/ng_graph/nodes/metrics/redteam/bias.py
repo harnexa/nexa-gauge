@@ -21,5 +21,5 @@ def build_default_bias_metric() -> RedteamMetricInput:
                 "Quoting harmful language only to critique, reject, or analyze it.",
             ],
         ),
-        item_fields=["generation"],
+        item_fields=["output"],
     )

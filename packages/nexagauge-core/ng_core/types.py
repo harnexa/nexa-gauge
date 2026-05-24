@@ -31,15 +31,15 @@ class MetricCategory(str, Enum):
 # ------------------------------------------------------------
 # New Nodes
 # ------------------------------------------------------------
-GevalItemField = Literal["question", "generation", "reference", "context"]
-RedteamItemField = Literal["question", "generation", "reference", "context"]
+GevalItemField = Literal["input", "output", "reference", "context"]
+RedteamItemField = Literal["input", "output", "reference", "context"]
 
 
 class GevalMetricSpec(BaseModel):
     """Legacy GEval metric shape used by cache/tests/adapters."""
 
     name: str
-    item_fields: list[GevalItemField] = Field(default_factory=lambda: ["generation"])
+    item_fields: list[GevalItemField] = Field(default_factory=lambda: ["output"])
     criteria: str | None = None
     evaluation_steps: list[str] = Field(default_factory=list)
 
@@ -52,7 +52,7 @@ class GevalMetricInput(BaseModel):
     """
 
     name: str
-    item_fields: list[GevalItemField] = Field(default_factory=lambda: ["generation"])
+    item_fields: list[GevalItemField] = Field(default_factory=lambda: ["output"])
     criteria: Item | None = None
     evaluation_steps: list[Item]
 
@@ -83,7 +83,7 @@ class Item(BaseModel):
 
 
 class Chunk(BaseModel):
-    """One span of the generation after chunking, with offsets back to source."""
+    """One span of the output after chunking, with offsets back to source."""
 
     index: int
     item: Item
@@ -113,7 +113,7 @@ class Grounding(Claim):
 
 
 class Relevancy(Claim):
-    """Claim annotated with a relevancy verdict against the question."""
+    """Claim annotated with a relevancy verdict against the input."""
 
     verdict: Literal["ACCEPTED", "REJECTED"]
 
@@ -182,7 +182,7 @@ class RedteamMetricInput(BaseModel):
 
     name: str
     rubric: RedteamRubric
-    item_fields: list[RedteamItemField] = Field(default_factory=lambda: ["generation"])
+    item_fields: list[RedteamItemField] = Field(default_factory=lambda: ["output"])
 
 
 class Redteam(BaseModel):
@@ -200,15 +200,15 @@ class Inputs(BaseModel):
     """
 
     case_id: str
-    generation: Item
-    question: Optional[Item] = None
+    output: Item
+    input: Optional[Item] = None
     reference: Optional[Item] = None
     context: Optional[Item] = None
     geval: Optional[Geval] = None
     redteam: Optional[Redteam] = None
 
-    has_generation: bool = False
-    has_question: bool = False
+    has_output: bool = False
+    has_input: bool = False
     has_reference: bool = False
     has_context: bool = False
     has_geval: bool = False
@@ -216,8 +216,8 @@ class Inputs(BaseModel):
 
     @model_validator(mode="after")
     def _set_has_flags(self) -> "Inputs":
-        self.has_generation = bool(self.generation and self.generation.text)
-        self.has_question = bool(self.question and self.question.text.strip())
+        self.has_output = bool(self.output and self.output.text)
+        self.has_input = bool(self.input and self.input.text.strip())
         self.has_reference = bool(self.reference and self.reference.text.strip())
         self.has_context = bool(self.context and self.context.text.strip())
         self.has_geval = bool(self.geval and self.geval.metrics)
@@ -237,7 +237,7 @@ class CostEstimate(BaseModel):
 # NODES Essentials
 #
 class ChunkArtifacts(BaseModel):
-    """Output of the ``chunk`` node: split generation + cost."""
+    """Output of the ``chunk`` node: split output + cost."""
 
     chunks: list[Chunk]
     cost: CostEstimate
@@ -368,9 +368,9 @@ class EvalCase(TypedDict):
     inputs: Optional[Inputs]
 
     # Pipeline artifacts — None until the corresponding node runs
-    generation_chunk: Optional[ChunkArtifacts]
-    generation_refined_chunks: Optional[ChunkArtifacts]
-    generation_claims: Optional[ClaimArtifacts]
+    output_chunk: Optional[ChunkArtifacts]
+    output_refined_chunks: Optional[ChunkArtifacts]
+    output_claims: Optional[ClaimArtifacts]
     grounding_metrics: Optional[GroundingMetrics]
     relevance_metrics: Optional[RelevanceMetrics]
     redteam_metrics: Optional[RedteamMetrics]

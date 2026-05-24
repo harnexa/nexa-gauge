@@ -1,6 +1,6 @@
 # Debug commands:
 # uv run pytest -s packages/nexagauge-graph/test_ng_graph/test_graph/test_llm_routing.py
-# uv run pytest -s packages/nexagauge-graph/test_ng_graph/test_graph/test_llm_routing.py::test_node_generation_claims_uses_canonical_model_key
+# uv run pytest -s packages/nexagauge-graph/test_ng_graph/test_graph/test_llm_routing.py::test_node_output_claims_uses_canonical_model_key
 # uv run pytest -s -k "llm_routing" packages/nexagauge-graph/test_ng_graph/test_graph/test_llm_routing.py
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ def _make_chunk(text: str) -> Chunk:
     )
 
 
-def test_node_generation_claims_uses_canonical_model_key(graph_module, monkeypatch) -> None:
+def test_node_output_claims_uses_canonical_model_key(graph_module, monkeypatch) -> None:
     captured: dict[str, object] = {}
 
     def _fake_get_judge_model(node_name: str, default: str, llm_overrides=None) -> str:
@@ -53,27 +53,27 @@ def test_node_generation_claims_uses_canonical_model_key(graph_module, monkeypat
     state = {
         "inputs": Inputs(
             case_id="case-routing-claims",
-            generation=Item(text="The Eiffel Tower is in Paris.", tokens=7),
-            has_generation=True,
+            output=Item(text="The Eiffel Tower is in Paris.", tokens=7),
+            has_output=True,
         ),
-        "generation_chunk": ChunkArtifacts(
+        "output_chunk": ChunkArtifacts(
             chunks=[_make_chunk("The Eiffel Tower is in Paris.")],
             cost=CostEstimate(cost=0.0, input_tokens=None, output_tokens=None),
         ),
-        "generation_refined_chunks": ChunkArtifacts(
+        "output_refined_chunks": ChunkArtifacts(
             chunks=[_make_chunk("The Eiffel Tower is in Paris.")],
             cost=CostEstimate(cost=0.0, input_tokens=None, output_tokens=None),
         ),
         "llm_overrides": llm_overrides,
     }
 
-    out = graph_module.node_generation_claims(state)
+    out = graph_module.node_output_claims(state)
 
     assert captured["resolved_node_name"] == "claims"
     assert captured["resolved_overrides"] == llm_overrides
     assert captured["constructor_model"] == "resolved-claims-model"
     assert captured["constructor_overrides"] == llm_overrides
-    assert out["generation_claims"] is not None
+    assert out["output_claims"] is not None
 
 
 def test_node_grounding_uses_canonical_key_and_handles_missing_context(
@@ -103,12 +103,12 @@ def test_node_grounding_uses_canonical_key_and_handles_missing_context(
     state = {
         "inputs": Inputs(
             case_id="case-routing-grounding",
-            generation=Item(text="Paris is in France.", tokens=4),
+            output=Item(text="Paris is in France.", tokens=4),
             context=None,
-            has_generation=True,
+            has_output=True,
             has_context=False,
         ),
-        "generation_claims": ClaimArtifacts(
+        "output_claims": ClaimArtifacts(
             claims=[Claim(item=Item(text="Paris is in France.", tokens=4), source_chunk_index=0)],
             cost=CostEstimate(cost=0.0, input_tokens=None, output_tokens=None),
         ),

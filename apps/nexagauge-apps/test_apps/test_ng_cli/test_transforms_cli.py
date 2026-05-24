@@ -45,7 +45,7 @@ def _restore_real_cli_symbols():
 def _hotpot_shaped_record() -> dict:
     return {
         "id": "hp-1",
-        "question": "Which continent has the Atacama Desert?",
+        "input": "Which continent has the Atacama Desert?",
         "answer": "South America",
         "context": {
             "title": ["Atacama Desert", "Chile"],

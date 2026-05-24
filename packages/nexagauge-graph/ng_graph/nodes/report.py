@@ -45,8 +45,8 @@ def _input_projection(state: Mapping[str, Any]) -> dict[str, Any]:
     inputs = state.get("inputs")
     return {
         "case_id": getattr(inputs, "case_id", None),
-        "generation": getattr(getattr(inputs, "generation", None), "text", None),
-        "question": getattr(getattr(inputs, "question", None), "text", None),
+        "output": getattr(getattr(inputs, "output", None), "text", None),
+        "input": getattr(getattr(inputs, "input", None), "text", None),
         "context": getattr(getattr(inputs, "context", None), "text", None),
         "reference": getattr(getattr(inputs, "reference", None), "text", None),
     }

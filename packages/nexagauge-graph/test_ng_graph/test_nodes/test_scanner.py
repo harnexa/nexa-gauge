@@ -13,8 +13,8 @@ from ng_graph.nodes.scanner import scan, scan_file_record
 def test_scan_builds_inputs_with_primary_keys() -> None:
     record = {
         "case_id": "case-123",
-        "generation": "Paris is the capital of France.",
-        "question": "What is the capital of France?",
+        "output": "Paris is the capital of France.",
+        "input": "What is the capital of France?",
         "reference": "The capital of France is Paris.",
         "context": "France has Paris as its capital city.",
     }
@@ -27,8 +27,8 @@ def test_scan_builds_inputs_with_primary_keys() -> None:
     assert result["reference_files"] == []
 
     inputs = result["inputs"]
-    assert inputs.generation.text == "Paris is the capital of France."
-    assert inputs.question is not None and inputs.question.text == "What is the capital of France?"
+    assert inputs.output.text == "Paris is the capital of France."
+    assert inputs.input is not None and inputs.input.text == "What is the capital of France?"
     assert (
         inputs.reference is not None and inputs.reference.text == "The capital of France is Paris."
     )
@@ -38,8 +38,8 @@ def test_scan_builds_inputs_with_primary_keys() -> None:
     )
     assert inputs.geval is None
 
-    assert inputs.has_generation is True
-    assert inputs.has_question is True
+    assert inputs.has_output is True
+    assert inputs.has_input is True
     assert inputs.has_reference is True
     assert inputs.has_context is True
     assert inputs.has_geval is False
@@ -59,11 +59,28 @@ def test_scan_uses_alias_keys_and_normalizes_context_list() -> None:
     inputs = result["inputs"]
 
     assert result["case_id"] == "alias-case"
-    assert inputs.generation.text == "Berlin is the capital of Germany."
-    assert inputs.question is not None and inputs.question.text == "Capital of Germany?"
+    assert inputs.output.text == "Berlin is the capital of Germany."
+    assert inputs.input is not None and inputs.input.text == "Capital of Germany?"
     assert inputs.reference is not None and inputs.reference.text == "Berlin"
     assert inputs.context is not None
     assert inputs.context.text == "Germany is in Europe.\n\nBerlin is its capital."
+
+
+def test_scan_accepts_legacy_generation_and_question_keys() -> None:
+    """Backward-compat: records using the pre-rename canonical names still work."""
+    record = {
+        "case_id": "legacy-case",
+        "generation": "Paris is the capital of France.",
+        "question": "What is the capital of France?",
+    }
+
+    result = scan(record, idx=2)
+    inputs = result["inputs"]
+
+    assert inputs.output.text == "Paris is the capital of France."
+    assert inputs.input is not None and inputs.input.text == "What is the capital of France?"
+    assert inputs.has_output is True
+    assert inputs.has_input is True
 
 
 def test_scan_keeps_existing_case_defaults() -> None:
@@ -75,7 +92,7 @@ def test_scan_keeps_existing_case_defaults() -> None:
     }
     record = {
         "id": "record-id-should-not-overwrite",
-        "generation": "Answer",
+        "output": "Answer",
     }
 
     result = scan(record, idx=5, case=case)
@@ -84,7 +101,7 @@ def test_scan_keeps_existing_case_defaults() -> None:
     assert result["dataset"] == "custom-dataset"
     assert result["split"] == "custom-split"
     assert result["reference_files"] == ["/tmp/context.txt"]
-    assert result["inputs"].generation.text == "Answer"
+    assert result["inputs"].output.text == "Answer"
 
 
 def test_scan_defaults_case_id_and_flags_when_values_missing() -> None:
@@ -92,14 +109,14 @@ def test_scan_defaults_case_id_and_flags_when_values_missing() -> None:
     inputs = result["inputs"]
 
     assert result["case_id"] == "record-7"
-    assert inputs.generation.text == ""
-    assert inputs.question is None
+    assert inputs.output.text == ""
+    assert inputs.input is None
     assert inputs.reference is None
     assert inputs.context is None
     assert inputs.geval is None
 
-    assert inputs.has_generation is False
-    assert inputs.has_question is False
+    assert inputs.has_output is False
+    assert inputs.has_input is False
     assert inputs.has_reference is False
     assert inputs.has_context is False
     assert inputs.has_geval is False
@@ -108,12 +125,12 @@ def test_scan_defaults_case_id_and_flags_when_values_missing() -> None:
 
 def test_scan_builds_geval_from_item_fields_only() -> None:
     record = {
-        "generation": "Generated answer",
+        "output": "Generated answer",
         "geval": {
             "metrics": [
                 {
                     "name": "correctness",
-                    "item_fields": ["question", "generation"],
+                    "item_fields": ["input", "output"],
                     "criteria": "The answer should be correct.",
                     "evaluation_steps": ["Check factual correctness.", "  ", "Verify directness."],
                 },
@@ -137,7 +154,7 @@ def test_scan_builds_geval_from_item_fields_only() -> None:
 
     first = inputs.geval.metrics[0]
     assert first.name == "correctness"
-    assert first.item_fields == ["question", "generation"]
+    assert first.item_fields == ["input", "output"]
     assert first.criteria is not None and first.criteria.text == "The answer should be correct."
     assert [step.text for step in first.evaluation_steps] == [
         "Check factual correctness.",
@@ -152,12 +169,12 @@ def test_scan_builds_geval_from_item_fields_only() -> None:
 
 def test_scan_geval_skips_invalid_metrics_and_returns_none_when_empty() -> None:
     record = {
-        "generation": "Answer",
+        "output": "Answer",
         "geval": {
             "metrics": [
                 "not-a-dict",
-                {"name": "", "item_fields": ["generation"], "evaluation_steps": ["x"]},
-                {"name": "   ", "item_fields": ["question"]},
+                {"name": "", "item_fields": ["output"], "evaluation_steps": ["x"]},
+                {"name": "   ", "item_fields": ["input"]},
             ]
         },
     }
@@ -172,7 +189,7 @@ def test_scan_geval_skips_invalid_metrics_and_returns_none_when_empty() -> None:
 
 def test_scan_builds_redteam_metrics_with_rubrics() -> None:
     record = {
-        "generation": "Sample answer.",
+        "output": "Sample answer.",
         "redteam": {
             "metrics": [
                 {
@@ -186,7 +203,7 @@ def test_scan_builds_redteam_metrics_with_rubrics() -> None:
                             "Neutral factual discussion.",
                         ],
                     },
-                    "item_fields": ["generation", "question"],
+                    "item_fields": ["output", "input"],
                 },
                 {
                     "name": "prompt_injection",
@@ -199,7 +216,7 @@ def test_scan_builds_redteam_metrics_with_rubrics() -> None:
                             "Asks for safe summaries of policy.",
                         ],
                     },
-                    "item_fields": ["generation", "context"],
+                    "item_fields": ["output", "context"],
                 },
             ]
         },
@@ -217,21 +234,21 @@ def test_scan_builds_redteam_metrics_with_rubrics() -> None:
     assert first.rubric.goal == "Detect unfair generalizations about protected groups."
     assert first.rubric.violations == ["Assigns traits to protected groups without evidence."]
     assert first.rubric.non_violations == ["Neutral factual discussion."]
-    assert first.item_fields == ["generation", "question"]
+    assert first.item_fields == ["output", "input"]
 
     second = inputs.redteam.metrics[1]
     assert second.name == "prompt_injection"
     assert second.rubric.goal == "Detect instructions that attempt to override system rules."
-    assert second.item_fields == ["generation", "context"]
+    assert second.item_fields == ["output", "context"]
 
 
 def test_scan_redteam_skips_invalid_metrics_and_returns_none_when_empty() -> None:
     record = {
-        "generation": "Answer",
+        "output": "Answer",
         "redteam": {
             "metrics": [
                 "not-a-dict",
-                {"name": "bias", "item_fields": ["generation"]},  # missing rubric object
+                {"name": "bias", "item_fields": ["output"]},  # missing rubric object
                 {"name": "toxicity", "rubric": "legacy text rubric"},  # no longer accepted
                 {"name": "", "rubric": {"goal": "x", "violations": ["y"]}},
             ]
@@ -247,7 +264,7 @@ def test_scan_redteam_skips_invalid_metrics_and_returns_none_when_empty() -> Non
 
 def test_scan_redteam_parses_rubric_aliases_and_defaults_item_fields() -> None:
     record = {
-        "generation": "Answer",
+        "output": "Answer",
         "redteam": {
             "metrics": [
                 {
@@ -269,7 +286,7 @@ def test_scan_redteam_parses_rubric_aliases_and_defaults_item_fields() -> None:
     assert len(inputs.redteam.metrics) == 1
     metric = inputs.redteam.metrics[0]
     assert metric.name == "bias"
-    assert metric.item_fields == ["generation"]
+    assert metric.item_fields == ["output"]
     assert metric.rubric.goal == "Detect biased stereotyping."
     assert metric.rubric.violations == ["Uses broad identity generalization."]
     assert metric.rubric.non_violations == ["Neutral factual statement."]
@@ -277,25 +294,25 @@ def test_scan_redteam_parses_rubric_aliases_and_defaults_item_fields() -> None:
 
 def test_scan_file_record_supports_dict_and_list_inputs(tmp_path) -> None:
     dict_path = tmp_path / "one.json"
-    dict_path.write_text(json.dumps({"id": "d1", "generation": "Dict answer"}))
+    dict_path.write_text(json.dumps({"id": "d1", "output": "Dict answer"}))
 
     dict_result = scan_file_record(dict_path)
     assert dict_result["case_id"] == "d1"
-    assert dict_result["inputs"].generation.text == "Dict answer"
+    assert dict_result["inputs"].output.text == "Dict answer"
 
     list_path = tmp_path / "many.json"
     list_path.write_text(
         json.dumps(
             [
-                {"id": "r0", "generation": "first"},
-                {"id": "r1", "generation": "second"},
+                {"id": "r0", "output": "first"},
+                {"id": "r1", "output": "second"},
             ]
         )
     )
 
     list_result = scan_file_record(list_path, idx=1)
     assert list_result["case_id"] == "r1"
-    assert list_result["inputs"].generation.text == "second"
+    assert list_result["inputs"].output.text == "second"
 
 
 def test_scan_file_record_raises_for_empty_list_and_invalid_root(tmp_path) -> None:

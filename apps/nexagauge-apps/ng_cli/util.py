@@ -481,11 +481,11 @@ def _is_node_eligible_for_inputs(node_name: str, inputs: Any) -> bool:
         return False
 
     spec = NODES_BY_NAME[node_name]
-    if spec.requires_generation and not bool(getattr(inputs, "has_generation", False)):
+    if spec.requires_output and not bool(getattr(inputs, "has_output", False)):
         return False
     if spec.requires_context and not bool(getattr(inputs, "has_context", False)):
         return False
-    if spec.requires_question and not bool(getattr(inputs, "has_question", False)):
+    if spec.requires_input and not bool(getattr(inputs, "has_input", False)):
         return False
     if spec.requires_geval and not bool(getattr(inputs, "has_geval", False)):
         return False
@@ -545,7 +545,7 @@ def _is_case_eligible_for_target_path(target_node: str, case: Any) -> bool:
 
     For eval/report targets, keep existing behavior (process all records), because
     requiring the full eval path would incorrectly force all metric-specific fields
-    (question/context/reference/geval) to be present at once.
+    (input/context/reference/geval) to be present at once.
     """
     if target_node in {"eval", "report"}:
         return True

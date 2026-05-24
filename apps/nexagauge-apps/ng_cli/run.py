@@ -41,10 +41,11 @@ from adapters import create_dataset_adapter
 from ng_core.aliases import extend_aliases
 from ng_core.cache import CacheStore, NoOpCacheStore
 from ng_core.constants import DEFAULT_CHUNKER_STRATEGY, DEFAULT_REFINER_STRATEGY, REFINER_TOP_K
-from ng_core.extensions import get_transform, load_extension_file
+from ng_core.extensions import get_transform, list_transforms, load_extension_file
 from ng_graph.llm.gateway import set_llm_concurrency
 from ng_graph.log import set_node_logging_enabled
 from ng_graph.nodes import eval as eval_node
+from ng_graph.nodes import report as report_node
 from ng_graph.runner import CachedNodeRunner
 
 from .util import (
@@ -174,9 +175,9 @@ def run(
         "--field",
         help=(
             "Repeatable column mapping LOGICAL=COLUMN to extend the input field "
-            "alias table at runtime. Logical keys: case_id, generation, question, "
+            "alias table at runtime. Logical keys: case_id, input, output, "
             "reference, context, geval, redteam. "
-            "Example: --field generation=text --field question=q."
+            "Example: --field output=text --field input=q."
         ),
     ),
     extension_file: list[Path] = typer.Option(
@@ -327,11 +328,20 @@ def run(
     extension_file = getattr(extension_file, "default", extension_file)
     transform = getattr(transform, "default", transform)
     transform_fn = None
+    transforms_before = set(list_transforms())
     for ext_path in extension_file or ():
         load_extension_file(ext_path)
     if transform:
         transform_fn = get_transform(transform)
         console.print(f"[green]Applying transform '{transform}' per record before scan.[/green]")
+    elif extension_file:
+        newly_registered = sorted(set(list_transforms()) - transforms_before)
+        if newly_registered:
+            console.print(
+                "[yellow]--extension-file loaded but no --transform passed; "
+                f"registered transforms available: {newly_registered}. "
+                "Pass --transform NAME to apply one.[/yellow]"
+            )
 
     effective_primary_model, llm_overrides, llm_warnings = _resolve_runtime_llm_overrides(
         target_node=target_node,
@@ -439,12 +449,15 @@ def run(
 
                     if case_report_dir:
                         report = result.final_state.get("report")
-                        if report is not None:
-                            _write_report_json(
-                                report=report,
-                                output_dir=case_report_dir,
-                                case_id=result.case_id,
-                            )
+                        if report is None:
+                            # For targets before the ``report`` node (e.g. ``chunk``),
+                            # synthesize the same projection from final state.
+                            report = report_node.aggregate(state=result.final_state)
+                        _write_report_json(
+                            report=report,
+                            output_dir=case_report_dir,
+                            case_id=result.case_id,
+                        )
                     continue
 
                 failed += 1

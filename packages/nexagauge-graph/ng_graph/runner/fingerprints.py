@@ -74,8 +74,8 @@ def _compute_case_fingerprint(case: dict[str, Any]) -> str:
     inputs = scan(case)["inputs"]
     context_text = inputs.context.text if inputs.context else ""
     return compute_case_hash(
-        generation=inputs.generation.text if inputs.generation else "",
-        question=inputs.question.text if inputs.question else None,
+        output=inputs.output.text if inputs.output else "",
+        input=inputs.input.text if inputs.input else None,
         reference=inputs.reference.text if inputs.reference else None,
         geval=inputs.geval,
         redteam=inputs.redteam,

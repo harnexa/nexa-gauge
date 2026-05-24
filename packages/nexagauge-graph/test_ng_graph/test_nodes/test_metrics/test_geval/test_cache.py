@@ -12,13 +12,13 @@ from ng_graph.nodes.metrics.geval.cache import (
 
 def test_compute_geval_signature_changes_with_inputs() -> None:
     sig_a = compute_geval_signature(
-        criteria="Must be factual.", item_fields=["generation"], model="gpt-4o-mini"
+        criteria="Must be factual.", item_fields=["output"], model="gpt-4o-mini"
     )
     sig_b = compute_geval_signature(
-        criteria="Must be concise.", item_fields=["generation"], model="gpt-4o-mini"
+        criteria="Must be concise.", item_fields=["output"], model="gpt-4o-mini"
     )
     sig_c = compute_geval_signature(
-        criteria="Must be factual.", item_fields=["generation"], model="gpt-4o"
+        criteria="Must be factual.", item_fields=["output"], model="gpt-4o"
     )
 
     assert sig_a != sig_b
@@ -27,16 +27,16 @@ def test_compute_geval_signature_changes_with_inputs() -> None:
 
 def test_signature_depends_on_item_fields() -> None:
     base = dict(criteria="Score quality.", model="gpt-4o-mini")
-    sig_a = compute_geval_signature(item_fields=["generation"], **base)
-    sig_b = compute_geval_signature(item_fields=["generation", "reference"], **base)
+    sig_a = compute_geval_signature(item_fields=["output"], **base)
+    sig_b = compute_geval_signature(item_fields=["output", "reference"], **base)
 
     assert sig_a != sig_b
 
 
 def test_signature_stable_under_field_order() -> None:
     base = dict(criteria="Score quality.", model="gpt-4o-mini")
-    sig_a = compute_geval_signature(item_fields=["generation", "reference"], **base)
-    sig_b = compute_geval_signature(item_fields=["reference", "generation"], **base)
+    sig_a = compute_geval_signature(item_fields=["output", "reference"], **base)
+    sig_b = compute_geval_signature(item_fields=["reference", "output"], **base)
 
     assert sig_a == sig_b
 
@@ -52,7 +52,7 @@ def test_signature_ignores_evaluation_steps() -> None:
     """
 
     sig = compute_geval_signature(
-        criteria="Must be factual.", item_fields=["generation"], model="gpt-4o-mini"
+        criteria="Must be factual.", item_fields=["output"], model="gpt-4o-mini"
     )
     assert compute_geval_signature.__code__.co_varnames  # satisfy linters
     # compute_geval_signature has no evaluation_steps parameter, so there's
@@ -62,18 +62,18 @@ def test_signature_ignores_evaluation_steps() -> None:
     assert "evaluation_steps" not in inspect.signature(compute_geval_signature).parameters
     # Determinism check: same inputs → same key, regardless of any other state.
     assert sig == compute_geval_signature(
-        criteria="Must be factual.", item_fields=["generation"], model="gpt-4o-mini"
+        criteria="Must be factual.", item_fields=["output"], model="gpt-4o-mini"
     )
 
 
 def test_build_geval_artifact_cache_key_stable() -> None:
     sig = compute_geval_signature(
-        criteria="Be factual.", item_fields=["generation"], model="gpt-4o-mini"
+        criteria="Be factual.", item_fields=["output"], model="gpt-4o-mini"
     )
     assert build_geval_artifact_cache_key(sig) == build_geval_artifact_cache_key(sig)
 
     other = compute_geval_signature(
-        criteria="Be concise.", item_fields=["generation"], model="gpt-4o-mini"
+        criteria="Be concise.", item_fields=["output"], model="gpt-4o-mini"
     )
     assert build_geval_artifact_cache_key(sig) != build_geval_artifact_cache_key(other)
     assert build_geval_artifact_cache_key(sig).startswith("v2:geval_artifact:")
@@ -82,14 +82,14 @@ def test_build_geval_artifact_cache_key_stable() -> None:
 def test_roundtrip_via_cache_store(tmp_path) -> None:
     store = CacheStore(tmp_path)
     signature = compute_geval_signature(
-        criteria="Mention Paris.", item_fields=["generation"], model="gpt-4o-mini"
+        criteria="Mention Paris.", item_fields=["output"], model="gpt-4o-mini"
     )
     artifact = GevalCacheArtifact(
         signature=signature,
         model="gpt-4o-mini",
         prompt_version="v2",
         parser_version="v2",
-        item_fields=["generation"],
+        item_fields=["output"],
         criteria=Item(text="Mention Paris.", tokens=2),
         evaluation_steps=[
             Item(text="Check if Paris is mentioned.", tokens=6),
@@ -111,7 +111,7 @@ def test_roundtrip_via_cache_store(tmp_path) -> None:
     restored = entry["node_output"]["geval_artifact"]
     assert isinstance(restored, GevalCacheArtifact)
     assert restored.signature == signature
-    assert restored.item_fields == ["generation"]
+    assert restored.item_fields == ["output"]
     assert [s.text for s in restored.evaluation_steps] == [
         "Check if Paris is mentioned.",
         "Confirm the mention is factually correct.",
@@ -128,12 +128,12 @@ def test_collect_geval_signatures_deduplicates_and_skips_preprovided_steps() -> 
                     SimpleNamespace(
                         criteria=shared_criteria,
                         evaluation_steps=[],
-                        item_fields=["generation"],
+                        item_fields=["output"],
                     ),
                     SimpleNamespace(
                         criteria=Item(text="Ignored metric.", tokens=2),
                         evaluation_steps=[Item(text="Already provided.", tokens=2)],
-                        item_fields=["generation"],
+                        item_fields=["output"],
                     ),
                 ]
             )
@@ -147,12 +147,12 @@ def test_collect_geval_signatures_deduplicates_and_skips_preprovided_steps() -> 
                     {
                         "criteria": {"text": "Response must be factual."},
                         "evaluation_steps": [],
-                        "item_fields": ["generation"],
+                        "item_fields": ["output"],
                     },
                     {
                         "criteria": {"text": ""},
                         "evaluation_steps": [],
-                        "item_fields": ["generation"],
+                        "item_fields": ["output"],
                     },
                 ]
             }
@@ -161,7 +161,7 @@ def test_collect_geval_signatures_deduplicates_and_skips_preprovided_steps() -> 
 
     signatures = collect_geval_signatures(cases=[case_obj, case_dict], model="gpt-4o-mini")
     expected = compute_geval_signature(
-        criteria=shared_criteria.text, item_fields=["generation"], model="gpt-4o-mini"
+        criteria=shared_criteria.text, item_fields=["output"], model="gpt-4o-mini"
     )
 
     assert signatures == {expected}

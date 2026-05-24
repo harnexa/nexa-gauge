@@ -80,7 +80,7 @@ def test_load_extension_file_executes_decorators(tmp_path: Path):
 
             @register_transform("loaded")
             def t(record):
-                return {"generation": record["resp"]}
+                return {"output": record["resp"]}
             """
         ).strip()
     )
@@ -88,7 +88,7 @@ def test_load_extension_file_executes_decorators(tmp_path: Path):
     load_extension_file(file)
     assert "loaded" in list_transforms()
     fn = get_transform("loaded")
-    assert fn({"resp": "hi"}) == {"generation": "hi"}
+    assert fn({"resp": "hi"}) == {"output": "hi"}
 
 
 def test_load_extension_file_missing_raises(tmp_path: Path):

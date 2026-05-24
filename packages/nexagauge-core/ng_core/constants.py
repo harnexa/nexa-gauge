@@ -31,7 +31,7 @@ TIKTOKEN_ENCODING: str = "cl100k_base"
 
 # Target chunk size (in tokens) for the text splitter and the scanner's
 # heuristic chunk count estimate.
-GENERATION_CHUNK_SIZE_TOKENS: int = 100
+OUTPUT_CHUNK_SIZE_TOKENS: int = 100
 
 # Minimum token count required before a chunk is eligible for splitting.
 CHUNK_MIN_TOKENS_FOR_SPLIT: int = 100

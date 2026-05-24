@@ -45,10 +45,10 @@ class ReferenceNode(BaseMetricNode):
     SYSTEM_PROMPT = ""  # No LLM — these are reference-based lexical metrics
     USER_PROMPT = ""
 
-    def _compute_rouge(self, generation: str, reference: str) -> list[MetricResult]:
+    def _compute_rouge(self, output: str, reference: str) -> list[MetricResult]:
         """Compute ROUGE-1, ROUGE-2, ROUGE-L F1 scores against reference."""
         scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
-        scores = scorer.score(reference, generation)
+        scores = scorer.score(reference, output)
         return [
             MetricResult(
                 name="rouge1",
@@ -67,9 +67,9 @@ class ReferenceNode(BaseMetricNode):
             ),
         ]
 
-    def _compute_bleu(self, generation: str, reference: str) -> MetricResult:
+    def _compute_bleu(self, output: str, reference: str) -> MetricResult:
         """Compute sentence BLEU score (smoothed) against reference."""
-        hypothesis = generation.split()
+        hypothesis = output.split()
         ref_tokens = reference.split()
         smoothing = SmoothingFunction().method1
         score = sentence_bleu([ref_tokens], hypothesis, smoothing_function=smoothing)
@@ -79,9 +79,9 @@ class ReferenceNode(BaseMetricNode):
             score=round(score, 4),
         )
 
-    def _compute_meteor(self, generation: str, reference: str) -> MetricResult:
+    def _compute_meteor(self, output: str, reference: str) -> MetricResult:
         """Compute METEOR score against reference."""
-        hypothesis = generation.split()
+        hypothesis = output.split()
         ref_tokens = reference.split()
         try:
             # NLTK WordNet access inside METEOR is not reliably thread-safe in
@@ -104,16 +104,16 @@ class ReferenceNode(BaseMetricNode):
 
     def run(  # type: ignore[override]
         self,
-        generation: Item | str,
+        output: Item | str,
         reference: Item | str | None,
-        enable_generation_metrics: bool = True,
+        enable_output_metrics: bool = True,
     ) -> ReferenceMetrics:
         """Compute ROUGE, BLEU, and METEOR scores against reference text."""
         zero_cost = CostEstimate(cost=0.0, input_tokens=None, output_tokens=None)
-        if not enable_generation_metrics:
+        if not enable_output_metrics:
             return ReferenceMetrics(metrics=[], cost=zero_cost)
 
-        generation_text = generation.text if isinstance(generation, Item) else (generation or "")
+        output_text = output.text if isinstance(output, Item) else (output or "")
         if isinstance(reference, Item):
             reference_text = reference.text
         else:
@@ -124,9 +124,9 @@ class ReferenceNode(BaseMetricNode):
             return ReferenceMetrics(metrics=[], cost=zero_cost)
 
         results: list[MetricResult] = []
-        results.extend(self._compute_rouge(generation_text, reference_text))
-        results.append(self._compute_bleu(generation_text, reference_text))
-        results.append(self._compute_meteor(generation_text, reference_text))
+        results.extend(self._compute_rouge(output_text, reference_text))
+        results.append(self._compute_bleu(output_text, reference_text))
+        results.append(self._compute_meteor(output_text, reference_text))
         return ReferenceMetrics(
             metrics=results,
             cost=zero_cost,

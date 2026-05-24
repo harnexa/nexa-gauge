@@ -19,12 +19,12 @@ from ng_graph.nodes import report
 def _base_inputs() -> Inputs:
     return Inputs(
         case_id="case-1",
-        generation=Item(text="Generated answer.", tokens=5.0),
-        question=Item(text="What is X?", tokens=3.0),
+        output=Item(text="Generated answer.", tokens=5.0),
+        input=Item(text="What is X?", tokens=3.0),
         context=Item(text="X is a thing.", tokens=4.0),
         reference=Item(text="X", tokens=1.0),
-        has_generation=True,
-        has_question=True,
+        has_output=True,
+        has_input=True,
         has_context=True,
         has_reference=True,
     )
@@ -62,17 +62,17 @@ def test_report_omits_none_state_keys() -> None:
     state = {
         "target_node": "grounding",
         "inputs": _base_inputs(),
-        "generation_chunk": _chunks(),
-        "generation_refined_chunks": _chunks(),
-        "generation_claims": _claims(),
+        "output_chunk": _chunks(),
+        "output_refined_chunks": _chunks(),
+        "output_claims": _claims(),
         "grounding_metrics": None,
     }
 
     result = report.aggregate(state=state)
 
-    assert "generation_chunk" in result
-    assert "generation_refined_chunks" in result
-    assert "generation_claims" in result
+    assert "output_chunk" in result
+    assert "output_refined_chunks" in result
+    assert "output_claims" in result
     assert "grounding_metrics" not in result
 
 

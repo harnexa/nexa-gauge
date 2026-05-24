@@ -8,7 +8,7 @@ def test_jsonl_limit_does_not_parse_rows_beyond_window(tmp_path) -> None:
     path.write_text(
         "\n".join(
             [
-                '{"case_id":"a","generation":"hello"}',
+                '{"case_id":"a","output":"hello"}',
                 "{not-json",
             ]
         )
@@ -19,7 +19,7 @@ def test_jsonl_limit_does_not_parse_rows_beyond_window(tmp_path) -> None:
 
     assert len(cases) == 1
     assert cases[0]["case_id"] == "a"
-    assert cases[0]["generation"] == "hello"
+    assert cases[0]["output"] == "hello"
 
 
 def test_csv_streaming_respects_limit(tmp_path) -> None:
@@ -27,7 +27,7 @@ def test_csv_streaming_respects_limit(tmp_path) -> None:
     path.write_text(
         "\n".join(
             [
-                "case_id,generation,question",
+                "case_id,output,input",
                 "a,hello,q1",
                 "b,world,q2",
                 "c,last,q3",
@@ -39,4 +39,4 @@ def test_csv_streaming_respects_limit(tmp_path) -> None:
     cases = list(adapter.iter_cases(limit=2))
 
     assert [c["case_id"] for c in cases] == ["a", "b"]
-    assert [c["generation"] for c in cases] == ["hello", "world"]
+    assert [c["output"] for c in cases] == ["hello", "world"]
