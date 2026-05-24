@@ -39,7 +39,7 @@ It is designed for prompt iteration, benchmark runs, regression testing, release
 
 Core evaluation coverage includes:
 
-- **Relevance** - measures whether generated claims answer the user question.
+- **Relevance** - measures whether generated claims answer the user input.
 - **Grounding** - checks whether generated claims are supported by supplied context.
 - **Red team scoring** - evaluates safety and risk behavior with configurable rubrics.
 - **GEval / LLM-as-a-judge** - scores outputs against explicit criteria or evaluation steps.
@@ -180,15 +180,15 @@ Use `--input` with local files or hosted datasets.
 | JSON | `sample.json` | Object or array of records. |
 | JSONL | `dataset.jsonl` | One JSON object per line. |
 | CSV | `dataset.csv` | Rows are loaded as dictionaries. |
-| Text | `generation.txt` | Treated as a single generated output. |
+| Text | `output.txt` | Treated as a single model output. |
 | Hugging Face | `hf://org/dataset` | Requires `pip install "nexa-gauge[huggingface]"`. |
 
 Canonical record fields include:
 
 | Field | Used by |
 | --- | --- |
-| `generation` | Required for all metric branches. |
-| `question` | Relevance and some GEval configurations. |
+| `output` | Required for all metric branches. |
+| `input` | Relevance and some GEval configurations. |
 | `context` | Grounding and context-aware GEval checks. |
 | `reference` | Reference metrics and reference-aware GEval checks. |
 | `geval` | Rubric-driven GEval metrics. |
@@ -204,7 +204,7 @@ Common aliases such as `response`, `answer`, `output`, `completion`, `query`, `p
 
 | Metric node | What it evaluates |
 | --- | --- |
-| `relevance` | Whether generated claims directly answer the question. |
+| `relevance` | Whether generated claims directly answer the input. |
 | `grounding` | Whether generated claims are supported by the provided context. |
 | `redteam` | Bias, toxicity, and custom risk behavior using rubrics. |
 | `geval` | Criteria-based LLM judging with generated or provided evaluation steps. |
