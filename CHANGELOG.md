@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.16](https://github.com/harnexa/nexa-gauge/compare/v0.1.15...v0.1.16) (2026-05-24)
+
+
+### Features
+
+* GEval scoring modes (likert/binary) and optional reasoning ([#57](https://github.com/harnexa/nexa-gauge/issues/57)) ([5435308](https://github.com/harnexa/nexa-gauge/commit/5435308d1655e2c67477e9016d809d7f8fd566d6))
+
 ## [0.1.15](https://github.com/harnexa/nexa-gauge/compare/v0.1.14...v0.1.15) (2026-05-24)
 
 
