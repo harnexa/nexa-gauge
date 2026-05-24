@@ -15,6 +15,7 @@ Usage:
     tokens   = response["usage"]    # {"prompt_tokens": int, "completion_tokens": int, ...}
 """
 
+import json
 from threading import BoundedSemaphore, Lock
 from typing import Any, Dict, List, Mapping, Optional, Type, TypeVar
 from urllib.parse import urlparse
@@ -24,6 +25,7 @@ from ng_core.constants import LLM_CALL_TIMEOUT_SECONDS
 from pydantic import BaseModel
 
 from ng_graph.llm.config import get_node_config, normalize_node_name
+from ng_graph.log import is_node_logging_enabled
 
 litellm.set_verbose = False
 
@@ -34,6 +36,7 @@ _cache: Dict[str, "StructuredLLM"] = {}
 _LLM_CONCURRENCY_LOCK = Lock()
 _LLM_CONCURRENCY = 16
 _LLM_SEMAPHORE = BoundedSemaphore(_LLM_CONCURRENCY)
+_PROMPT_PRINT_LOCK = Lock()
 
 
 def set_llm_concurrency(limit: int) -> None:
@@ -88,6 +91,7 @@ class StructuredLLM:
     # ── Internal helpers ───────────────────────────────────────────────────
 
     def _call(self, messages: List[Dict[str, str]], model: str) -> Any:
+        self._maybe_print_prompt(messages=messages, model=model, with_logprobs=False)
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -103,6 +107,7 @@ class StructuredLLM:
         return litellm.completion(**kwargs)
 
     def _call_unstructured(self, messages: List[Dict[str, str]], model: str) -> Any:
+        self._maybe_print_prompt(messages=messages, model=model, with_logprobs=False)
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -119,6 +124,7 @@ class StructuredLLM:
     def _call_with_logprobs(
         self, messages: List[Dict[str, str]], model: str, top_logprobs: int
     ) -> Any:
+        self._maybe_print_prompt(messages=messages, model=model, with_logprobs=True)
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -138,6 +144,7 @@ class StructuredLLM:
     def _call_with_logprobs_unstructured(
         self, messages: List[Dict[str, str]], model: str, top_logprobs: int
     ) -> Any:
+        self._maybe_print_prompt(messages=messages, model=model, with_logprobs=True)
         kwargs: dict[str, Any] = {
             "model": model,
             "messages": messages,
@@ -152,6 +159,24 @@ class StructuredLLM:
         if self.api_key:
             kwargs["api_key"] = self.api_key
         return litellm.completion(**kwargs)
+
+    def _maybe_print_prompt(
+        self, *, messages: List[Dict[str, str]], model: str, with_logprobs: bool
+    ) -> None:
+        """Print the exact request prompt when CLI debug mode is enabled."""
+        if not is_node_logging_enabled():
+            return
+        payload = {
+            "type": "litellm_prompt",
+            "node_name": self.node_name,
+            "model": model,
+            "with_logprobs": with_logprobs,
+            "schema": self.schema.__name__,
+            "messages": messages,
+        }
+        rendered = json.dumps(payload, ensure_ascii=False, indent=2)
+        with _PROMPT_PRINT_LOCK:
+            print(rendered, flush=True)
 
     # ── Public API ─────────────────────────────────────────────────────────
 

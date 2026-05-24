@@ -7,6 +7,7 @@ import json
 
 import pytest
 from ng_core.constants import DEFAULT_DATASET_NAME, DEFAULT_SPLIT
+from ng_core.types import GevalScoringMode
 from ng_graph.nodes.scanner import scan, scan_file_record
 
 
@@ -139,6 +140,8 @@ def test_scan_builds_geval_from_item_fields_only() -> None:
                     "item_fields": ["context", "reference"],
                     "criteria": "The answer must align with evidence.",
                     "evaluation_steps": ["Compare answer with context."],
+                    "scoring_mode": "binary_yes_no",
+                    "include_reasoning": False,
                 },
             ]
         },
@@ -160,11 +163,15 @@ def test_scan_builds_geval_from_item_fields_only() -> None:
         "Check factual correctness.",
         "Verify directness.",
     ]
+    assert first.scoring_mode == GevalScoringMode.LIKERT_1_5
+    assert first.include_reasoning is True
 
     second = inputs.geval.metrics[1]
     assert second.name == "groundedness"
     assert second.item_fields == ["context", "reference"]
     assert second.criteria is not None and second.criteria.tokens > 0
+    assert second.scoring_mode == GevalScoringMode.BINARY_YES_NO
+    assert second.include_reasoning is False
 
 
 def test_scan_geval_skips_invalid_metrics_and_returns_none_when_empty() -> None:
