@@ -15,6 +15,7 @@ from ng_core.constants import DEFAULT_DATASET_NAME, DEFAULT_SPLIT
 from ng_core.types import (
     Geval,
     GevalMetricInput,
+    GevalScoringMode,
     Inputs,
     Item,
     Redteam,
@@ -63,6 +64,19 @@ def _normalize_text_list(value: Any) -> list[str]:
         if text:
             normalized.append(text)
     return normalized
+
+
+def _normalize_bool(value: Any, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    text = _normalize_text(value).lower()
+    if text in {"true", "1", "yes", "y", "on"}:
+        return True
+    if text in {"false", "0", "no", "n", "off"}:
+        return False
+    return default
 
 
 def _build_redteam_rubric(raw_rubric: Any) -> RedteamRubric | None:
@@ -163,12 +177,24 @@ def _build_geval(raw_geval: Any) -> Geval | None:
                     )
                 )
 
+        raw_scoring_mode = metric_raw.get("scoring_mode")
+        if isinstance(raw_scoring_mode, GevalScoringMode):
+            scoring_mode = raw_scoring_mode
+        else:
+            try:
+                scoring_mode = GevalScoringMode(_normalize_text(raw_scoring_mode))
+            except ValueError:
+                scoring_mode = GevalScoringMode.LIKERT_1_5
+        include_reasoning = _normalize_bool(metric_raw.get("include_reasoning"), default=True)
+
         metrics.append(
             GevalMetricInput(
                 name=name,
                 item_fields=item_fields,
                 criteria=criteria,
                 evaluation_steps=steps,
+                scoring_mode=scoring_mode,
+                include_reasoning=include_reasoning,
             )
         )
 

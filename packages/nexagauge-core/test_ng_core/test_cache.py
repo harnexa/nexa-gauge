@@ -8,7 +8,7 @@ from ng_core.cache import (
     cache_write_allowed,
     compute_case_hash,
 )
-from ng_core.types import GevalConfig, GevalMetricSpec
+from ng_core.types import GevalConfig, GevalMetricSpec, GevalScoringMode
 
 
 def _kv_path(tmp_path, cache_key: str):
@@ -128,6 +128,68 @@ def test_compute_case_hash_changes_when_geval_contract_changes() -> None:
         reference_files=[],
     )
     assert h1 != h2
+
+
+def test_compute_case_hash_changes_when_geval_mode_or_reasoning_changes() -> None:
+    base_metric = dict(
+        name="factuality",
+        item_fields=["output"],
+        criteria="Must be factual.",
+    )
+    geval_a = GevalConfig(
+        metrics=[
+            GevalMetricSpec(
+                **base_metric,
+                scoring_mode=GevalScoringMode.LIKERT_1_5,
+                include_reasoning=True,
+            )
+        ]
+    )
+    geval_b = GevalConfig(
+        metrics=[
+            GevalMetricSpec(
+                **base_metric,
+                scoring_mode=GevalScoringMode.BINARY_YES_NO,
+                include_reasoning=True,
+            )
+        ]
+    )
+    geval_c = GevalConfig(
+        metrics=[
+            GevalMetricSpec(
+                **base_metric,
+                scoring_mode=GevalScoringMode.LIKERT_1_5,
+                include_reasoning=False,
+            )
+        ]
+    )
+
+    h_a = compute_case_hash(
+        output="answer",
+        input="q",
+        reference="gt",
+        geval=geval_a,
+        context=[],
+        reference_files=[],
+    )
+    h_b = compute_case_hash(
+        output="answer",
+        input="q",
+        reference="gt",
+        geval=geval_b,
+        context=[],
+        reference_files=[],
+    )
+    h_c = compute_case_hash(
+        output="answer",
+        input="q",
+        reference="gt",
+        geval=geval_c,
+        context=[],
+        reference_files=[],
+    )
+    assert h_a != h_b
+    assert h_a != h_c
 
 
 def test_cache_get_returns_none_for_corrupt_json(tmp_path) -> None:

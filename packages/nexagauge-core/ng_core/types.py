@@ -35,6 +35,13 @@ GevalItemField = Literal["input", "output", "reference", "context"]
 RedteamItemField = Literal["input", "output", "reference", "context"]
 
 
+class GevalScoringMode(str, Enum):
+    """Supported GEval scoring modes."""
+
+    LIKERT_1_5 = "likert_1_5"
+    BINARY_YES_NO = "binary_yes_no"
+
+
 class GevalMetricSpec(BaseModel):
     """Legacy GEval metric shape used by cache/tests/adapters."""
 
@@ -42,6 +49,8 @@ class GevalMetricSpec(BaseModel):
     item_fields: list[GevalItemField] = Field(default_factory=lambda: ["output"])
     criteria: str | None = None
     evaluation_steps: list[str] = Field(default_factory=list)
+    scoring_mode: GevalScoringMode = GevalScoringMode.LIKERT_1_5
+    include_reasoning: bool = True
 
 
 class GevalMetricInput(BaseModel):
@@ -55,6 +64,8 @@ class GevalMetricInput(BaseModel):
     item_fields: list[GevalItemField] = Field(default_factory=lambda: ["output"])
     criteria: Item | None = None
     evaluation_steps: list[Item]
+    scoring_mode: GevalScoringMode = GevalScoringMode.LIKERT_1_5
+    include_reasoning: bool = True
 
 
 class GevalConfig(BaseModel):
@@ -294,6 +305,8 @@ class GevalStepsResolved(BaseModel):
     name: str
     item_fields: list[GevalItemField]
     evaluation_steps: list[Item]
+    scoring_mode: GevalScoringMode = GevalScoringMode.LIKERT_1_5
+    include_reasoning: bool = True
     steps_source: Literal["provided", "generated", "cache_used"]
     signature: str | None = None
 

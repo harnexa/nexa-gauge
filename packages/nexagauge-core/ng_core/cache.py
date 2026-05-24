@@ -440,7 +440,16 @@ def compute_case_hash(
             criteria_text = _text(_value(metric, "criteria"))
             steps_text = _metric_steps_text(_value(metric, "evaluation_steps"))
             fields_text = _metric_fields_text(metric)
-            parts.append(f"{name}\x1f{fields_text}\x1f{criteria_text}\x1f{steps_text}")
+            raw_scoring_mode = _value(metric, "scoring_mode")
+            if hasattr(raw_scoring_mode, "value"):
+                scoring_mode_text = _text(getattr(raw_scoring_mode, "value"))
+            else:
+                scoring_mode_text = _text(raw_scoring_mode)
+            include_reasoning_text = _text(_value(metric, "include_reasoning")).lower()
+            parts.append(
+                f"{name}\x1f{fields_text}\x1f{criteria_text}\x1f{steps_text}\x1f"
+                f"{scoring_mode_text}\x1f{include_reasoning_text}"
+            )
         geval_text = "|".join(sorted(parts))
 
     redteam_text = ""

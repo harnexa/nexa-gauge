@@ -208,3 +208,31 @@ def test_invoke_retries_without_response_format_when_unsupported(
 
     assert response["parsed"] is not None
     assert call_count["n"] == 2
+
+
+def test_invoke_prints_prompt_only_when_debug_enabled(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _cache.clear()
+
+    def _fake_completion(**_kwargs):  # type: ignore[no-untyped-def]
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"value":"ok"}'))],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        )
+
+    monkeypatch.setattr("ng_graph.llm.gateway.litellm.completion", _fake_completion)
+    llm = get_llm("claims", _Schema, default_model="default-model")
+    messages = [{"role": "user", "content": "print me"}]
+
+    monkeypatch.setattr("ng_graph.llm.gateway.is_node_logging_enabled", lambda: False)
+    llm.invoke(messages)
+    out = capsys.readouterr().out
+    assert '"type": "litellm_prompt"' not in out
+
+    monkeypatch.setattr("ng_graph.llm.gateway.is_node_logging_enabled", lambda: True)
+    llm.invoke(messages)
+    out = capsys.readouterr().out
+    assert '"type": "litellm_prompt"' in out
+    assert '"node_name": "claims"' in out
+    assert '"content": "print me"' in out
