@@ -11,6 +11,7 @@ You receive (a) a numbered list of evaluation steps, and (b) named test-case fie
 Score on the integer scale 1-5: 1 = fails every step, 5 = perfectly satisfies every step.
 Return JSON matching the schema exactly: {\"score\": int, \"reason\": str}.
 The \"reason\" must cite specific steps that drove the score; do not quote the numeric score in the reason text.
+
 """
 
 from __future__ import annotations
@@ -86,6 +87,7 @@ def build_score_system_prompt(*, mode: GevalScoringMode, include_reasoning: bool
 def score_response_model(mode: GevalScoringMode, include_reasoning: bool) -> "Type[BaseModel]":
     """Return a cached dynamic schema with mode-specific score bounds."""
     spec = scoring_spec(mode)
+
     model_name = f"GevalScore_{mode.value}_{'with_reason' if include_reasoning else 'score_only'}"
     fields: dict[str, tuple[object, object]] = {
         "score": (int, Field(..., ge=spec.score_min, le=spec.score_max)),
