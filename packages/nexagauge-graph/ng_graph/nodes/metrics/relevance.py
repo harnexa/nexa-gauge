@@ -41,16 +41,12 @@ from ng_graph.llm.gateway import get_llm
 from ng_graph.llm.pricing import cost_usd, get_node_pricing
 from ng_graph.log import get_node_logger
 from ng_graph.nodes.base import BaseMetricNode
-from ng_graph.nodes.metrics.commons import (
-    build_scores_response_model,
-    normalize_score_value,
-    raw_int_from_score,
-)
 from ng_graph.nodes.metrics.scoring import (
-    build_score_output_contract,
-    build_metric_system_prompt,
+    ScoringSpec,
+    build_scores_response_model,
+    normalize_raw_score,
+    verdict_from_score
 )
-from ng_graph.nodes.metrics.verdicts import verdict_from_score
 from pydantic import BaseModel
 
 log = get_node_logger("relevance")
@@ -72,8 +68,9 @@ _USER_TEMPLATE = (
 @lru_cache(maxsize=4)
 def _static_prompt_tokens_for(mode: ScoringMode, include_reasoning: bool) -> int:
     """Cached static prompt token count per (mode, reasoning) configuration."""
-    system = build_metric_system_prompt(_BASE_SYSTEM_PROMPT, mode, include_reasoning)
-    output_contract = build_score_output_contract(mode, include_reasoning)
+    system = _BASE_SYSTEM_PROMPT
+    score_spec = ScoringSpec(mode=mode, include_reasoning=include_reasoning)
+    output_contract = score_spec.contract
     user_template = _USER_TEMPLATE.format(input="{input}", claims= "{claims}")
     return (
         _count_tokens(system)
@@ -91,14 +88,20 @@ class RelevanceNode(BaseMetricNode):
         scoring_mode: ScoringMode,
         include_reasoning: bool,
     ) -> Tuple[MetricResult, CostEstimate]:
+        
+        score_spec = ScoringSpec(mode=scoring_mode, include_reasoning=include_reasoning)
         numbered = "\n".join(f"{i + 1}. {c.item.text}" for i, c in enumerate(claims))
+
         response_model = build_scores_response_model(
-            "RelevanceResult",
-            scoring_mode,
-            include_reasoning,
+            model_prefix="RelevanceResult", 
+            mode_value=score_spec.mode.value, 
+            min_score=score_spec.score_min, 
+            max_score=score_spec.score_max,
+            include_reasoning=score_spec.include_reasoning
         )
-        system_prompt = build_metric_system_prompt(_BASE_SYSTEM_PROMPT, scoring_mode, include_reasoning)
-        output_contract = build_score_output_contract(scoring_mode, include_reasoning)
+
+        system_prompt = _BASE_SYSTEM_PROMPT
+        output_contract = score_spec.contract
         user_prompt = _USER_TEMPLATE.format(input=input, claims=numbered)
 
         response = get_llm(
@@ -144,14 +147,14 @@ class RelevanceNode(BaseMetricNode):
             )
 
         raw_scores = raw_scores[: len(claims)]
-        per_claim_scores = [normalize_score_value(v, scoring_mode) for v in raw_scores]
+        per_claim_scores = [normalize_raw_score(v, score_spec) for v in raw_scores]
         score = mean(per_claim_scores)
 
         claim_verdicts = [
             RelevancyClaim(
                 **claim.model_dump(),
-                verdict="ACCEPTED" if per_score >= RELEVANCE_METRIC_PASS_THRESHOLD else "REJECTED",
-                raw_score=raw_int_from_score(raw),
+                verdict=verdict_from_score(per_score, RELEVANCE_METRIC_PASS_THRESHOLD),
+                raw_score=raw,
             )
             for claim, per_score, raw in zip(claims, per_claim_scores, raw_scores)
         ]
@@ -200,6 +203,7 @@ class RelevanceNode(BaseMetricNode):
             scoring_mode=scoring_mode,
             include_reasoning=include_reasoning,
         )
+
         return RelevanceMetrics(metrics=[result], cost=cost)
 
     def estimate(self, inputs: Inputs) -> CostEstimate:  # type: ignore[override]

@@ -42,16 +42,12 @@ from ng_graph.llm.gateway import get_llm
 from ng_graph.llm.pricing import cost_usd, get_node_pricing
 from ng_graph.log import get_node_logger
 from ng_graph.nodes.base import BaseMetricNode
-from ng_graph.nodes.metrics.commons import (
-    build_scores_response_model,
-    normalize_score_value,
-    raw_int_from_score,
-)
 from ng_graph.nodes.metrics.scoring import (
-    build_score_output_contract,
-    build_metric_system_prompt,
+    ScoringSpec,
+    build_scores_response_model,
+    normalize_raw_score,
+    verdict_from_score
 )
-from ng_graph.nodes.metrics.verdicts import verdict_from_score
 from pydantic import BaseModel
 
 log = get_node_logger("grounding")
@@ -80,12 +76,12 @@ def _static_prompt_tokens_for(mode: ScoringMode, include_reasoning: bool) -> int
     previous over-estimating upper-bound constant. The estimator can ask for
     the exact static cost of the configuration the case will actually use.
     """
-    system = build_metric_system_prompt(_BASE_SYSTEM_PROMPT, mode, include_reasoning)
-    output_contract = build_score_output_contract(mode, include_reasoning)
+    system = _BASE_SYSTEM_PROMPT
+    scoring_spec = ScoringSpec(model=mode, include_reasoning=include_reasoning)
     user_template = _USER_TEMPLATE.format(context="{context}", claims="{claims}")
     return (
         _count_tokens(system)
-        + _count_tokens(output_contract)
+        + _count_tokens(scoring_spec.contract)
         + template_static_tokens(user_template)
     )
 
@@ -99,14 +95,19 @@ class GroundingNode(BaseMetricNode):
         scoring_mode: ScoringMode,
         include_reasoning: bool,
     ) -> Tuple[MetricResult, CostEstimate]:
+        scoring_spec = ScoringSpec(mode=scoring_mode, include_reasoning=include_reasoning)
         numbered = "\n".join(f"{i + 1}. {c.item.text}" for i, c in enumerate(claims))
+
         response_model = build_scores_response_model(
-            "GroundingResult",
-            scoring_mode,
-            include_reasoning,
+            model_prefix="GroundingResult", 
+            mode_value=scoring_spec.mode.value, 
+            min_score=scoring_spec.score_min, 
+            max_score=scoring_spec.score_max,
+            include_reasoning=scoring_spec.include_reasoning
         )
-        system_prompt = build_metric_system_prompt(_BASE_SYSTEM_PROMPT, scoring_mode, include_reasoning)
-        output_contract = build_score_output_contract(scoring_mode, include_reasoning)
+
+        system_prompt = _BASE_SYSTEM_PROMPT
+        output_contract = scoring_spec.contract
         user_prompt =_USER_TEMPLATE.format(context=context, claims=numbered)
 
         response = get_llm(
@@ -121,7 +122,7 @@ class GroundingNode(BaseMetricNode):
                 {"role": "user", "content": user_prompt},
             ]
         )
-
+       
         self._record_model_response(response, primary_model=self.judge_model)
 
         pricing = get_node_pricing(
@@ -151,18 +152,19 @@ class GroundingNode(BaseMetricNode):
             )
 
         raw_scores = raw_scores[: len(claims)]
-        per_claim_scores = [normalize_score_value(v, scoring_mode) for v in raw_scores]
+        per_claim_scores = [normalize_raw_score(v, scoring_spec) for v in raw_scores]
         score = mean(per_claim_scores)
 
         claim_verdicts = [
             GroundingClaim(
                 **claim.model_dump(),
-                verdict="ACCEPTED" if per_score >= GROUNDING_METRIC_PASS_THRESHOLD else "REJECTED",
-                raw_score=raw_int_from_score(raw),
+                verdict=verdict_from_score(per_score, GROUNDING_METRIC_PASS_THRESHOLD),
+                raw_score=raw,
             )
             for claim, per_score, raw in zip(claims, per_claim_scores, raw_scores)
         ]
         result_payload: list[Any] = list(claim_verdicts)
+        
         if include_reasoning:
             reasoning_text = str(getattr(parsed, "reasoning", "") or "")
             if reasoning_text:
@@ -209,6 +211,7 @@ class GroundingNode(BaseMetricNode):
             scoring_mode=scoring_mode,
             include_reasoning=include_reasoning,
         )
+
         return GroundingMetrics(metrics=[result], cost=cost)
 
     def estimate(self, inputs: Inputs) -> CostEstimate:  # type: ignore[override]

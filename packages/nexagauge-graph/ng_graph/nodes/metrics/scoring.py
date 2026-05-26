@@ -1,144 +1,142 @@
-"""Shared prompt + normalization helpers for all LLM-as-a-judge metric nodes.
-
-Each metric node (geval, grounding, relevance, redteam) supports the same two
-knobs:
-
-1. ``scoring_mode`` — ``scale_1_5`` (judge returns integer 1-5) or
-   ``binary_yes_no`` (judge returns 0/1).
-2. ``include_reasoning`` — whether the judge also emits a short rationale.
-
-Per-node SYSTEM/USER prompts stay where they are. This module supplies the
-two prompt fragments the nodes append (score-instruction + reasoning-clause)
-and the one normalization function that maps any raw integer score into the
-shared ``[0, 1]`` reporting space.
-"""
+"""Shared prompt + scoring helpers for LLM-as-a-judge metric nodes."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
+from typing import Any, Type
 
 from ng_core.types import ScoringMode
+from pydantic import BaseModel, Field, create_model, model_validator
 
 
-@dataclass(frozen=True)
-class ScoringSpec:
-    """Numeric bounds and prompt instruction for one scoring mode."""
+
+PASSED_VERDICT = "PASSED"
+FAILED_VERDICT = "FAILED"
+
+
+def verdict_from_passed(passed: bool) -> str:
+    """Map a boolean metric outcome to the standardized verdict label."""
+    return PASSED_VERDICT if passed else FAILED_VERDICT
+
+
+def verdict_from_score(score: float | None, threshold: float) -> str | None:
+    """Derive standardized verdict from a numeric score using a pass threshold."""
+    if score is None:
+        return None
+    return verdict_from_passed(score >= threshold)
+
+
+class ScoringSpec(BaseModel):
+    """Rendered output-contract block for a scoring configuration."""
 
     mode: ScoringMode
-    score_min: int
-    score_max: int
-    score_instruction: str
+    include_reasoning: bool
+    reasoning_field: str = "reasoning"
+
+    score_min: int = 0
+    score_max: int = 0
+    contract: str = ""
+
+    @model_validator(mode="after")
+    def _build_contract(self) -> "ScoringSpec":
+        if self.mode == ScoringMode.BINARY_YES_NO:
+            score_min, score_max = 0, 1
+            contract = (
+                "## Output contract (binary_1_0): \nreturn JSON with key `scores` as a list of "
+                "scores in the same order (1 = supported/relevant, 0 = unsupported/not relevant)."
+            )
+            example = (
+                '{\n'
+                '  "scores": [1, 0 ..]\n'
+                '}'
+                if not self.include_reasoning
+                else (
+                    '{\n'
+                    '  "scores": [1, 0 ..],\n'
+                    f'  "{self.reasoning_field}": "Brief evidence-based explanation."\n'
+                    '}'
+                )
+            )
+        else:
+            score_min, score_max = 1, 5
+            contract = (
+                "## Output contract (scale_1_5): \nreturn JSON with key `scores` as a list of integers "
+                "in the same order. Use 1 for not supported/not relevant at all, 5 for fully "
+                "supported/relevant, and 2-4 for intermediate strength."
+            )
+            example = (
+                '{\n'
+                '  "scores": [1, 3, 5 ..]\n'
+                '}'
+                if not self.include_reasoning
+                else (
+                    '{\n'
+                    '  "scores": [1, 3, 5 ..],\n'
+                    f'  "{self.reasoning_field}": "Brief evidence-based explanation."\n'
+                    '}'
+                )
+            )
+
+        if self.include_reasoning:
+            contract += " Additionally, provide a brief overall evidence-based explanation for your scores."
+
+        contract = (
+            f"{contract}\nDo not include any extra keys.\n"
+            f"Example:\n```json\n{example}\n```"
+        )
+
+        self.score_min = score_min
+        self.score_max = score_max
+        self.contract = contract
+        return self
 
 
-_SCALE_SPEC = ScoringSpec(
-    mode=ScoringMode.SCALE_1_5,
-    score_min=1,
-    score_max=5,
-    score_instruction=(
-        "Score on the integer scale 1-5: 1 = fails every criterion, "
-        "5 = perfectly satisfies every criterion."
-    ),
-)
+def normalize_raw_score(raw: float | int, score_contract: ScoringSpec) -> float:
+    """Map a raw judge score into shared ``[0, 1]`` space with min/max scaling.
+    
+    Formula:
+    normalized = (raw - score_min) / (score_max - score_min)
+    then clamped to [0.0, 1.0].
 
-_BINARY_SPEC = ScoringSpec(
-    mode=ScoringMode.BINARY_YES_NO,
-    score_min=0,
-    score_max=1,
-    score_instruction=(
-        "Make a binary decision: 1 if the output satisfies the criterion, "
-        "0 otherwise. Return the numeric score only as 0 or 1."
-    ),
-)
+    For binary_yes_no (score_min=0, score_max=1):
 
+    - raw=0 -> (0-0)/(1-0)=0.0
+    - raw=1 -> (1-0)/(1-0)=1.0
+    - raw=2 -> 2.0 -> clamped to 1.0
 
-def scoring_spec(mode: ScoringMode) -> ScoringSpec:
-    """Return the spec (bounds + instruction text) for the given mode."""
-    if mode == ScoringMode.BINARY_YES_NO:
-        return _BINARY_SPEC
-    return _SCALE_SPEC
+    For scale_1_5 (score_min=1, score_max=5):
 
-
-def normalize_raw_score(raw: float | int, mode: ScoringMode) -> float:
-    """Map a raw judge integer into the shared ``[0, 1]`` space.
-
-    Uses min/max scaling: ``(raw - score_min) / (score_max - score_min)``.
-    Clamped to ``[0, 1]`` so an out-of-range judge response can't poison
-    aggregations downstream.
+    - raw=1 -> (1-1)/4=0.0
+    - raw=3 -> (3-1)/4=0.5
+    - raw=5 -> (5-1)/4=1.0
+    - raw=0 -> -0.25 -> clamped to 0.0
     """
-    spec = scoring_spec(mode)
-    span = spec.score_max - spec.score_min
+    span = score_contract.score_max - score_contract.score_min
     if span <= 0:
         return 0.0
-    normalized = (float(raw) - spec.score_min) / span
+    normalized = (float(raw) - score_contract.score_min) / span
     return max(0.0, min(1.0, normalized))
 
 
-def build_reasoning_clause(include_reasoning: bool) -> str:
-    """Return the prompt fragment that either asks for or suppresses reasoning."""
+
+@lru_cache(maxsize=8)
+def build_scores_response_model(
+    model_prefix: str, mode_value: str, min_score: float, max_score: float, include_reasoning: bool
+) -> "Type[BaseModel]":
+    """Create shared `{scores, reasoning?}` schema for judge outputs."""
+    fields: dict[str, tuple[object, object]] = {
+        "scores": (
+            list[int],
+            Field(
+                default_factory=list,
+                description=f"Integer {min_score}-{max_score} per item",
+            ),
+        ),
+    }
     if include_reasoning:
-        return (
-            "Include a short `reasoning` field (one to two sentences) explaining "
-            "the decision. Cite concrete evidence; do not restate the numeric score."
-        )
-    return (
-        "Do not include any rationale, explanation, or extra fields beyond the "
-        "required schema."
-    )
+        fields["reasoning"] = (str, ...)
 
+    suffix = "with_reason" if include_reasoning else "scores_only"
+    return create_model(f"{model_prefix}_{mode_value}_{suffix}", **fields)
 
-def build_metric_system_prompt(
-    base_system_prompt: str, mode: ScoringMode, include_reasoning: bool
-) -> str:
-    """Compose a metric system prompt from base intent only.
-
-    Scoring + reasoning instructions are intentionally emitted via the shared
-    output-contract block in user prompts.
-    """
-    del mode, include_reasoning
-    return base_system_prompt
-
-
-def build_score_output_contract(
-    mode: ScoringMode, include_reasoning: bool, *, reasoning_field: str = "reasoning"
-) -> str:
-    """Return a shared output-format contract for claim-level scores lists."""
-    if mode == ScoringMode.BINARY_YES_NO:
-        contract = (
-            "## Output contract (binary_1_0): \nreturn JSON with key `scores` as a list of "
-            "scores in the same order (1 = supported/relevant, 0 = unsupported/not relevant)."
-        )
-        if include_reasoning:
-            contract += " Additionally, provide a brief overall evidence-based explanation for your scores."
-        example = (
-            '{\n'
-            '  "scores": [1, 0 ..]\n'
-            '}'
-            if not include_reasoning
-            else (
-                '{\n'
-                '  "scores": [1, 0 ..],\n'
-                f'  "{reasoning_field}": "Brief evidence-based explanation."\n'
-                '}'
-            )
-        )
-    else:
-        contract = (
-            "## Output contract (scale_1_5): \nreturn JSON with key `scores` as a list of integers "
-            "in the same order. Use 1 for not supported/not relevant at all, 5 for fully "
-            "supported/relevant, and 2-4 for intermediate strength."
-        )
-        if include_reasoning:
-            contract += " Additionally, provide a brief overall evidence-based explanation for your scores."
-        example = (
-            '{\n'
-            '  "scores": [1, 3, 5 ..]\n'
-            '}'
-            if not include_reasoning
-            else (
-                '{\n'
-                '  "scores": [1, 3, 5 ..],\n'
-                f'  "{reasoning_field}": "Brief evidence-based explanation."\n'
-                '}'
-            )
-        )
-    return f"{contract}\nDo not include any extra keys.\nExample:\n```json\n{example}\n```"
