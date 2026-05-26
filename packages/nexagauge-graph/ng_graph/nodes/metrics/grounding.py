@@ -3,13 +3,13 @@
 Supports the shared per-node knobs (see :mod:`ng_graph.nodes.metrics.scoring`):
 
 - ``scoring_mode``:
-    - ``binary_yes_no`` (default): judge returns ``verdicts: list[bool]``;
+    - ``binary_yes_no`` (default): judge returns ``scores: list[int]`` in ``{0,1}``;
       per-claim score is 0 or 1.
-    - ``scale_1_5``: judge returns ``verdicts: list[int]`` (1-5); per-claim
+    - ``scale_1_5``: judge returns ``scores: list[int]`` (1-5); per-claim
       score is normalized via shared min/max scaling, then averaged.
 - ``include_reasoning``: when ``True``, the judge also returns a single
   ``reasoning`` string summarising the batch decision; the node surfaces it
-  on the ``MetricResult.result`` payload alongside the per-claim verdicts.
+  on the ``MetricResult.result`` payload alongside the per-claim scores.
 """
 
 from __future__ import annotations
@@ -43,9 +43,9 @@ from ng_graph.llm.pricing import cost_usd, get_node_pricing
 from ng_graph.log import get_node_logger
 from ng_graph.nodes.base import BaseMetricNode
 from ng_graph.nodes.metrics.commons import (
-    build_claim_verdicts_response_model,
-    normalize_claim_verdict,
-    raw_int_from_claim_verdict,
+    build_scores_response_model,
+    normalize_score_value,
+    raw_int_from_score,
 )
 from ng_graph.nodes.metrics.scoring import (
     build_score_output_contract,
@@ -100,7 +100,7 @@ class GroundingNode(BaseMetricNode):
         include_reasoning: bool,
     ) -> Tuple[MetricResult, CostEstimate]:
         numbered = "\n".join(f"{i + 1}. {c.item.text}" for i, c in enumerate(claims))
-        response_model = build_claim_verdicts_response_model(
+        response_model = build_scores_response_model(
             "GroundingResult",
             scoring_mode,
             include_reasoning,
@@ -121,6 +121,7 @@ class GroundingNode(BaseMetricNode):
                 {"role": "user", "content": user_prompt},
             ]
         )
+
         self._record_model_response(response, primary_model=self.judge_model)
 
         pricing = get_node_pricing(
@@ -138,28 +139,28 @@ class GroundingNode(BaseMetricNode):
         )
 
         parsed: BaseModel | None = response["parsed"]
-        raw_verdicts = list(getattr(parsed, "verdicts", []) or []) if parsed else []
-        if not raw_verdicts:
+        raw_scores = list(getattr(parsed, "scores", []) or []) if parsed else []
+        if not raw_scores:
             return (
                 MetricResult(
                     name=self.node_name,
                     category=MetricCategory.ANSWER,
-                    error="No verdicts returned",
+                    error="No scores returned",
                 ),
                 cost,
             )
 
-        raw_verdicts = raw_verdicts[: len(claims)]
-        per_claim_scores = [normalize_claim_verdict(v, scoring_mode) for v in raw_verdicts]
+        raw_scores = raw_scores[: len(claims)]
+        per_claim_scores = [normalize_score_value(v, scoring_mode) for v in raw_scores]
         score = mean(per_claim_scores)
 
         claim_verdicts = [
             GroundingClaim(
                 **claim.model_dump(),
                 verdict="ACCEPTED" if per_score >= GROUNDING_METRIC_PASS_THRESHOLD else "REJECTED",
-                raw_score=raw_int_from_claim_verdict(raw),
+                raw_score=raw_int_from_score(raw),
             )
-            for claim, per_score, raw in zip(claims, per_claim_scores, raw_verdicts)
+            for claim, per_score, raw in zip(claims, per_claim_scores, raw_scores)
         ]
         result_payload: list[Any] = list(claim_verdicts)
         if include_reasoning:
