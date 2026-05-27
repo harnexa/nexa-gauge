@@ -222,13 +222,16 @@ from ng_core.types import (
     GevalConfig,
     GevalMetrics,
     GevalStepsArtifacts,
+    Grounding,
     GroundingMetrics,
     Inputs,
     MetricResult,
     Redteam,
     RedteamMetrics,
     ReferenceMetrics,
+    Relevance,
     RelevanceMetrics,
+    ScoringMode,
 )
 
 # ── Field → Pydantic type map ────────────────────────────────────────────────
@@ -343,7 +346,7 @@ def _deserialize(node_output_raw: dict[str, Any]) -> dict[str, Any]:
 
 # ── Hash helpers ─────────────────────────────────────────────────────────────
 
-CACHE_KEY_VERSION = "v2"
+CACHE_KEY_VERSION = "v3"
 
 # Estimate mode cache policy:
 # - Reads are always allowed so estimate can reuse run-mode cache.
@@ -397,12 +400,18 @@ def compute_case_hash(
     redteam: Optional[Redteam] = None,
     context: Optional[list[str]] = None,
     reference_files: Optional[list[str]] = None,
+    grounding: Optional[Grounding] = None,
+    relevance: Optional[Relevance] = None,
 ) -> str:
     """Stable SHA-256 hash of the case's input content.
 
-    Changing output / input / reference / context / GEval metrics /
-    reference_files produces a different hash, which causes
-    a cache miss for the affected case.
+    Changing output / input / reference / context, any LLM-judge metric
+    config (geval/grounding/relevance/redteam), or reference_files produces
+    a different hash and a cache miss for the affected case.
+
+    For grounding/relevance, the hash only changes when the config differs
+    from the default (binary + reasoning off) so cases that never opt into
+    these configs keep stable hashes across releases.
     """
 
     def _value(obj: Any, key: str, default: Any = None) -> Any:
@@ -431,6 +440,26 @@ def compute_case_hash(
             return ""
         return "|".join([_text(field) for field in fields if _text(field)])
 
+    def _scoring_mode_text(value: Any) -> str:
+        if hasattr(value, "value"):
+            return _text(getattr(value, "value"))
+        return _text(value)
+
+    def _knobs_text(config: Any) -> str:
+        """Build a stable ``\x1f``-joined string for the shared scoring knobs."""
+        mode = _scoring_mode_text(_value(config, "scoring_mode"))
+        reasoning = _text(_value(config, "include_reasoning")).lower()
+        return f"{mode}\x1f{reasoning}"
+
+    def _is_default_judge_config(config: Any) -> bool:
+        """True when the config carries only the defaults (binary + reasoning off)."""
+        if config is None:
+            return True
+        mode = _value(config, "scoring_mode")
+        mode_value = getattr(mode, "value", mode)
+        reasoning = bool(_value(config, "include_reasoning"))
+        return mode_value == ScoringMode.BINARY_YES_NO.value and reasoning is False
+
     geval_text = ""
     if geval is not None:
         parts: list[str] = []
@@ -440,17 +469,12 @@ def compute_case_hash(
             criteria_text = _text(_value(metric, "criteria"))
             steps_text = _metric_steps_text(_value(metric, "evaluation_steps"))
             fields_text = _metric_fields_text(metric)
-            raw_scoring_mode = _value(metric, "scoring_mode")
-            if hasattr(raw_scoring_mode, "value"):
-                scoring_mode_text = _text(getattr(raw_scoring_mode, "value"))
-            else:
-                scoring_mode_text = _text(raw_scoring_mode)
-            include_reasoning_text = _text(_value(metric, "include_reasoning")).lower()
             parts.append(
-                f"{name}\x1f{fields_text}\x1f{criteria_text}\x1f{steps_text}\x1f"
-                f"{scoring_mode_text}\x1f{include_reasoning_text}"
+                f"{name}\x1f{fields_text}\x1f{criteria_text}\x1f{steps_text}"
             )
         geval_text = "|".join(sorted(parts))
+        # Node-level knobs apply uniformly across all metrics; mix in once.
+        geval_text = f"{geval_text}\x1e{_knobs_text(geval)}"
 
     redteam_text = ""
     if redteam is not None:
@@ -468,12 +492,19 @@ def compute_case_hash(
                 f"{rubric_violations}\x1f{rubric_non_violations}"
             )
         redteam_text = "|".join(sorted(parts))
+        redteam_text = f"{redteam_text}\x1e{_knobs_text(redteam)}"
+
+    # Grounding/Relevance only contribute when the user explicitly opted into
+    # non-default knobs — keeps hashes stable for the common case (no block).
+    grounding_text = "" if _is_default_judge_config(grounding) else _knobs_text(grounding)
+    relevance_text = "" if _is_default_judge_config(relevance) else _knobs_text(relevance)
 
     context_text = "|".join([str(c) for c in (context or []) if c is not None])
     reference_text = "|".join(sorted(reference_files or []))
     raw = (
         f"{output}\x00{input or ''}\x00{reference or ''}\x00"
-        f"{context_text}\x00{geval_text}\x00{redteam_text}\x00{reference_text}"
+        f"{context_text}\x00{geval_text}\x00{redteam_text}\x00"
+        f"{grounding_text}\x00{relevance_text}\x00{reference_text}"
     )
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 

@@ -62,6 +62,11 @@ AVG_CLAIMS_PER_CHUNK: int = 2  # Average number of claims extracted per chunk
 # Average output tokens for a single boolean verdict (grounding): "true"/"false".
 AVG_CLAIM_OUTPUT_TOKENS_BOOLEAN_VERDICT: int = 7
 
+# Average extra output tokens contributed by a short batch-level `reasoning` field
+# when an LLM-judge has `include_reasoning=True`. Used by grounding/relevance/redteam
+# estimate() to size the verbose configuration's output budget.
+AVG_JUDGE_REASONING_TOKENS: int = 60
+
 # DeepEval BiasMetric / ToxicityMetric each make internal LLM calls whose
 # prompts are not directly accessible. These constants approximate that overhead.
 AVG_DEEPEVAL_PROMPT_TOKENS: int = 100
@@ -101,6 +106,7 @@ REFINER_TOP_K: int = 3
 # Also used as the default evidence_threshold in EvalJobConfig and Config.
 EVIDENCE_VERDICT_SUPPORTED_THRESHOLD: float = 0.75
 
+USE_LOGPROBS_FORSCORE_WEIGHTING = False
 # ── Metrics ──────────────────────────────────────────────────────────────────
 
 # Score at or above which a metric is considered "passed".

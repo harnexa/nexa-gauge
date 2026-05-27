@@ -7,12 +7,12 @@ from copy import deepcopy
 from threading import Lock
 from typing import Any, Iterable, Iterator, Mapping
 
-from ng_core.aliases import resolve_alias
 from ng_core.cache import NodeCacheBackend, NoOpCacheStore, cache_read_allowed, cache_write_allowed
 from ng_core.constants import DEFAULT_CHUNKER_STRATEGY, DEFAULT_REFINER_STRATEGY, REFINER_TOP_K
 from ng_core.types import EvalCase
 
 from ng_graph.log import get_node_logger
+from ng_graph.nodes.scanner import build_scan_record
 from ng_graph.registry import NODE_FNS
 from ng_graph.topology import DEBUG_SKIP_NODES, METRIC_NODES, PIPELINE
 
@@ -44,17 +44,11 @@ def _build_initial_state(
     case: dict[str, Any], *, execution_mode: str, target_node: str
 ) -> EvalCase:
     """Construct the initial :class:`EvalCase` state from a raw input record."""
-    record = {
-        "case_id": _case_id(case),
-        "output": resolve_alias(case, "output"),
-        "input": resolve_alias(case, "input"),
-        "reference": resolve_alias(case, "reference"),
-        "context": resolve_alias(case, "context") or [],
-        "geval": resolve_alias(case, "geval"),
-        "redteam": resolve_alias(case, "redteam"),
-    }
+    record = build_scan_record(case, idx=0)
+    record["case_id"] = _case_id(case)
     initial_state = EvalCase(
         record=record,
+        inputs=_case_value(case, "inputs"),
         llm_overrides=_case_value(case, "llm_overrides"),
         target_node=target_node,
         execution_mode=execution_mode,

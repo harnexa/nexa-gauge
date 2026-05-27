@@ -3,7 +3,7 @@
 Consumes resolved GEval metrics from ``EvalCase.node_geval_steps``.
 
 Implements G-Eval (Liu et al., EMNLP 2023, arXiv:2303.16634):
-  1. Form-filling: judge returns structured JSON with a bounded integer score.
+  1. Form-filling: judge returns structured JSON with bounded integer `scores`.
   2. Probability weighting: ``E[score] = Σ k·p(k) / Σ p(k)`` over decimal tokens
      at the score position, filtered to score range and logprob ≥ log(0.01).
   3. Normalization: min/max scaling into the shared [0, 1] space.
@@ -26,6 +26,7 @@ from ng_core.constants import (
     AVG_DEEPEVAL_OUTPUT_VERDICT,
     AVG_DEEPEVAL_PROMPT_TOKENS,
     GEVAL_METRIC_PASS_THRESHOLD,
+    USE_LOGPROBS_FORSCORE_WEIGHTING
 )
 from ng_core.types import (
     CostEstimate,
@@ -42,7 +43,6 @@ from ng_graph.llm.gateway import get_llm
 from ng_graph.llm.pricing import cost_usd, get_node_pricing
 from ng_graph.log import get_node_logger
 from ng_graph.nodes.base import BaseMetricNode
-from ng_graph.nodes.metrics.commons import build_scalar_score_response_model
 from ng_graph.nodes.metrics.geval.cache import (
     GEVAL_SCORE_PARSER_VERSION,
     GEVAL_SCORE_PROMPT_VERSION,
@@ -50,12 +50,11 @@ from ng_graph.nodes.metrics.geval.cache import (
 from ng_graph.nodes.metrics.geval.fields import FIELD_DISPLAY_NAMES, format_param_names
 from ng_graph.nodes.metrics.geval.weighted_score import calculate_weighted_summed_score
 from ng_graph.nodes.metrics.scoring import (
-    build_metric_system_prompt,
-    build_score_output_contract,
+    ScoringSpec,
     normalize_raw_score,
-    scoring_spec,
+    build_scores_response_model,
+    verdict_from_score
 )
-from ng_graph.nodes.metrics.verdicts import verdict_from_score
 from pydantic import BaseModel
 
 log = get_node_logger("geval")
@@ -64,6 +63,14 @@ _BASE_GEVAL_SYSTEM_PROMPT = (
     "You are an evaluator that rates a model's output against the given **Evaluation Steps**. "
     "You receive (a) a numbered list of **Evaluation Steps**, and (b) named **Test case** fields. "
     "Judge only from the provided fields and steps; do not use external knowledge."
+)
+
+_USER_TEMPLATE = (
+    "## Evaluation steps:\n"
+    "{steps_block}\n\n"
+    "Parameters provided: {param_names}\n\n"
+    "## Test case:\n"
+    "{rendered_fields}"
 )
 
 @dataclass
@@ -91,24 +98,14 @@ class GevalNode(BaseMetricNode):
     prompt_version = GEVAL_SCORE_PROMPT_VERSION
     parser_version = GEVAL_SCORE_PARSER_VERSION
 
-    USER_PROMPT = (
-        "## Evaluation steps:\n"
-        "{steps_block}\n\n"
-        "Parameters provided: {param_names}\n\n"
-        "## Test case:\n"
-        "{rendered_fields}"
-    )
+
 
     # Cost estimation uses the longest reasonable system prompt (likert + reasoning) so
     # token estimates don't under-count when the caller picks the verbose configuration.
+    scoring_contract = ScoringSpec(mode=ScoringMode.SCALE_1_5, include_reasoning=True)
     static_prompt_tokens: int = _count_tokens(
-        build_metric_system_prompt(_BASE_GEVAL_SYSTEM_PROMPT, ScoringMode.SCALE_1_5, include_reasoning=True)
-    ) + _count_tokens(
-        build_score_output_contract(
-            ScoringMode.SCALE_1_5,
-            True,
-        )
-    ) + template_static_tokens(USER_PROMPT)
+        _BASE_GEVAL_SYSTEM_PROMPT
+    ) + _count_tokens(scoring_contract.contract) + template_static_tokens(_USER_TEMPLATE)
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
@@ -141,9 +138,7 @@ class GevalNode(BaseMetricNode):
         input: Optional[str],
         reference: Optional[str],
         context: Optional[str],
-        *,
-        scoring_mode: ScoringMode,
-        include_reasoning: bool,
+        score_spec: ScoringSpec
     ) -> list[dict[str, str]]:
         steps_block = "\n".join(
             f"{i + 1}. {step.text.strip()}"
@@ -163,21 +158,15 @@ class GevalNode(BaseMetricNode):
             if values.get(field_name) and str(values[field_name]).strip()
         )
 
-        system_prompt = build_metric_system_prompt(
-            _BASE_GEVAL_SYSTEM_PROMPT, scoring_mode, include_reasoning=include_reasoning
-        )
-        user_prompt = GevalNode.USER_PROMPT.format(
+        user_prompt = _USER_TEMPLATE.format(
             steps_block=steps_block,
             param_names=format_param_names(list(metric.item_fields)),
             rendered_fields=rendered_fields,
         )
-        output_contract = build_score_output_contract(
-            scoring_mode,
-            include_reasoning,
-        )
+        output_contract = score_spec.contract
 
         return [
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": _BASE_GEVAL_SYSTEM_PROMPT},
             {"role": "user", "content": output_contract},
             {"role": "user", "content": user_prompt},
         ]
@@ -211,8 +200,7 @@ class GevalNode(BaseMetricNode):
         input: Optional[str],
         reference: Optional[str],
         context: Optional[str],
-        scoring_mode: ScoringMode,
-        include_reasoning: bool,
+        score_spec: ScoringSpec
     ) -> _EvaluationResult:
         """Run one GEval scoring call for a single resolved metric."""
         evaluation_steps = [
@@ -250,30 +238,32 @@ class GevalNode(BaseMetricNode):
                 cost=0.0,
             )
 
-        spec = scoring_spec(scoring_mode)
-        response_model = build_scalar_score_response_model(
-            "GevalScore",
-            scoring_mode,
-            include_reasoning,
-            reasoning_field="reason",
+        response_model = build_scores_response_model(
+            model_prefix="GevalScore", 
+            mode_value=score_spec.mode.value, 
+            min_score=score_spec.score_min, 
+            max_score=score_spec.score_max,
+            include_reasoning=score_spec.include_reasoning
         )
+        
         llm = get_llm(
             "geval",
             response_model,
             self.judge_model,
             llm_overrides=self.llm_overrides,
         )
+
         messages = self._build_messages(
             metric,
             output,
             input,
             reference,
             context,
-            scoring_mode=scoring_mode,
-            include_reasoning=include_reasoning,
+            score_spec=score_spec
         )
 
         response = await asyncio.to_thread(llm.invoke_with_logprobs, messages)
+
         self._record_model_response(response, primary_model=self.judge_model)
 
         used_model = response.get("model") or self.judge_model
@@ -294,29 +284,38 @@ class GevalNode(BaseMetricNode):
                 cost=cost,
             )
 
-        raw_score = int(getattr(parsed, "score"))
+        raw_scores = list(getattr(parsed, "scores", []) or [])
+        if not raw_scores:
+            return _EvaluationResult(
+                metric=MetricResult(
+                    name=metric.name,
+                    category=MetricCategory.ANSWER,
+                    error="Failed to parse GEval response: missing `scores`.",
+                ),
+                usage=usage,
+                cost=cost,
+            )
+        avg_normalized_step_score = sum(normalize_raw_score(v, score_spec) for v in raw_scores)/len(raw_scores)
+
         logprobs_content = response.get("logprobs")
-        if logprobs_content:
+        if  USE_LOGPROBS_FORSCORE_WEIGHTING and logprobs_content:
             weighted = calculate_weighted_summed_score(
-                raw_score,
+                avg_normalized_step_score,
                 logprobs_content,
-                score_min=spec.score_min,
-                score_max=spec.score_max,
+                score_min=score_spec.score_min,
+                score_max=score_spec.score_max,
             )
         else:
-            weighted = float(raw_score)
+            weighted = float(avg_normalized_step_score)
 
-        normalized = normalize_raw_score(weighted, scoring_mode)
-        passed = normalized >= GEVAL_METRIC_PASS_THRESHOLD
-        reasoning_text = (
-            str(getattr(parsed, "reason", "") or "") if include_reasoning else ""
-        )
+        passed = weighted >= GEVAL_METRIC_PASS_THRESHOLD
+        reasoning_text = str(getattr(parsed, "reasoning", "") or "") if score_spec.include_reasoning else ""
 
         result_entry: dict[str, Any] = {
             "passed": passed,
-            "raw_score": int(raw_score),
+            "raw_score": int(avg_normalized_step_score),
         }
-        if include_reasoning:
+        if score_spec.include_reasoning:
             result_entry["reasoning"] = reasoning_text
             result_entry["tokens"] = _count_tokens(reasoning_text)
 
@@ -324,8 +323,8 @@ class GevalNode(BaseMetricNode):
             metric=MetricResult(
                 name=metric.name,
                 category=MetricCategory.ANSWER,
-                score=normalized,
-                verdict=verdict_from_score(normalized, GEVAL_METRIC_PASS_THRESHOLD),
+                score=avg_normalized_step_score,
+                verdict=verdict_from_score(avg_normalized_step_score, GEVAL_METRIC_PASS_THRESHOLD),
                 result=[result_entry],
             ),
             usage=usage,
@@ -333,7 +332,6 @@ class GevalNode(BaseMetricNode):
         )
 
     # ── Orchestration ─────────────────────────────────────────────────────
-
     def run(
         self,
         resolved_artifacts: list[GevalStepsResolved],
@@ -351,6 +349,7 @@ class GevalNode(BaseMetricNode):
         metric — the graph wiring is responsible for passing them through.
         """
         self._reset_model_usage()
+        score_spec = ScoringSpec(mode=scoring_mode, include_reasoning=include_reasoning)
 
         if not resolved_artifacts:
             return GevalMetrics(metrics=[], cost=None)
@@ -360,6 +359,7 @@ class GevalNode(BaseMetricNode):
         reference_text = reference.text if reference else None
         context_text = context.text if context else None
 
+        # Run for each Geval Metrics asynchronously
         async def _run_all() -> list[_EvaluationResult]:
             tasks = [
                 self._evaluate_metric(
@@ -368,8 +368,7 @@ class GevalNode(BaseMetricNode):
                     input=input_text,
                     reference=reference_text,
                     context=context_text,
-                    scoring_mode=scoring_mode,
-                    include_reasoning=include_reasoning,
+                    score_spec=score_spec
                 )
                 for metric in resolved_artifacts
             ]
@@ -401,7 +400,6 @@ class GevalNode(BaseMetricNode):
         )
 
     # ── Estimation ────────────────────────────────────────────────────────
-
     def estimate(
         self,
         output: Item,

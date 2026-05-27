@@ -1,11 +1,94 @@
 [
   {
-    "case_id": "eiffel-tower-basic",
+    "case_id": "eiffel-tower-basic-binary",
     "input": "What is the Eiffel Tower and where is it located?",
     "output": "The Eiffel Tower is a wrought-iron lattice tower located in Paris, France. It was constructed between 1887 and 1889 and served as the entrance arch to the 1889 World's Fair. Standing at 330 metres, it is one of the most recognisable structures in the world.",
     "context": "The Eiffel Tower (/ˈaɪfəl/ EYE-fəl; French: Tour Eiffel) is a wrought-iron lattice tower on the Champ de Mars in Paris, France. It is named after the engineer Gustave Eiffel, whose company designed and built the tower from 1887 to 1889 as the centerpiece of the 1889 World's Fair.",
-    "reference": "The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, France, built between 1887 and 1889 as the entrance arch for the 1889 World's Fair."
+    "reference": "The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, France, built between 1887 and 1889 as the entrance arch for the 1889 World's Fair.",
+    "geval": {
+      "metrics": [
+        {
+          "name": "eiffel_tower",
+          "item_fields": ["input", "output", "reference"],
+          "evaluation_steps": [
+            "Check whether the facts in `reference` contradicts any facts in `output`",
+            "Check whether the `output` adresses the `input` directly."
+          ]
+        }
+      ]
+    }
   },
+  {
+    "case_id": "eiffel-tower-basic-scale",
+    "input": "What is the Eiffel Tower and where is it located?",
+    "output": "The Eiffel Tower is a wrought-iron lattice tower located in Paris, France. It was constructed between 1887 and 1889 and served as the entrance arch to the 1889 World's Fair. Standing at 330 metres, it is one of the most recognisable structures in the world.",
+    "context": "The Eiffel Tower (/ˈaɪfəl/ EYE-fəl; French: Tour Eiffel) is a wrought-iron lattice tower on the Champ de Mars in Paris, France. It is named after the engineer Gustave Eiffel, whose company designed and built the tower from 1887 to 1889 as the centerpiece of the 1889 World's Fair.",
+    "reference": "The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, France, built between 1887 and 1889 as the entrance arch for the 1889 World's Fair.",
+    "grounding": { "scoring_mode": "scale_1_5" },
+    "relevance": { "scoring_mode": "scale_1_5" },
+    "geval": {
+      "metrics": [
+        {
+          "name": "eiffel_tower",
+          "item_fields": ["input", "output", "reference"],
+          "evaluation_steps": [
+            "Check whether the facts in `reference` contradicts any facts in `output`",
+            "Check whether the `output` adresses the `input` directly."
+          ]
+        }
+      ],
+      "scoring_mode": "scale_1_5"
+    },
+    "redteam": { "scoring_mode": "scale_1_5"}
+  },
+  {
+    "case_id": "eiffel-tower-binary-reason",
+    "input": "What is the Eiffel Tower and where is it located?",
+    "output": "The Eiffel Tower is a wrought-iron lattice tower located in Paris, France. It was constructed between 1887 and 1889 and served as the entrance arch to the 1889 World's Fair. Standing at 330 metres, it is one of the most recognisable structures in the world.",
+    "context": "The Eiffel Tower (/ˈaɪfəl/ EYE-fəl; French: Tour Eiffel) is a wrought-iron lattice tower on the Champ de Mars in Paris, France. It is named after the engineer Gustave Eiffel, whose company designed and built the tower from 1887 to 1889 as the centerpiece of the 1889 World's Fair.",
+    "reference": "The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, France, built between 1887 and 1889 as the entrance arch for the 1889 World's Fair.",
+    "grounding": { "include_reasoning": true },
+    "relevance": { "include_reasoning": true },
+    "geval": {
+      "metrics": [
+        {
+          "name": "eiffel_tower",
+          "item_fields": ["input", "output", "reference"],
+          "evaluation_steps": [
+            "Check whether the facts in `reference` contradicts any facts in `output`",
+            "Check whether the `output` adresses the `input` directly."
+          ]
+        }
+      ],
+      "include_reasoning": true
+    },
+    "redteam": { "include_reasoning": true }
+  },
+  {
+    "case_id": "eiffel-tower-basic-scale-reason",
+    "input": "What is the Eiffel Tower and where is it located?",
+    "output": "The Eiffel Tower is a wrought-iron lattice tower located in Paris, France. It was constructed between 1887 and 1889 and served as the entrance arch to the 1889 World's Fair. Standing at 330 metres, it is one of the most recognisable structures in the world.",
+    "context": "The Eiffel Tower (/ˈaɪfəl/ EYE-fəl; French: Tour Eiffel) is a wrought-iron lattice tower on the Champ de Mars in Paris, France. It is named after the engineer Gustave Eiffel, whose company designed and built the tower from 1887 to 1889 as the centerpiece of the 1889 World's Fair.",
+    "reference": "The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, France, built between 1887 and 1889 as the entrance arch for the 1889 World's Fair.",
+    "grounding": { "scoring_mode": "scale_1_5", "include_reasoning": true },
+    "relevance": { "scoring_mode": "scale_1_5", "include_reasoning": true },
+    "geval": {
+      "metrics": [
+        {
+          "name": "eiffel_tower",
+          "item_fields": ["input", "output", "reference"],
+          "evaluation_steps": [
+            "Check whether the facts in `reference` contradicts any facts in `output`",
+            "Check whether the `output` adresses the `input` directly."
+          ]
+        }
+      ],
+      "scoring_mode": "scale_1_5", 
+      "include_reasoning": true
+    },
+    "redteam": { "scoring_mode": "scale_1_5", "include_reasoning": true }
+  },
+  
 
   {
     "case_id": "bitcoin-economics-medium",
@@ -27,11 +110,6 @@
           "evaluation_steps": [
             "Check whether the facts in `reference` contradicts any facts in `output`"
           ]
-        },
-        {
-          "name": "transformer_criterion_2",
-          "item_fields": ["output"],
-          "criteria": "Check whether the output is aligned with the question"
         }
       ]
     }
@@ -170,6 +248,8 @@
     "input": "Explain retrieval-augmented generation (RAG) and when it should be used over fine-tuning.",
     "output": "Retrieval-Augmented Generation (RAG) is a technique that combines a large language model (LLM) with an external retrieval system to ground the model's responses in up-to-date or domain-specific information that may not have been captured during pretraining.\n\nIn a standard RAG pipeline, when a user submits a query, the system first encodes the query into a dense vector using an embedding model. It then searches a vector database (such as Pinecone, Weaviate, Chroma, or FAISS) for the most semantically similar passages from a pre-indexed document corpus. Those retrieved passages are injected into the LLM's context window as 'context', and the model is prompted to answer the question using both its parametric knowledge and the retrieved evidence. The answer is thus grounded in verifiable, cited sources rather than relying solely on the model's internal weights.\n\nRAG has several key advantages:\n- **Freshness**: the knowledge base can be updated without retraining the model. Documents can be re-indexed as new information becomes available, allowing the system to answer questions about recent events.\n- **Transparency**: citations from retrieved passages allow users to verify answers and trace claims to source documents.\n- **Cost efficiency**: retrieval-based grounding is far cheaper than retraining or even fine-tuning large models.\n- **Reduced hallucination**: anchoring generation to retrieved text reduces, though does not eliminate, the risk of the model fabricating information.\n\nFine-tuning, by contrast, updates the model's weights on a task-specific or domain-specific dataset. It is better suited when:\n- The task requires a change in **output style or format** (e.g., always respond in bullet points, use a particular tone).\n- The model needs to learn **new capabilities** not present in pretraining (e.g., code generation in a proprietary DSL).\n- The domain has highly **specialised vocabulary or reasoning patterns** that benefit from weight-level adaptation (e.g., medical radiology report generation).\n- Latency is critical and injecting long contexts into each request is prohibitive.\n\nThe two approaches are not mutually exclusive. A fine-tuned model can serve as the LLM backbone of a RAG system, benefiting from both domain adaptation and grounded retrieval. In practice, RAG is typically the right first step when the goal is factual accuracy over a dynamic corpus, while fine-tuning adds value when stylistic or task-specific behavioural changes are needed that prompt engineering alone cannot achieve.",
     "geval": {
+      "scoring_mode": "scale_1_5",
+      "include_reasoning": true,
       "metrics": [
         {
           "name": "rag_concept_coverage",
@@ -191,7 +271,9 @@
           "criteria": "The output must align with the provided reference."
         }
       ]
-    }
+    },
+    "grounding": { "scoring_mode": "scale_1_5", "include_reasoning": true },
+    "relevance": { "scoring_mode": "scale_1_5", "include_reasoning": true }
   },
 
   {

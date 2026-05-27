@@ -364,11 +364,14 @@ def _set_case_llm_overrides(
     case: Any,
     llm_overrides: dict[str, dict[str, str]],
     *,
+    inputs: Any | None = None,
     chunker: str | None = None,
     refiner: str | None = None,
     refiner_top_k: int | None = None,
 ) -> Any:
     updates: dict[str, Any] = {"llm_overrides": llm_overrides}
+    if inputs is not None:
+        updates["inputs"] = inputs
     if chunker is not None:
         updates["chunker"] = chunker
     if refiner is not None:
@@ -528,6 +531,13 @@ def _apply_transform_iter(
 
 
 def _scan_inputs_from_case(case: Any) -> Any:
+    if isinstance(case, Mapping) and case.get("inputs") is not None:
+        return case.get("inputs")
+    if hasattr(case, "inputs"):
+        existing = getattr(case, "inputs")
+        if existing is not None:
+            return existing
+
     if isinstance(case, Mapping):
         raw_case = case
     elif hasattr(case, "model_dump"):

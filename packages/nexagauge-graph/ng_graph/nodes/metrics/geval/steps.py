@@ -294,8 +294,6 @@ class GevalStepsNode(BaseMetricNode):
                     evaluation_steps=[
                         Item(**step.model_dump()) for step in metric.evaluation_steps
                     ],
-                    scoring_mode=metric.scoring_mode,
-                    include_reasoning=metric.include_reasoning,
                     steps_source="provided",
                     signature=None,
                 )
@@ -315,8 +313,6 @@ class GevalStepsNode(BaseMetricNode):
                     name=metric.name,
                     item_fields=item_fields,
                     evaluation_steps=[Item(**step.model_dump()) for step in cached_steps],
-                    scoring_mode=metric.scoring_mode,
-                    include_reasoning=metric.include_reasoning,
                     steps_source="cache_used",
                     signature=signature,
                 )
@@ -379,8 +375,6 @@ class GevalStepsNode(BaseMetricNode):
                     name=metric.name,
                     item_fields=item_fields,
                     evaluation_steps=[Item(**step.model_dump()) for step in generated_steps],
-                    scoring_mode=metric.scoring_mode,
-                    include_reasoning=metric.include_reasoning,
                     steps_source="generated",
                     signature=signature,
                 )
