@@ -15,10 +15,11 @@ Supported scoring modes:
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
-from typing import Any, Optional
+from threading import Lock
+from typing import Any, Mapping, Optional
 
+from ng_core.config import config as cfg
 from ng_core.constants import (
     AVG_DEEPEVAL_GEVAL_CRITERIA_STEP_TOKENS,
     AVG_DEEPEVAL_GEVAL_CRITERIA_STEPS,
@@ -43,6 +44,7 @@ from ng_graph.llm.gateway import get_llm
 from ng_graph.llm.pricing import cost_usd, get_node_pricing
 from ng_graph.log import get_node_logger
 from ng_graph.nodes.base import BaseMetricNode
+from ng_graph.nodes.metrics.parallel import run_parallel
 from ng_graph.nodes.metrics.geval.cache import (
     GEVAL_SCORE_PARSER_VERSION,
     GEVAL_SCORE_PROMPT_VERSION,
@@ -58,6 +60,7 @@ from ng_graph.nodes.metrics.scoring import (
 from pydantic import BaseModel
 
 log = get_node_logger("geval")
+GEVAL_MAX_WORKERS = int(cfg.GEVAL_STEPS_MAX_WORKERS)
 
 _BASE_GEVAL_SYSTEM_PROMPT = (
     "You are an evaluator that rates a model's output against the given **Evaluation Steps**. "
@@ -106,6 +109,14 @@ class GevalNode(BaseMetricNode):
     static_prompt_tokens: int = _count_tokens(
         _BASE_GEVAL_SYSTEM_PROMPT
     ) + _count_tokens(scoring_contract.contract) + template_static_tokens(_USER_TEMPLATE)
+
+    def __init__(
+        self,
+        judge_model: str = "gpt-4o-mini",
+        llm_overrides: Optional[Mapping[str, Any]] = None,
+    ) -> None:
+        super().__init__(judge_model=judge_model, llm_overrides=llm_overrides)
+        self._usage_lock = Lock()
 
     # ── Helpers ───────────────────────────────────────────────────────────
 
@@ -192,7 +203,7 @@ class GevalNode(BaseMetricNode):
 
     # ── Core evaluation ───────────────────────────────────────────────────
 
-    async def _evaluate_metric(
+    def _evaluate_metric(
         self,
         *,
         metric: GevalStepsResolved,
@@ -262,9 +273,9 @@ class GevalNode(BaseMetricNode):
             score_spec=score_spec
         )
 
-        response = await asyncio.to_thread(llm.invoke_with_logprobs, messages)
-
-        self._record_model_response(response, primary_model=self.judge_model)
+        response = llm.invoke_with_logprobs(messages)
+        with self._usage_lock:
+            self._record_model_response(response, primary_model=self.judge_model)
 
         used_model = response.get("model") or self.judge_model
         usage_payload = response.get("usage") or {}
@@ -359,22 +370,21 @@ class GevalNode(BaseMetricNode):
         reference_text = reference.text if reference else None
         context_text = context.text if context else None
 
-        # Run for each Geval Metrics asynchronously
-        async def _run_all() -> list[_EvaluationResult]:
-            tasks = [
-                self._evaluate_metric(
-                    metric=metric,
-                    output=output_text,
-                    input=input_text,
-                    reference=reference_text,
-                    context=context_text,
-                    score_spec=score_spec
-                )
-                for metric in resolved_artifacts
-            ]
-            return list(await asyncio.gather(*tasks))
+        def _evaluate_single(metric: GevalStepsResolved) -> _EvaluationResult:
+            return self._evaluate_metric(
+                metric=metric,
+                output=output_text,
+                input=input_text,
+                reference=reference_text,
+                context=context_text,
+                score_spec=score_spec,
+            )
 
-        evaluated = asyncio.run(_run_all())
+        evaluated = run_parallel(
+            resolved_artifacts,
+            _evaluate_single,
+            max_workers=GEVAL_MAX_WORKERS,
+        )
         total_input_tokens = sum(result.usage.input_tokens for result in evaluated)
         total_output_tokens = sum(result.usage.output_tokens for result in evaluated)
         total_cost = sum(result.cost for result in evaluated)

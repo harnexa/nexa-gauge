@@ -25,6 +25,7 @@ from ng_core.types import (
     ScoringMode,
 )
 from ng_core.utils import _count_tokens
+from ng_graph.nodes.metrics.redteam.defaults import resolve_redteam_metrics
 
 _GEVAL_ITEM_FIELDS = {"input", "output", "reference", "context"}
 _REDTEAM_ITEM_FIELDS = {"input", "output", "reference", "context"}
@@ -104,16 +105,22 @@ def _parse_scoring_knobs(raw: Mapping[str, Any]) -> tuple[ScoringMode, bool]:
     the typed config models.
     """
     raw_mode = raw.get("scoring_mode")
-    if not raw_mode:
-        mode = ScoringMode.BINARY_YES_NO
-    else:
-        try:
-            mode = ScoringMode(raw_mode)
-        except ValueError as exc:
-            valid = ", ".join(m.value for m in ScoringMode)
-            raise ValueError(
-                f"input scoring_mode = {raw_mode!r} expected one of: {valid}"
-            ) from exc
+    mode = ScoringMode.BINARY_YES_NO
+    if raw_mode:
+        normalized_mode = _normalize_text(raw_mode).lower()
+        mode_aliases = {
+            "likert": ScoringMode.SCALE_1_5,
+            "binary": ScoringMode.BINARY_YES_NO,
+            "yes_no": ScoringMode.BINARY_YES_NO,
+            "yesno": ScoringMode.BINARY_YES_NO,
+        }
+        if normalized_mode in mode_aliases:
+            mode = mode_aliases[normalized_mode]
+        else:
+            try:
+                mode = ScoringMode(normalized_mode)
+            except ValueError:
+                mode = ScoringMode.BINARY_YES_NO
 
     include_reasoning = _normalize_bool(raw.get("include_reasoning"), default=False)
 
@@ -245,24 +252,11 @@ def _build_redteam(raw_redteam: Any) -> Redteam | None:
 
     scoring_mode, include_reasoning = _parse_scoring_knobs(raw_redteam)
     metrics_raw = raw_redteam.get("metrics")
-    # Knobs-only config is valid: runtime node will apply default metrics.
-    if metrics_raw is None:
-        return Redteam(
-            metrics=[],
-            scoring_mode=scoring_mode,
-            include_reasoning=include_reasoning,
-        )
-    if not isinstance(metrics_raw, list):
+    if metrics_raw is not None and not isinstance(metrics_raw, list):
         return None
-    if not metrics_raw:
-        return Redteam(
-            metrics=[],
-            scoring_mode=scoring_mode,
-            include_reasoning=include_reasoning,
-        )
 
-    metrics: list[RedteamMetricInput] = []
-    for metric_raw in metrics_raw:
+    parsed_user_metrics: list[RedteamMetricInput] = []
+    for metric_raw in metrics_raw or []:
         if hasattr(metric_raw, "model_dump"):
             metric_raw = metric_raw.model_dump()
         if not isinstance(metric_raw, dict):
@@ -286,18 +280,15 @@ def _build_redteam(raw_redteam: Any) -> Redteam | None:
         if not item_fields:
             item_fields = ["output"]
 
-        metrics.append(
+        parsed_user_metrics.append(
             RedteamMetricInput(
                 name=name,
                 rubric=rubric,
                 item_fields=item_fields,
             )
         )
-    if not metrics:
-        return None
-
     return Redteam(
-        metrics=metrics,
+        metrics=resolve_redteam_metrics(parsed_user_metrics),
         scoring_mode=scoring_mode,
         include_reasoning=include_reasoning,
     )

@@ -77,7 +77,7 @@ def _static_prompt_tokens_for(mode: ScoringMode, include_reasoning: bool) -> int
     the exact static cost of the configuration the case will actually use.
     """
     system = _BASE_SYSTEM_PROMPT
-    scoring_spec = ScoringSpec(model=mode, include_reasoning=include_reasoning)
+    scoring_spec = ScoringSpec(mode=mode, include_reasoning=include_reasoning)
     user_template = _USER_TEMPLATE.format(context="{context}", claims="{claims}")
     return (
         _count_tokens(system)
