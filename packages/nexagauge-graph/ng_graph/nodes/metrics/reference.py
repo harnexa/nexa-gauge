@@ -11,6 +11,13 @@ All scores are in the 0.0–1.0 range where 1.0 is best.
 from threading import Lock
 
 import nltk
+from ng_core.constants import (
+    REFERENCE_BLEU_METRIC_PASS_THRESHOLD,
+    REFERENCE_METEOR_METRIC_PASS_THRESHOLD,
+    REFERENCE_ROUGE1_METRIC_PASS_THRESHOLD,
+    REFERENCE_ROUGE2_METRIC_PASS_THRESHOLD,
+    REFERENCE_ROUGEL_METRIC_PASS_THRESHOLD,
+)
 from ng_core.types import (
     CostEstimate,
     Item,
@@ -20,12 +27,20 @@ from ng_core.types import (
 )
 from ng_graph.log import get_node_logger
 from ng_graph.nodes.base import BaseMetricNode
+from ng_graph.nodes.metrics.scoring import verdict_from_score
 from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 from nltk.translate.meteor_score import meteor_score
 from rouge_score import rouge_scorer
 
 log = get_node_logger("reference")
 _METEOR_LOCK = Lock()
+_REFERENCE_THRESHOLDS: dict[str, float] = {
+    "rouge1": REFERENCE_ROUGE1_METRIC_PASS_THRESHOLD,
+    "rouge2": REFERENCE_ROUGE2_METRIC_PASS_THRESHOLD,
+    "rougeL": REFERENCE_ROUGEL_METRIC_PASS_THRESHOLD,
+    "bleu": REFERENCE_BLEU_METRIC_PASS_THRESHOLD,
+    "meteor": REFERENCE_METEOR_METRIC_PASS_THRESHOLD,
+}
 
 
 class _NoWordNet:
@@ -45,26 +60,25 @@ class ReferenceNode(BaseMetricNode):
     SYSTEM_PROMPT = ""  # No LLM — these are reference-based lexical metrics
     USER_PROMPT = ""
 
+    @staticmethod
+    def _metric_result(name: str, score: float) -> MetricResult:
+        threshold = _REFERENCE_THRESHOLDS[name]
+        rounded_score = round(score, 4)
+        return MetricResult(
+            name=name,
+            category=MetricCategory.ANSWER,
+            score=rounded_score,
+            verdict=verdict_from_score(rounded_score, threshold),
+        )
+
     def _compute_rouge(self, output: str, reference: str) -> list[MetricResult]:
         """Compute ROUGE-1, ROUGE-2, ROUGE-L F1 scores against reference."""
         scorer = rouge_scorer.RougeScorer(["rouge1", "rouge2", "rougeL"], use_stemmer=True)
         scores = scorer.score(reference, output)
         return [
-            MetricResult(
-                name="rouge1",
-                category=MetricCategory.ANSWER,
-                score=round(scores["rouge1"].fmeasure, 4),
-            ),
-            MetricResult(
-                name="rouge2",
-                category=MetricCategory.ANSWER,
-                score=round(scores["rouge2"].fmeasure, 4),
-            ),
-            MetricResult(
-                name="rougeL",
-                category=MetricCategory.ANSWER,
-                score=round(scores["rougeL"].fmeasure, 4),
-            ),
+            self._metric_result("rouge1", scores["rouge1"].fmeasure),
+            self._metric_result("rouge2", scores["rouge2"].fmeasure),
+            self._metric_result("rougeL", scores["rougeL"].fmeasure),
         ]
 
     def _compute_bleu(self, output: str, reference: str) -> MetricResult:
@@ -73,11 +87,7 @@ class ReferenceNode(BaseMetricNode):
         ref_tokens = reference.split()
         smoothing = SmoothingFunction().method1
         score = sentence_bleu([ref_tokens], hypothesis, smoothing_function=smoothing)
-        return MetricResult(
-            name="bleu",
-            category=MetricCategory.ANSWER,
-            score=round(score, 4),
-        )
+        return self._metric_result("bleu", score)
 
     def _compute_meteor(self, output: str, reference: str) -> MetricResult:
         """Compute METEOR score against reference."""
@@ -96,11 +106,7 @@ class ReferenceNode(BaseMetricNode):
             except Exception as fallback_exc:
                 log.warning(f"METEOR fallback failed ({fallback_exc}); defaulting score to 0.0")
                 score = 0.0
-        return MetricResult(
-            name="meteor",
-            category=MetricCategory.ANSWER,
-            score=round(score, 4),
-        )
+        return self._metric_result("meteor", score)
 
     def run(  # type: ignore[override]
         self,

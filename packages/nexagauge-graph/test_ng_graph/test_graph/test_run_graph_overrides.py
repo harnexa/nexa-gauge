@@ -63,7 +63,7 @@ def test_graph_forwards_llm_overrides_to_nodes(graph_module, monkeypatch) -> Non
             self.judge_model = judge_model
             self.llm_overrides = llm_overrides
 
-        def run(self, claims, context, enable_grounding=True):
+        def run(self, claims, context, enable_grounding=True, **_kwargs):
             return graph_module.GroundingMetrics(
                 metrics=[MetricResult(name="grounding", category=MetricCategory.ANSWER, score=1.0)],
                 cost=CostEstimate(cost=0.0, input_tokens=None, output_tokens=None),
@@ -74,7 +74,7 @@ def test_graph_forwards_llm_overrides_to_nodes(graph_module, monkeypatch) -> Non
             self.judge_model = judge_model
             self.llm_overrides = llm_overrides
 
-        def run(self, claims, input):
+        def run(self, claims, input, **_kwargs):
             return graph_module.RelevanceMetrics(
                 metrics=[MetricResult(name="relevance", category=MetricCategory.ANSWER, score=1.0)],
                 cost=CostEstimate(cost=0.0, input_tokens=None, output_tokens=None),
@@ -108,7 +108,7 @@ def test_graph_forwards_llm_overrides_to_nodes(graph_module, monkeypatch) -> Non
             self.judge_model = judge_model
             self.llm_overrides = llm_overrides
 
-        def run(self, resolved_artifacts, output, input, reference, context):
+        def run(self, resolved_artifacts, output, input, reference, context, **_kwargs):
             return graph_module.GevalMetrics(
                 metrics=[MetricResult(name="geval", category=MetricCategory.ANSWER, score=1.0)],
                 cost=CostEstimate(cost=0.0, input_tokens=None, output_tokens=None),

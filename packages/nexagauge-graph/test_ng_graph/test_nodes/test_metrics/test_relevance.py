@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import ng_graph.nodes.metrics.relevance as relevance_module
 import pytest
-from ng_core.types import Claim, Item
+from ng_core.types import Claim, Item, ScoringMode
 from ng_graph.nodes.metrics.relevance import RelevanceNode
 
 
@@ -25,12 +25,7 @@ def test_run_returns_metric_and_cost_with_mocked_llm(monkeypatch: pytest.MonkeyP
         def invoke(self, messages):
             captured_messages.extend(messages)
             return {
-                "parsed": SimpleNamespace(
-                    verdicts=[
-                        True,
-                        False,
-                    ]
-                ),
+                "parsed": SimpleNamespace(scores=[1, 0]),
                 "parsing_error": None,
                 "usage": {
                     "prompt_tokens": 110,
@@ -56,11 +51,11 @@ def test_run_returns_metric_and_cost_with_mocked_llm(monkeypatch: pytest.MonkeyP
     assert result.cost.cost > 0
 
     system_prompt = captured_messages[0]["content"]
-    user_prompt = captured_messages[1]["content"]
+    user_prompt = captured_messages[2]["content"]
     assert "Do not judge factual correctness" in system_prompt
     assert "supported by evidence" in system_prompt
-    assert "even if the statement may be factually wrong" in user_prompt
-    assert "unrelated, off-topic" in user_prompt
+    assert "## Input:" in user_prompt
+    assert "## Answer Statements" in user_prompt
 
 
 def test_run_skips_when_disabled_or_no_question() -> None:
@@ -81,7 +76,7 @@ def test_run_handles_no_verdicts_as_error_metric(monkeypatch: pytest.MonkeyPatch
     class FakeLLM:
         def invoke(self, _messages):
             return {
-                "parsed": SimpleNamespace(verdicts=[]),
+                "parsed": SimpleNamespace(scores=[]),
                 "parsing_error": None,
                 "usage": {
                     "prompt_tokens": 90,
@@ -97,6 +92,61 @@ def test_run_handles_no_verdicts_as_error_metric(monkeypatch: pytest.MonkeyPatch
     result = node.run(claims=_claims(), input="What is the capital of France?")
 
     assert len(result.metrics) == 1
-    assert result.metrics[0].error == "No verdicts returned"
+    assert result.metrics[0].error == "No scores returned"
     assert result.metrics[0].verdict is None
     assert result.cost.input_tokens == 90
+
+
+def test_run_scale_mode_normalizes_integer_verdicts(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: list = []
+
+    class FakeLLM:
+        def invoke(self, messages):
+            captured.append(messages)
+            return {
+                "parsed": SimpleNamespace(scores=[5, 3]),
+                "parsing_error": None,
+                "usage": {"prompt_tokens": 100, "completion_tokens": 10, "total_tokens": 110},
+                "model": "gpt-4o-mini",
+            }
+
+    monkeypatch.setattr(relevance_module, "get_llm", lambda *_a, **_kw: FakeLLM())
+    node = RelevanceNode(judge_model="gpt-4o-mini")
+    result = node.run(
+        claims=_claims(),
+        input="What is the capital of France?",
+        scoring_mode=ScoringMode.SCALE_1_5,
+    )
+
+    # (5-1)/4 = 1.0; (3-1)/4 = 0.5; mean = 0.75.
+    assert result.metrics[0].score == 0.75
+    output_contract = captured[0][1]["content"]
+    assert "list of integers" in output_contract
+    assert "scale_1_5" in output_contract
+
+
+def test_run_with_reasoning_surfaces_batch_rationale(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeLLM:
+        def invoke(self, _messages):
+            return {
+                "parsed": SimpleNamespace(
+                    scores=[1, 1],
+                    reasoning="Both statements address the user's input.",
+                ),
+                "parsing_error": None,
+                "usage": {"prompt_tokens": 90, "completion_tokens": 25, "total_tokens": 115},
+                "model": "gpt-4o-mini",
+            }
+
+    monkeypatch.setattr(relevance_module, "get_llm", lambda *_a, **_kw: FakeLLM())
+    node = RelevanceNode(judge_model="gpt-4o-mini")
+    result = node.run(
+        claims=_claims(),
+        input="What is the capital of France?",
+        include_reasoning=True,
+    )
+
+    metric = result.metrics[0]
+    assert metric.score == 1.0
+    assert isinstance(metric.result, list) and len(metric.result) > len(_claims())
+    assert metric.result[-1] == {"reasoning": "Both statements address the user's input."}

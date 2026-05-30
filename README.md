@@ -217,6 +217,30 @@ GEval is split into two phases:
 
 This design makes rubric-based evaluation repeatable and cache-friendly across datasets.
 
+### Per-node scoring knobs
+
+All four LLM-as-a-judge nodes (`geval`, `grounding`, `relevance`, `redteam`) accept two shared per-record knobs that tune the judge's output:
+
+- `scoring_mode`: `"binary_yes_no"` (default — judge returns a 0/1 verdict; cheapest) or `"scale_1_5"` (judge returns a 1–5 integer, normalized into `[0, 1]`).
+- `include_reasoning`: `false` (default — score-only schema, fewest output tokens) or `true` (judge also returns a short rationale surfaced in the metric result payload).
+
+Knobs live at the node-config level inside each record (not per metric) and apply uniformly to every metric in the block:
+
+```json
+{
+  "case_id": "demo",
+  "input": "What's the capital of France?",
+  "output": "Paris.",
+  "context": "Paris is the capital city of France.",
+  "geval":     { "scoring_mode": "scale_1_5", "include_reasoning": true, "metrics": [ /* ... */ ] },
+  "grounding": { "scoring_mode": "scale_1_5", "include_reasoning": true },
+  "relevance": { "scoring_mode": "scale_1_5", "include_reasoning": true },
+  "redteam":   { "scoring_mode": "binary_yes_no" }
+}
+```
+
+Omitting a block (or omitting either knob inside it) falls back to the conservative `binary_yes_no` + `include_reasoning=false` defaults.
+
 ---
 
 ## Caching and Cost Estimation

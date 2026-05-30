@@ -76,11 +76,11 @@ def test_node_grounding_estimate_calls_estimate_without_claim_artifact(
             captured["constructor_model"] = judge_model
             captured["constructor_overrides"] = llm_overrides
 
-        def run(self, claims, context, enable_grounding=True):
+        def run(self, claims, context, enable_grounding=True, **_kwargs):
             raise AssertionError("run() should not be called in estimate mode")
 
-        def estimate(self, context) -> CostEstimate:
-            captured["estimate_context"] = context
+        def estimate(self, inputs) -> CostEstimate:
+            captured["estimate_inputs"] = inputs
             return CostEstimate(cost=0.456, input_tokens=0.0, output_tokens=0.0)
 
     monkeypatch.setattr(graph_module, "get_judge_model", _fake_get_judge_model)
@@ -126,11 +126,11 @@ def test_node_relevance_estimate_calls_estimate_with_claims_and_question(
             captured["constructor_model"] = judge_model
             captured["constructor_overrides"] = llm_overrides
 
-        def run(self, claims, input):
+        def run(self, claims, input, **_kwargs):
             raise AssertionError("run() should not be called in estimate mode")
 
-        def estimate(self, input) -> CostEstimate:
-            captured["estimate_question"] = input
+        def estimate(self, inputs) -> CostEstimate:
+            captured["estimate_inputs"] = inputs
             return CostEstimate(cost=0.234, input_tokens=0.0, output_tokens=0.0)
 
     monkeypatch.setattr(graph_module, "get_judge_model", _fake_get_judge_model)
@@ -155,7 +155,7 @@ def test_node_relevance_estimate_calls_estimate_with_claims_and_question(
     assert captured["resolved_node_name"] == "relevance"
     assert captured["constructor_model"] == "resolved-relevance-model"
     assert captured["constructor_overrides"] == llm_overrides
-    assert captured["estimate_question"] == state["inputs"].input
+    assert captured["estimate_inputs"] is state["inputs"]
     assert out["relevance_metrics"].metrics == []
     assert out["relevance_metrics"].cost.cost == 0.234
     assert out["estimated_costs"]["relevance"].cost == 0.234

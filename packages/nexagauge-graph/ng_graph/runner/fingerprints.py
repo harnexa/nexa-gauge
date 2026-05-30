@@ -58,6 +58,26 @@ def _stable_json(obj: Any) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), default=_default)
 
 
+def _inputs_from_case(case: Any) -> Any | None:
+    if isinstance(case, Mapping):
+        return case.get("inputs")
+    return getattr(case, "inputs", None)
+
+
+def _input_field(inputs: Any, key: str) -> Any:
+    if isinstance(inputs, Mapping):
+        return inputs.get(key)
+    return getattr(inputs, key, None)
+
+
+def _item_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, Mapping):
+        return str(value.get("text", "") or "")
+    return str(getattr(value, "text", "") or "")
+
+
 def _compute_case_fingerprint(case: dict[str, Any]) -> str:
     """Hash the *input* of a case — the root of every cache key for that case.
 
@@ -71,14 +91,27 @@ def _compute_case_fingerprint(case: dict[str, Any]) -> str:
     scanner and avoids type-mismatch crashes when raw record fields (e.g.
     a scalar ``context: 42``) reach the cache layer.
     """
-    inputs = scan(case)["inputs"]
-    context_text = inputs.context.text if inputs.context else ""
+    inputs = _inputs_from_case(case)
+    if inputs is None:
+        inputs = scan(case)["inputs"]
+
+    output_item = _input_field(inputs, "output")
+    input_item = _input_field(inputs, "input")
+    reference_item = _input_field(inputs, "reference")
+    context_item = _input_field(inputs, "context")
+    geval_cfg = _input_field(inputs, "geval")
+    redteam_cfg = _input_field(inputs, "redteam")
+    grounding_cfg = _input_field(inputs, "grounding")
+    relevance_cfg = _input_field(inputs, "relevance")
+    context_text = _item_text(context_item)
     return compute_case_hash(
-        output=inputs.output.text if inputs.output else "",
-        input=inputs.input.text if inputs.input else None,
-        reference=inputs.reference.text if inputs.reference else None,
-        geval=inputs.geval,
-        redteam=inputs.redteam,
+        output=_item_text(output_item),
+        input=_item_text(input_item) or None,
+        reference=_item_text(reference_item) or None,
+        geval=geval_cfg,
+        redteam=redteam_cfg,
+        grounding=grounding_cfg,
+        relevance=relevance_cfg,
         context=[context_text] if context_text else [],
         reference_files=_case_value(case, "reference_files") or [],
     )

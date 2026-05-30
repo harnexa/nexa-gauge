@@ -8,7 +8,7 @@ from ng_core.cache import (
     cache_write_allowed,
     compute_case_hash,
 )
-from ng_core.types import GevalConfig, GevalMetricSpec, GevalScoringMode
+from ng_core.types import GevalConfig, GevalMetricSpec, ScoringMode
 
 
 def _kv_path(tmp_path, cache_key: str):
@@ -131,70 +131,72 @@ def test_compute_case_hash_changes_when_geval_contract_changes() -> None:
 
 
 def test_compute_case_hash_changes_when_geval_mode_or_reasoning_changes() -> None:
-    base_metric = dict(
+    """Node-level knobs differentiate case hashes; two modes never collide."""
+    from ng_core.types import Geval, GevalMetricInput, Item
+
+    metric_input = GevalMetricInput(
         name="factuality",
         item_fields=["output"],
-        criteria="Must be factual.",
+        criteria=Item(text="Must be factual.", tokens=4.0),
+        evaluation_steps=[Item(text="Check.", tokens=1.0)],
     )
-    geval_a = GevalConfig(
-        metrics=[
-            GevalMetricSpec(
-                **base_metric,
-                scoring_mode=GevalScoringMode.LIKERT_1_5,
-                include_reasoning=True,
-            )
-        ]
+    geval_a = Geval(
+        metrics=[metric_input],
+        scoring_mode=ScoringMode.BINARY_YES_NO,
+        include_reasoning=False,
     )
-    geval_b = GevalConfig(
-        metrics=[
-            GevalMetricSpec(
-                **base_metric,
-                scoring_mode=GevalScoringMode.BINARY_YES_NO,
-                include_reasoning=True,
-            )
-        ]
+    geval_b = Geval(
+        metrics=[metric_input],
+        scoring_mode=ScoringMode.SCALE_1_5,
+        include_reasoning=False,
     )
-    geval_c = GevalConfig(
-        metrics=[
-            GevalMetricSpec(
-                **base_metric,
-                scoring_mode=GevalScoringMode.LIKERT_1_5,
-                include_reasoning=False,
-            )
-        ]
+    geval_c = Geval(
+        metrics=[metric_input],
+        scoring_mode=ScoringMode.SCALE_1_5,
+        include_reasoning=True,
     )
 
-    h_a = compute_case_hash(
-        output="answer",
+    h_a = compute_case_hash(output="answer", input="q", reference="gt", geval=geval_a)
+    h_b = compute_case_hash(output="answer", input="q", reference="gt", geval=geval_b)
+    h_c = compute_case_hash(output="answer", input="q", reference="gt", geval=geval_c)
+    assert len({h_a, h_b, h_c}) == 3
+
+
+def test_compute_case_hash_changes_when_grounding_or_relevance_knobs_change() -> None:
+    """Non-default grounding/relevance configs perturb the hash; defaults don't."""
+    from ng_core.types import Grounding, Relevance
+
+    h_default = compute_case_hash(output="ans", input="q", reference="gt")
+    h_default_explicit = compute_case_hash(
+        output="ans",
         input="q",
         reference="gt",
-        geval=geval_a,
-        context=[],
-        reference_files=[],
+        grounding=Grounding(),
+        relevance=Relevance(),
     )
-    h_b = compute_case_hash(
-        output="answer",
+    # Default configs (binary + reasoning off) should be indistinguishable from None.
+    assert h_default == h_default_explicit
+
+    h_grounding_scale = compute_case_hash(
+        output="ans",
         input="q",
         reference="gt",
-        geval=geval_b,
-        context=[],
-        reference_files=[],
+        grounding=Grounding(scoring_mode=ScoringMode.SCALE_1_5),
     )
-    h_c = compute_case_hash(
-        output="answer",
+    h_relevance_reasoning = compute_case_hash(
+        output="ans",
         input="q",
         reference="gt",
-        geval=geval_c,
-        context=[],
-        reference_files=[],
+        relevance=Relevance(include_reasoning=True),
     )
-    assert h_a != h_b
-    assert h_a != h_c
+    assert h_default != h_grounding_scale
+    assert h_default != h_relevance_reasoning
+    assert h_grounding_scale != h_relevance_reasoning
 
 
 def test_cache_get_returns_none_for_corrupt_json(tmp_path) -> None:
     store = CacheStore(tmp_path)
-    cache_key = "v2:run:scan:case:route"
+    cache_key = "v3:run:scan:case:route"
     path = _kv_path(tmp_path, cache_key)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("{not-json")
@@ -204,7 +206,7 @@ def test_cache_get_returns_none_for_corrupt_json(tmp_path) -> None:
 
 def test_cache_get_returns_none_for_invalid_envelope(tmp_path) -> None:
     store = CacheStore(tmp_path)
-    cache_key = "v2:run:scan:case:route"
+    cache_key = "v3:run:scan:case:route"
     path = _kv_path(tmp_path, cache_key)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"unexpected": "shape"}))
@@ -214,7 +216,7 @@ def test_cache_get_returns_none_for_invalid_envelope(tmp_path) -> None:
 
 def test_cache_entry_round_trip_includes_metadata(tmp_path) -> None:
     store = CacheStore(tmp_path)
-    cache_key = "v2:run:claims:case:route"
+    cache_key = "v3:run:claims:case:route"
     store.put_by_key(
         cache_key,
         "claims",
@@ -232,7 +234,7 @@ def test_cache_entry_round_trip_includes_metadata(tmp_path) -> None:
 
 def test_cache_get_entry_defaults_metadata_to_empty_dict(tmp_path) -> None:
     store = CacheStore(tmp_path)
-    cache_key = "v2:run:scan:case:route"
+    cache_key = "v3:run:scan:case:route"
     path = _kv_path(tmp_path, cache_key)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -254,8 +256,8 @@ def test_cache_get_entry_defaults_metadata_to_empty_dict(tmp_path) -> None:
 
 def test_cache_get_entry_returns_none_when_cache_key_mismatch(tmp_path) -> None:
     store = CacheStore(tmp_path)
-    expected_key = "v2:run:scan:case:route"
-    actual_key = "v2:run:scan:case:other-route"
+    expected_key = "v3:run:scan:case:route"
+    actual_key = "v3:run:scan:case:other-route"
     path = _kv_path(tmp_path, expected_key)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -281,7 +283,7 @@ def test_eval_and_report_nodes_are_non_cacheable() -> None:
 
 def test_cache_put_by_key_is_safe_under_concurrent_same_key_writes(tmp_path) -> None:
     store = CacheStore(tmp_path)
-    cache_key = "v2:run:scan:same-case:same-route"
+    cache_key = "v3:run:scan:same-case:same-route"
 
     def _write_once(i: int) -> None:
         store.put_by_key(

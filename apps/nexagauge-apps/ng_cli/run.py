@@ -53,7 +53,6 @@ from .util import (
     DEFAULT_PRIMARY_LLM,
     _apply_transform_iter,
     _case_progress,
-    _is_case_eligible_for_target_path,
     _is_node_eligible_for_inputs,
     _parse_field_overrides,
     _plan_nodes_for_target,
@@ -116,9 +115,23 @@ def _iter_eligible_cases_with_overrides(
     """Stream eligible cases while tracking per-node eligibility stats."""
     for case in selected_cases:
         advance_progress()
-        if not _is_case_eligible_for_target_path(target_node=target_node, case=case):
-            continue
+        # Build normalized inputs from raw case
+        # If parsing fails the case is skipped
         inputs = _scan_inputs_from_case(case)
+        if inputs is None:
+            continue
+        if target_node not in {"eval", "report"}:
+            eligible = True
+            # For every non eval and report Node check every planned node for the target
+            # For example for geval get ['scan', 'geval_steps', 'geval']
+            for node_name in _plan_nodes_for_target(target_node):
+                # Finally check if the node is eligible for the inputs provided
+                # Geval should not run without the input `geval` key in input record
+                if not _is_node_eligible_for_inputs(node_name, inputs):
+                    eligible = False
+                    break
+            if not eligible:
+                continue
         for node in branch_nodes:
             if _is_node_eligible_for_inputs(node, inputs):
                 stats.eligible_counts_by_node[node] += 1
@@ -126,6 +139,7 @@ def _iter_eligible_cases_with_overrides(
         yield _set_case_llm_overrides(
             case,
             llm_overrides,
+            inputs=inputs,
             chunker=chunker,
             refiner=refiner,
             refiner_top_k=refiner_top_k,

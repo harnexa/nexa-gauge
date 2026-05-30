@@ -21,6 +21,7 @@ def test_run_returns_reference_metrics_for_item_inputs() -> None:
     assert [m.name for m in result.metrics] == ["rouge1", "rouge2", "rougeL", "bleu", "meteor"]
     assert all(m.category == MetricCategory.ANSWER for m in result.metrics)
     assert all(m.score is not None and 0.0 <= m.score <= 1.0 for m in result.metrics)
+    assert all(m.verdict == "PASSED" for m in result.metrics)
 
     assert result.cost.cost == 0.0
     assert result.cost.input_tokens is None
@@ -38,6 +39,7 @@ def test_run_accepts_string_inputs() -> None:
 
     assert len(result.metrics) == 5
     assert all(m.score is not None for m in result.metrics)
+    assert all(m.verdict in {"PASSED", "FAILED"} for m in result.metrics)
 
 
 def test_run_skips_when_disabled_or_reference_missing() -> None:
@@ -85,3 +87,4 @@ def test_run_meteor_falls_back_when_wordnet_path_errors(monkeypatch) -> None:
 
     meteor = next(m for m in result.metrics if m.name == "meteor")
     assert meteor.score == 0.1234
+    assert meteor.verdict == "FAILED"

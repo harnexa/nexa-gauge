@@ -17,6 +17,7 @@ from ng_core.types import (
     RedteamMetrics,
     ReferenceMetrics,
     RelevanceMetrics,
+    ScoringMode,
 )
 
 from .llm import get_judge_model
@@ -33,6 +34,12 @@ from .nodes.scanner import scan as scan_record
 from .topology import NODES_BY_NAME, NodeSpec
 
 logger = logging.getLogger(__name__)
+
+# Per-node scoring defaults when the case carries no `grounding`/`relevance`/
+# `geval`/`redteam` config block. Mirrors the defaults on the typed config models
+# so omitting the block at the record level yields the same behavior as supplying
+# an empty `{}`.
+_DEFAULT_SCORING_MODE = ScoringMode.BINARY_YES_NO
 
 
 def _is_estimate_mode(state: Mapping[str, Any]) -> bool:
@@ -226,13 +233,17 @@ def node_metadata_scanner(state: EvalCase) -> dict[str, Any]:
     - Runs scanner once per case.
     - Returns only ``inputs`` patch; downstream nodes read from this contract.
     """
+    # Reuse pre-scanned inputs when provided by the caller/runner.
+    existing_inputs = state.get("inputs")
+    if existing_inputs is not None:
+        return {"inputs": existing_inputs}
+
     # Per-record scan only: hydrate `inputs` from the current state payload.
     records = state["record"]
     raw_record = {
         **records,
         "reference_files": state.get("reference_files") or [],
     }
-
     case = scan_record(raw_record, idx=0)
     return {"inputs": case.get("inputs")}
 
@@ -423,17 +434,24 @@ def node_grounding(state: EvalCase) -> dict[str, Any]:
     node = GroundingNode(judge_model=model, llm_overrides=llm_overrides)
 
     if estimate_mode:
-        estimated_cost = node.estimate(context=context_item)
+        estimated_cost = node.estimate(inputs=inputs)
         return {
             out_key: GroundingMetrics(metrics=[], cost=estimated_cost),
             "estimated_costs": _record_estimated_cost(state, "grounding", estimated_cost),
             "node_model_usage": _record_node_model_usage(state, "grounding", node),
         }
 
+    grounding_cfg = inputs.grounding
     results = node.run(
         claims=claims,
         context=context_item or inputs.output,
         enable_grounding=inputs.has_context,
+        scoring_mode=grounding_cfg.scoring_mode
+        if grounding_cfg is not None
+        else _DEFAULT_SCORING_MODE,
+        include_reasoning=bool(grounding_cfg.include_reasoning)
+        if grounding_cfg is not None
+        else False,
     )
     return {
         out_key: results,
@@ -477,16 +495,23 @@ def node_relevance(state: EvalCase) -> dict[str, Any]:
     node = RelevanceNode(judge_model=model, llm_overrides=llm_overrides)
 
     if estimate_mode:
-        estimated_cost = node.estimate(input=inputs.input)
+        estimated_cost = node.estimate(inputs=inputs)
         return {
             out_key: RelevanceMetrics(metrics=[], cost=estimated_cost),
             "estimated_costs": _record_estimated_cost(state, "relevance", estimated_cost),
             "node_model_usage": _record_node_model_usage(state, "relevance", node),
         }
 
+    relevance_cfg = inputs.relevance
     results = node.run(
         claims=claims,
         input=inputs.input,
+        scoring_mode=relevance_cfg.scoring_mode
+        if relevance_cfg is not None
+        else _DEFAULT_SCORING_MODE,
+        include_reasoning=bool(relevance_cfg.include_reasoning)
+        if relevance_cfg is not None
+        else False,
     )
     return {
         out_key: results,
@@ -520,13 +545,7 @@ def node_redteam(state: EvalCase) -> dict[str, Any]:
     model = get_judge_model("redteam", cfg.LLM_MODEL, llm_overrides=llm_overrides)
     node = RedteamNode(judge_model=model, llm_overrides=llm_overrides)
     if estimate_mode:
-        estimated_cost = node.estimate(
-            output=inputs.output,
-            input=inputs.input,
-            reference=inputs.reference,
-            context=inputs.context,
-            redteam=inputs.redteam,
-        )
+        estimated_cost = node.estimate(inputs=inputs)
         return {
             out_key: RedteamMetrics(metrics=[], cost=estimated_cost),
             "estimated_costs": _record_estimated_cost(state, "redteam", estimated_cost),
@@ -636,12 +655,15 @@ def node_geval(state: EvalCase) -> dict[str, Any]:
     geval_steps = state.get("geval_steps")
     resolved_artifacts = geval_steps.resolved_steps if geval_steps else []
 
+    geval_cfg = inputs.geval
     results = node.run(
         resolved_artifacts=resolved_artifacts,
         output=inputs.output,
         input=inputs.input,
         reference=inputs.reference,
         context=inputs.context,
+        scoring_mode=geval_cfg.scoring_mode if geval_cfg is not None else _DEFAULT_SCORING_MODE,
+        include_reasoning=bool(geval_cfg.include_reasoning) if geval_cfg is not None else False,
     )
     return {
         out_key: results,

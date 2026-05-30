@@ -25,7 +25,7 @@ class MetricCategory(str, Enum):
     """High-level grouping used by reports to organise metric results."""
 
     RETRIEVAL = "retrieval"  # was evidence retrieval correct/complete?
-    ANSWER = "answer"  # is the answer correct, relevant, and safe?
+    ANSWER = "output|generation|answer"  # is the answer correct, relevant, and safe?
 
 
 # ------------------------------------------------------------
@@ -35,10 +35,14 @@ GevalItemField = Literal["input", "output", "reference", "context"]
 RedteamItemField = Literal["input", "output", "reference", "context"]
 
 
-class GevalScoringMode(str, Enum):
-    """Supported GEval scoring modes."""
+class ScoringMode(str, Enum):
+    """Shared scoring modes for all LLM-as-a-judge metric nodes.
 
-    LIKERT_1_5 = "likert_1_5"
+    Used by geval, grounding, relevance, and redteam to choose between
+    a 1-5 Likert integer scale and a binary yes/no decision.
+    """
+
+    SCALE_1_5 = "scale_1_5"
     BINARY_YES_NO = "binary_yes_no"
 
 
@@ -49,8 +53,6 @@ class GevalMetricSpec(BaseModel):
     item_fields: list[GevalItemField] = Field(default_factory=lambda: ["output"])
     criteria: str | None = None
     evaluation_steps: list[str] = Field(default_factory=list)
-    scoring_mode: GevalScoringMode = GevalScoringMode.LIKERT_1_5
-    include_reasoning: bool = True
 
 
 class GevalMetricInput(BaseModel):
@@ -58,14 +60,16 @@ class GevalMetricInput(BaseModel):
 
     ``evaluation_steps`` may be empty — in that case ``GevalStepsNode``
     generates them from ``criteria`` and caches by signature.
+
+    Scoring knobs (``scoring_mode``, ``include_reasoning``) live on the
+    parent :class:`Geval` config, not per-metric, so a node block configures
+    all its metrics uniformly.
     """
 
     name: str
     item_fields: list[GevalItemField] = Field(default_factory=lambda: ["output"])
     criteria: Item | None = None
     evaluation_steps: list[Item]
-    scoring_mode: GevalScoringMode = GevalScoringMode.LIKERT_1_5
-    include_reasoning: bool = True
 
 
 class GevalConfig(BaseModel):
@@ -117,16 +121,20 @@ class Claim(BaseModel):
     extraction_failed: bool = False
 
 
-class Grounding(Claim):
+class GroundingClaim(Claim):
     """Claim annotated with a Grounding verdict against retrieved evidence."""
 
-    verdict: Literal["ACCEPTED", "REJECTED"]
+    verdict: Literal["ACCEPTED", "REJECTED", "PASSED", "FAILED"]
+    raw_score: Optional[Any] = None
+    """Raw integer the judge emitted for this claim (1-5 likert, or 0/1 binary)."""
 
 
-class Relevancy(Claim):
+class RelevancyClaim(Claim):
     """Claim annotated with a relevancy verdict against the input."""
 
-    verdict: Literal["ACCEPTED", "REJECTED"]
+    verdict: Literal["ACCEPTED", "REJECTED", "PASSED", "FAILED"]
+    raw_score: Optional[Any] = None
+    """Raw integer the judge emitted for this claim (1-5 likert, or 0/1 binary)."""
 
 
 class RedTeamVerdict(str, Enum):
@@ -169,15 +177,43 @@ class MetricResult(BaseModel):
     error: str | None = None
 
 
+class Grounding(BaseModel):
+    """Per-case grounding node config. Carries only the shared scoring knobs.
+
+    Grounding eligibility itself is gated by ``Inputs.has_context``; this
+    block only tunes the judge's scoring mode and reasoning output.
+    """
+
+    scoring_mode: ScoringMode = ScoringMode.BINARY_YES_NO
+    include_reasoning: bool = False
+
+
+class Relevance(BaseModel):
+    """Per-case relevance node config. Carries only the shared scoring knobs.
+
+    Relevance eligibility itself is gated by ``Inputs.has_input``; this
+    block only tunes the judge's scoring mode and reasoning output.
+    """
+
+    scoring_mode: ScoringMode = ScoringMode.BINARY_YES_NO
+    include_reasoning: bool = False
+
+
 # --------------------------------------------------------------------------------
 # Geval
 # --------------------------------------------------------------------------------
-
-
 class Geval(BaseModel):
-    """Input contract carried by Item input payload."""
+    """Per-case GEval config carried on the ``Inputs`` payload.
+
+    The ``scoring_mode`` and ``include_reasoning`` knobs apply uniformly to
+    every metric in this block. Defaults are the strict / cheap pair
+    (``binary_yes_no`` + reasoning off) so omitting them in a record yields
+    the cheapest possible run.
+    """
 
     metrics: list[GevalMetricInput] = Field(default_factory=list)
+    scoring_mode: ScoringMode = ScoringMode.BINARY_YES_NO
+    include_reasoning: bool = False
 
 
 class RedteamRubric(BaseModel):
@@ -197,9 +233,15 @@ class RedteamMetricInput(BaseModel):
 
 
 class Redteam(BaseModel):
-    """Input contract for redteam metric configuration."""
+    """Per-case redteam config (default safety metrics + user-supplied rubrics).
+
+    The ``scoring_mode`` and ``include_reasoning`` knobs apply uniformly to
+    every sub-metric (bias, toxicity, custom rubrics).
+    """
 
     metrics: list[RedteamMetricInput] = Field(default_factory=list)
+    scoring_mode: ScoringMode = ScoringMode.BINARY_YES_NO
+    include_reasoning: bool = False
 
 
 class Inputs(BaseModel):
@@ -215,7 +257,11 @@ class Inputs(BaseModel):
     input: Optional[Item] = None
     reference: Optional[Item] = None
     context: Optional[Item] = None
+
+    # Metric Nodes
     geval: Optional[Geval] = None
+    grounding: Optional[Grounding] = None
+    relevance: Optional[Relevance] = None
     redteam: Optional[Redteam] = None
 
     has_output: bool = False
@@ -305,8 +351,6 @@ class GevalStepsResolved(BaseModel):
     name: str
     item_fields: list[GevalItemField]
     evaluation_steps: list[Item]
-    scoring_mode: GevalScoringMode = GevalScoringMode.LIKERT_1_5
-    include_reasoning: bool = True
     steps_source: Literal["provided", "generated", "cache_used"]
     signature: str | None = None
 

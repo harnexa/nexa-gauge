@@ -15,14 +15,17 @@ from ng_core.constants import DEFAULT_DATASET_NAME, DEFAULT_SPLIT
 from ng_core.types import (
     Geval,
     GevalMetricInput,
-    GevalScoringMode,
+    Grounding,
     Inputs,
     Item,
     Redteam,
     RedteamMetricInput,
     RedteamRubric,
+    Relevance,
+    ScoringMode,
 )
 from ng_core.utils import _count_tokens
+from ng_graph.nodes.metrics.redteam.defaults import resolve_redteam_metrics
 
 _GEVAL_ITEM_FIELDS = {"input", "output", "reference", "context"}
 _REDTEAM_ITEM_FIELDS = {"input", "output", "reference", "context"}
@@ -36,6 +39,21 @@ class GraphEvalCase(TypedDict, total=False):
     split: str
     reference_files: list[str]
     inputs: Inputs
+
+
+def build_scan_record(record: Mapping[str, Any], *, idx: int = 0) -> dict[str, Any]:
+    """Build the canonical raw-record shape consumed by scanner parsing."""
+    return {
+        "case_id": _normalize_text(resolve_alias(record, "case_id", f"record-{idx}")),
+        "output": resolve_alias(record, "output"),
+        "input": resolve_alias(record, "input"),
+        "reference": resolve_alias(record, "reference"),
+        "context": resolve_alias(record, "context"),
+        "geval": resolve_alias(record, "geval"),
+        "grounding": resolve_alias(record, "grounding"),
+        "relevance": resolve_alias(record, "relevance"),
+        "redteam": resolve_alias(record, "redteam"),
+    }
 
 
 def _normalize_text(value: Any) -> str:
@@ -77,6 +95,36 @@ def _normalize_bool(value: Any, *, default: bool) -> bool:
     if text in {"false", "0", "no", "n", "off"}:
         return False
     return default
+
+
+def _parse_scoring_knobs(raw: Mapping[str, Any]) -> tuple[ScoringMode, bool]:
+    """Lenient parser for the shared `scoring_mode` / `include_reasoning` knobs.
+
+    Returns the per-node defaults (binary + reasoning off) when either key is
+    absent or has an unrecognised value, matching the conservative defaults on
+    the typed config models.
+    """
+    raw_mode = raw.get("scoring_mode")
+    mode = ScoringMode.BINARY_YES_NO
+    if raw_mode:
+        normalized_mode = _normalize_text(raw_mode).lower()
+        mode_aliases = {
+            "likert": ScoringMode.SCALE_1_5,
+            "binary": ScoringMode.BINARY_YES_NO,
+            "yes_no": ScoringMode.BINARY_YES_NO,
+            "yesno": ScoringMode.BINARY_YES_NO,
+        }
+        if normalized_mode in mode_aliases:
+            mode = mode_aliases[normalized_mode]
+        else:
+            try:
+                mode = ScoringMode(normalized_mode)
+            except ValueError:
+                mode = ScoringMode.BINARY_YES_NO
+
+    include_reasoning = _normalize_bool(raw.get("include_reasoning"), default=False)
+
+    return mode, include_reasoning
 
 
 def _build_redteam_rubric(raw_rubric: Any) -> RedteamRubric | None:
@@ -177,30 +225,23 @@ def _build_geval(raw_geval: Any) -> Geval | None:
                     )
                 )
 
-        raw_scoring_mode = metric_raw.get("scoring_mode")
-        if isinstance(raw_scoring_mode, GevalScoringMode):
-            scoring_mode = raw_scoring_mode
-        else:
-            try:
-                scoring_mode = GevalScoringMode(_normalize_text(raw_scoring_mode))
-            except ValueError:
-                scoring_mode = GevalScoringMode.LIKERT_1_5
-        include_reasoning = _normalize_bool(metric_raw.get("include_reasoning"), default=True)
-
         metrics.append(
             GevalMetricInput(
                 name=name,
                 item_fields=item_fields,
                 criteria=criteria,
                 evaluation_steps=steps,
-                scoring_mode=scoring_mode,
-                include_reasoning=include_reasoning,
             )
         )
 
     if not metrics:
         return None
-    return Geval(metrics=metrics)
+    scoring_mode, include_reasoning = _parse_scoring_knobs(raw_geval)
+    return Geval(
+        metrics=metrics,
+        scoring_mode=scoring_mode,
+        include_reasoning=include_reasoning,
+    )
 
 
 def _build_redteam(raw_redteam: Any) -> Redteam | None:
@@ -209,12 +250,13 @@ def _build_redteam(raw_redteam: Any) -> Redteam | None:
     if not isinstance(raw_redteam, dict):
         return None
 
+    scoring_mode, include_reasoning = _parse_scoring_knobs(raw_redteam)
     metrics_raw = raw_redteam.get("metrics")
-    if not isinstance(metrics_raw, list):
+    if metrics_raw is not None and not isinstance(metrics_raw, list):
         return None
 
-    metrics: list[RedteamMetricInput] = []
-    for metric_raw in metrics_raw:
+    parsed_user_metrics: list[RedteamMetricInput] = []
+    for metric_raw in metrics_raw or []:
         if hasattr(metric_raw, "model_dump"):
             metric_raw = metric_raw.model_dump()
         if not isinstance(metric_raw, dict):
@@ -238,27 +280,51 @@ def _build_redteam(raw_redteam: Any) -> Redteam | None:
         if not item_fields:
             item_fields = ["output"]
 
-        metrics.append(
+        parsed_user_metrics.append(
             RedteamMetricInput(
                 name=name,
                 rubric=rubric,
                 item_fields=item_fields,
             )
         )
+    return Redteam(
+        metrics=resolve_redteam_metrics(parsed_user_metrics),
+        scoring_mode=scoring_mode,
+        include_reasoning=include_reasoning,
+    )
 
-    if not metrics:
+
+def _build_judge_only_config(raw: Any, factory):
+    """Build a `Grounding` / `Relevance` config from a knobs-only record block.
+
+    Returns the typed config when the record explicitly supplied the block
+    (even an empty dict ``{}``), so the user's intent to opt into per-case
+    config is preserved. Returns ``None`` when the key is absent so node
+    defaults apply at run-time.
+    """
+
+    if raw is None:
         return None
-    return Redteam(metrics=metrics)
+    if hasattr(raw, "model_dump"):
+        raw = raw.model_dump()
+    if not isinstance(raw, dict):
+        return None
+    scoring_mode, include_reasoning = _parse_scoring_knobs(raw)
+    return factory(scoring_mode=scoring_mode, include_reasoning=include_reasoning)
 
 
 def _build_inputs(record: Mapping[str, Any], *, idx: int = 0) -> Inputs:
-    case_id = _normalize_text(resolve_alias(record, "case_id", f"record-{idx}"))
-    output_text = _normalize_text(resolve_alias(record, "output"))
-    input_text = _normalize_text(resolve_alias(record, "input"))
-    reference_text = _normalize_text(resolve_alias(record, "reference"))
-    context_text = _normalize_context_text(resolve_alias(record, "context"))
-    geval = _build_geval(resolve_alias(record, "geval"))
-    redteam = _build_redteam(resolve_alias(record, "redteam"))
+    del idx
+    case_id = _normalize_text(record.get("case_id"))
+    output_text = _normalize_text(record.get("output"))
+    input_text = _normalize_text(record.get("input"))
+    reference_text = _normalize_text(record.get("reference"))
+    context_text = _normalize_context_text(record.get("context"))
+
+    grounding = _build_judge_only_config(record.get("grounding"), Grounding)
+    relevance = _build_judge_only_config(record.get("relevance"), Relevance)
+    geval = _build_geval(record.get("geval"))
+    redteam = _build_redteam(record.get("redteam"))
 
     return Inputs(
         case_id=case_id,
@@ -277,6 +343,8 @@ def _build_inputs(record: Mapping[str, Any], *, idx: int = 0) -> Inputs:
             else None
         ),
         geval=geval,
+        grounding=grounding,
+        relevance=relevance,
         redteam=redteam,
         has_output=bool(output_text),
         has_input=bool(input_text),
@@ -294,15 +362,13 @@ def scan(
 ) -> GraphEvalCase:
     """Fill and return graph EvalCase.inputs from one raw record."""
 
+    canonical = build_scan_record(record, idx=idx)
     result: GraphEvalCase = dict(case) if case is not None else {}
-    result.setdefault(
-        "case_id",
-        _normalize_text(resolve_alias(record, "case_id", f"record-{idx}")),
-    )
+    result.setdefault("case_id", _normalize_text(canonical.get("case_id")))
     result.setdefault("dataset", DEFAULT_DATASET_NAME)
     result.setdefault("split", DEFAULT_SPLIT)
     result.setdefault("reference_files", [])
-    result["inputs"] = _build_inputs(record, idx=idx)
+    result["inputs"] = _build_inputs(canonical, idx=idx)
     return result
 
 
