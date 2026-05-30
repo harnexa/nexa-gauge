@@ -469,9 +469,7 @@ def compute_case_hash(
             criteria_text = _text(_value(metric, "criteria"))
             steps_text = _metric_steps_text(_value(metric, "evaluation_steps"))
             fields_text = _metric_fields_text(metric)
-            parts.append(
-                f"{name}\x1f{fields_text}\x1f{criteria_text}\x1f{steps_text}"
-            )
+            parts.append(f"{name}\x1f{fields_text}\x1f{criteria_text}\x1f{steps_text}")
         geval_text = "|".join(sorted(parts))
         # Node-level knobs apply uniformly across all metrics; mix in once.
         geval_text = f"{geval_text}\x1e{_knobs_text(geval)}"

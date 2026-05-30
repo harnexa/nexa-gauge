@@ -32,8 +32,8 @@ from ng_core.types import (
     MetricCategory,
     MetricResult,
     Relevance,
-    RelevancyClaim,
     RelevanceMetrics,
+    RelevancyClaim,
     ScoringMode,
 )
 from ng_core.utils import _count_tokens, template_static_tokens
@@ -45,7 +45,7 @@ from ng_graph.nodes.metrics.scoring import (
     ScoringSpec,
     build_scores_response_model,
     normalize_raw_score,
-    verdict_from_score
+    verdict_from_score,
 )
 from pydantic import BaseModel
 
@@ -58,11 +58,7 @@ _BASE_SYSTEM_PROMPT = (
     "is supported by evidence."
 )
 
-_USER_TEMPLATE = (
-    "## Input: \n{input}\n\n"
-    "## Answer Statements (one per line):\n{claims}"
-)
-
+_USER_TEMPLATE = "## Input: \n{input}\n\n## Answer Statements (one per line):\n{claims}"
 
 
 @lru_cache(maxsize=4)
@@ -71,12 +67,13 @@ def _static_prompt_tokens_for(mode: ScoringMode, include_reasoning: bool) -> int
     system = _BASE_SYSTEM_PROMPT
     score_spec = ScoringSpec(mode=mode, include_reasoning=include_reasoning)
     output_contract = score_spec.contract
-    user_template = _USER_TEMPLATE.format(input="{input}", claims= "{claims}")
+    user_template = _USER_TEMPLATE.format(input="{input}", claims="{claims}")
     return (
         _count_tokens(system)
         + _count_tokens(output_contract)
         + template_static_tokens(user_template)
     )
+
 
 class RelevanceNode(BaseMetricNode):
     node_name = "relevance"
@@ -88,16 +85,16 @@ class RelevanceNode(BaseMetricNode):
         scoring_mode: ScoringMode,
         include_reasoning: bool,
     ) -> Tuple[MetricResult, CostEstimate]:
-        
+
         score_spec = ScoringSpec(mode=scoring_mode, include_reasoning=include_reasoning)
         numbered = "\n".join(f"{i + 1}. {c.item.text}" for i, c in enumerate(claims))
 
         response_model = build_scores_response_model(
-            model_prefix="RelevanceResult", 
-            mode_value=score_spec.mode.value, 
-            min_score=score_spec.score_min, 
+            model_prefix="RelevanceResult",
+            mode_value=score_spec.mode.value,
+            min_score=score_spec.score_min,
             max_score=score_spec.score_max,
-            include_reasoning=score_spec.include_reasoning
+            include_reasoning=score_spec.include_reasoning,
         )
 
         system_prompt = _BASE_SYSTEM_PROMPT
@@ -214,9 +211,7 @@ class RelevanceNode(BaseMetricNode):
         include_reasoning = bool(relevance_cfg.include_reasoning)
 
         input_item = inputs.input
-        input_token_count = (
-            float(input_item.tokens) if isinstance(input_item, Item) else 0.0
-        )
+        input_token_count = float(input_item.tokens) if isinstance(input_item, Item) else 0.0
         input_tokens = (
             _static_prompt_tokens_for(mode, include_reasoning)
             + input_token_count

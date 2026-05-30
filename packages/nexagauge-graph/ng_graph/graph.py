@@ -446,8 +446,12 @@ def node_grounding(state: EvalCase) -> dict[str, Any]:
         claims=claims,
         context=context_item or inputs.output,
         enable_grounding=inputs.has_context,
-        scoring_mode=grounding_cfg.scoring_mode if grounding_cfg is not None else _DEFAULT_SCORING_MODE,
-        include_reasoning=bool(grounding_cfg.include_reasoning) if grounding_cfg is not None else False,
+        scoring_mode=grounding_cfg.scoring_mode
+        if grounding_cfg is not None
+        else _DEFAULT_SCORING_MODE,
+        include_reasoning=bool(grounding_cfg.include_reasoning)
+        if grounding_cfg is not None
+        else False,
     )
     return {
         out_key: results,
@@ -502,8 +506,12 @@ def node_relevance(state: EvalCase) -> dict[str, Any]:
     results = node.run(
         claims=claims,
         input=inputs.input,
-        scoring_mode=relevance_cfg.scoring_mode if relevance_cfg is not None else _DEFAULT_SCORING_MODE,
-        include_reasoning=bool(relevance_cfg.include_reasoning) if relevance_cfg is not None else False,
+        scoring_mode=relevance_cfg.scoring_mode
+        if relevance_cfg is not None
+        else _DEFAULT_SCORING_MODE,
+        include_reasoning=bool(relevance_cfg.include_reasoning)
+        if relevance_cfg is not None
+        else False,
     )
     return {
         out_key: results,

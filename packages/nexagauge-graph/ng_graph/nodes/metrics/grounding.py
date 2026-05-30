@@ -46,7 +46,7 @@ from ng_graph.nodes.metrics.scoring import (
     ScoringSpec,
     build_scores_response_model,
     normalize_raw_score,
-    verdict_from_score
+    verdict_from_score,
 )
 from pydantic import BaseModel
 
@@ -60,11 +60,7 @@ _BASE_SYSTEM_PROMPT = (
 
 # Mode-specific user-prompt fragments. Kept separate so the per-mode wording is
 # explicit; the rest of the template is identical across modes.
-_USER_TEMPLATE = (
-    "## Context passages:\n{context}\n\n"
-    "## Claims to verify (one per line):\n{claims}"
-)
-
+_USER_TEMPLATE = "## Context passages:\n{context}\n\n## Claims to verify (one per line):\n{claims}"
 
 
 @lru_cache(maxsize=4)
@@ -85,6 +81,7 @@ def _static_prompt_tokens_for(mode: ScoringMode, include_reasoning: bool) -> int
         + template_static_tokens(user_template)
     )
 
+
 class GroundingNode(BaseMetricNode):
     node_name = "grounding"
 
@@ -99,16 +96,16 @@ class GroundingNode(BaseMetricNode):
         numbered = "\n".join(f"{i + 1}. {c.item.text}" for i, c in enumerate(claims))
 
         response_model = build_scores_response_model(
-            model_prefix="GroundingResult", 
-            mode_value=scoring_spec.mode.value, 
-            min_score=scoring_spec.score_min, 
+            model_prefix="GroundingResult",
+            mode_value=scoring_spec.mode.value,
+            min_score=scoring_spec.score_min,
             max_score=scoring_spec.score_max,
-            include_reasoning=scoring_spec.include_reasoning
+            include_reasoning=scoring_spec.include_reasoning,
         )
 
         system_prompt = _BASE_SYSTEM_PROMPT
         output_contract = scoring_spec.contract
-        user_prompt =_USER_TEMPLATE.format(context=context, claims=numbered)
+        user_prompt = _USER_TEMPLATE.format(context=context, claims=numbered)
 
         response = get_llm(
             "grounding",
@@ -122,7 +119,7 @@ class GroundingNode(BaseMetricNode):
                 {"role": "user", "content": user_prompt},
             ]
         )
-       
+
         self._record_model_response(response, primary_model=self.judge_model)
 
         pricing = get_node_pricing(
@@ -164,7 +161,7 @@ class GroundingNode(BaseMetricNode):
             for claim, per_score, raw in zip(claims, per_claim_scores, raw_scores)
         ]
         result_payload: list[Any] = list(claim_verdicts)
-        
+
         if include_reasoning:
             reasoning_text = str(getattr(parsed, "reasoning", "") or "")
             if reasoning_text:
@@ -228,9 +225,7 @@ class GroundingNode(BaseMetricNode):
         include_reasoning = bool(grounding_cfg.include_reasoning)
 
         context = inputs.context
-        context_tokens = (
-            float(context.tokens) if isinstance(context, Item) else 0.0
-        )
+        context_tokens = float(context.tokens) if isinstance(context, Item) else 0.0
         input_tokens = (
             _static_prompt_tokens_for(mode, include_reasoning)
             + context_tokens

@@ -44,7 +44,7 @@
   {
     "case_id": "eiffel-tower-binary-reason",
     "input": "What is the Eiffel Tower and where is it located?",
-    "output": "The Eiffel Tower is a wrought-iron lattice tower located in Paris, France. It was constructed between 1887 and 1889 and served as the entrance arch to the 1889 World's Fair. Standing at 330 metres, it is one of the most recognisable structures in the world.",
+    "output": "The Eiffel Tower is not in the US so its not even something we should discuss about. I'd prefer the Statue of liberty over Eiffel anyday. ",
     "context": "The Eiffel Tower (/ˈaɪfəl/ EYE-fəl; French: Tour Eiffel) is a wrought-iron lattice tower on the Champ de Mars in Paris, France. It is named after the engineer Gustave Eiffel, whose company designed and built the tower from 1887 to 1889 as the centerpiece of the 1889 World's Fair.",
     "reference": "The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, France, built between 1887 and 1889 as the entrance arch for the 1889 World's Fair.",
     "grounding": { "include_reasoning": true },
@@ -67,7 +67,7 @@
   {
     "case_id": "eiffel-tower-basic-scale-reason",
     "input": "What is the Eiffel Tower and where is it located?",
-    "output": "The Eiffel Tower is a wrought-iron lattice tower located in Paris, France. It was constructed between 1887 and 1889 and served as the entrance arch to the 1889 World's Fair. Standing at 330 metres, it is one of the most recognisable structures in the world.",
+    "output": "The Eiffel Tower is hideous and ugly, who cares. Standing at 330 metres, like its the longest artifact, hahahaha.",
     "context": "The Eiffel Tower (/ˈaɪfəl/ EYE-fəl; French: Tour Eiffel) is a wrought-iron lattice tower on the Champ de Mars in Paris, France. It is named after the engineer Gustave Eiffel, whose company designed and built the tower from 1887 to 1889 as the centerpiece of the 1889 World's Fair.",
     "reference": "The Eiffel Tower is a wrought-iron lattice tower on the Champ de Mars in Paris, France, built between 1887 and 1889 as the entrance arch for the 1889 World's Fair.",
     "grounding": { "scoring_mode": "scale_1_5", "include_reasoning": true },

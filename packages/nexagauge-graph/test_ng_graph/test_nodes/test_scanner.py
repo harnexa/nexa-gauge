@@ -7,7 +7,7 @@ import json
 
 import pytest
 from ng_core.constants import DEFAULT_DATASET_NAME, DEFAULT_SPLIT
-from ng_core.types import GevalScoringMode
+from ng_core.types import ScoringMode
 from ng_graph.nodes.scanner import scan, scan_file_record
 
 
@@ -128,6 +128,8 @@ def test_scan_builds_geval_from_item_fields_only() -> None:
     record = {
         "output": "Generated answer",
         "geval": {
+            "scoring_mode": "scale_1_5",
+            "include_reasoning": True,
             "metrics": [
                 {
                     "name": "correctness",
@@ -140,10 +142,8 @@ def test_scan_builds_geval_from_item_fields_only() -> None:
                     "item_fields": ["context", "reference"],
                     "criteria": "The answer must align with evidence.",
                     "evaluation_steps": ["Compare answer with context."],
-                    "scoring_mode": "binary_yes_no",
-                    "include_reasoning": False,
                 },
-            ]
+            ],
         },
     }
 
@@ -154,6 +154,9 @@ def test_scan_builds_geval_from_item_fields_only() -> None:
     assert inputs.has_redteam is False
     assert inputs.geval is not None
     assert len(inputs.geval.metrics) == 2
+    # Knobs are per-node, not per-metric — apply uniformly to every metric in the block.
+    assert inputs.geval.scoring_mode == ScoringMode.SCALE_1_5
+    assert inputs.geval.include_reasoning is True
 
     first = inputs.geval.metrics[0]
     assert first.name == "correctness"
@@ -163,15 +166,108 @@ def test_scan_builds_geval_from_item_fields_only() -> None:
         "Check factual correctness.",
         "Verify directness.",
     ]
-    assert first.scoring_mode == GevalScoringMode.LIKERT_1_5
-    assert first.include_reasoning is True
 
     second = inputs.geval.metrics[1]
     assert second.name == "groundedness"
     assert second.item_fields == ["context", "reference"]
     assert second.criteria is not None and second.criteria.tokens > 0
-    assert second.scoring_mode == GevalScoringMode.BINARY_YES_NO
-    assert second.include_reasoning is False
+
+
+def test_scan_geval_defaults_to_binary_no_reasoning_when_knobs_omitted() -> None:
+    """When the record omits the knobs, scanner falls back to binary + reasoning off."""
+    record = {
+        "output": "Answer",
+        "geval": {
+            "metrics": [
+                {
+                    "name": "correctness",
+                    "criteria": "Correct answer.",
+                    "evaluation_steps": ["Check correctness."],
+                }
+            ]
+        },
+    }
+    inputs = scan(record, idx=0)["inputs"]
+    assert inputs.geval is not None
+    assert inputs.geval.scoring_mode == ScoringMode.BINARY_YES_NO
+    assert inputs.geval.include_reasoning is False
+
+
+def test_scan_geval_ignores_legacy_per_metric_scoring_knobs() -> None:
+    """The previous per-metric form is silently dropped — Pydantic ignores extras."""
+    record = {
+        "output": "Answer",
+        "geval": {
+            "metrics": [
+                {
+                    "name": "correctness",
+                    "criteria": "Be correct.",
+                    "evaluation_steps": ["Check."],
+                    "scoring_mode": "scale_1_5",  # legacy per-metric position
+                    "include_reasoning": True,
+                }
+            ]
+        },
+    }
+    inputs = scan(record, idx=0)["inputs"]
+    assert inputs.geval is not None
+    # Knobs at the metric level are dropped; node-level defaults apply.
+    assert inputs.geval.scoring_mode == ScoringMode.BINARY_YES_NO
+    assert inputs.geval.include_reasoning is False
+
+
+def test_scan_parses_grounding_and_relevance_config_blocks() -> None:
+    record = {
+        "output": "Answer",
+        "input": "What?",
+        "context": "Some context.",
+        "grounding": {"scoring_mode": "scale_1_5", "include_reasoning": True},
+        "relevance": {"include_reasoning": True},
+    }
+    inputs = scan(record, idx=0)["inputs"]
+    assert inputs.grounding is not None
+    assert inputs.grounding.scoring_mode == ScoringMode.SCALE_1_5
+    assert inputs.grounding.include_reasoning is True
+    # Relevance only specified reasoning — mode falls back to default.
+    assert inputs.relevance is not None
+    assert inputs.relevance.scoring_mode == ScoringMode.BINARY_YES_NO
+    assert inputs.relevance.include_reasoning is True
+
+
+def test_scan_grounding_and_relevance_default_to_none_when_absent() -> None:
+    record = {"output": "Answer", "input": "What?"}
+    inputs = scan(record, idx=0)["inputs"]
+    assert inputs.grounding is None
+    assert inputs.relevance is None
+
+
+def test_scan_grounding_block_with_empty_dict_uses_defaults() -> None:
+    """Empty `{}` for the block opts the case in but falls back to defaults."""
+    record = {"output": "Answer", "grounding": {}}
+    inputs = scan(record, idx=0)["inputs"]
+    assert inputs.grounding is not None
+    assert inputs.grounding.scoring_mode == ScoringMode.BINARY_YES_NO
+    assert inputs.grounding.include_reasoning is False
+
+
+def test_scan_scoring_mode_invalid_or_alias_values_are_lenient() -> None:
+    record = {
+        "output": "Answer",
+        "geval": {
+            "scoring_mode": "LIKERT",  # alias, mixed case
+            "metrics": [{"name": "correctness", "evaluation_steps": ["Check."]}],
+        },
+        "grounding": {"scoring_mode": "not-a-mode"},
+        "relevance": {"scoring_mode": "yes_no"},
+    }
+    inputs = scan(record, idx=0)["inputs"]
+    assert inputs.geval is not None and inputs.geval.scoring_mode == ScoringMode.SCALE_1_5
+    assert (
+        inputs.grounding is not None and inputs.grounding.scoring_mode == ScoringMode.BINARY_YES_NO
+    )
+    assert (
+        inputs.relevance is not None and inputs.relevance.scoring_mode == ScoringMode.BINARY_YES_NO
+    )
 
 
 def test_scan_geval_skips_invalid_metrics_and_returns_none_when_empty() -> None:
@@ -234,7 +330,7 @@ def test_scan_builds_redteam_metrics_with_rubrics() -> None:
 
     assert inputs.has_redteam is True
     assert inputs.redteam is not None
-    assert len(inputs.redteam.metrics) == 2
+    assert len(inputs.redteam.metrics) == 3
 
     first = inputs.redteam.metrics[0]
     assert first.name == "bias"
@@ -244,12 +340,15 @@ def test_scan_builds_redteam_metrics_with_rubrics() -> None:
     assert first.item_fields == ["output", "input"]
 
     second = inputs.redteam.metrics[1]
-    assert second.name == "prompt_injection"
-    assert second.rubric.goal == "Detect instructions that attempt to override system rules."
-    assert second.item_fields == ["output", "context"]
+    assert second.name == "toxicity"
+
+    third = inputs.redteam.metrics[2]
+    assert third.name == "prompt_injection"
+    assert third.rubric.goal == "Detect instructions that attempt to override system rules."
+    assert third.item_fields == ["output", "context"]
 
 
-def test_scan_redteam_skips_invalid_metrics_and_returns_none_when_empty() -> None:
+def test_scan_redteam_defaults_when_custom_metrics_are_invalid() -> None:
     record = {
         "output": "Answer",
         "redteam": {
@@ -265,8 +364,9 @@ def test_scan_redteam_skips_invalid_metrics_and_returns_none_when_empty() -> Non
     result = scan(record)
     inputs = result["inputs"]
 
-    assert inputs.redteam is None
-    assert inputs.has_redteam is False
+    assert inputs.redteam is not None
+    assert inputs.has_redteam is True
+    assert [metric.name for metric in inputs.redteam.metrics] == ["bias", "toxicity"]
 
 
 def test_scan_redteam_parses_rubric_aliases_and_defaults_item_fields() -> None:
@@ -290,13 +390,26 @@ def test_scan_redteam_parses_rubric_aliases_and_defaults_item_fields() -> None:
     inputs = result["inputs"]
 
     assert inputs.redteam is not None
-    assert len(inputs.redteam.metrics) == 1
+    assert len(inputs.redteam.metrics) == 2
     metric = inputs.redteam.metrics[0]
     assert metric.name == "bias"
     assert metric.item_fields == ["output"]
     assert metric.rubric.goal == "Detect biased stereotyping."
     assert metric.rubric.violations == ["Uses broad identity generalization."]
     assert metric.rubric.non_violations == ["Neutral factual statement."]
+    assert inputs.redteam.metrics[1].name == "toxicity"
+
+
+def test_scan_redteam_knobs_only_includes_default_metrics() -> None:
+    record = {
+        "output": "Answer",
+        "redteam": {"scoring_mode": "scale_1_5", "include_reasoning": True},
+    }
+    inputs = scan(record, idx=0)["inputs"]
+    assert inputs.redteam is not None
+    assert [metric.name for metric in inputs.redteam.metrics] == ["bias", "toxicity"]
+    assert inputs.redteam.scoring_mode == ScoringMode.SCALE_1_5
+    assert inputs.redteam.include_reasoning is True
 
 
 def test_scan_file_record_supports_dict_and_list_inputs(tmp_path) -> None:

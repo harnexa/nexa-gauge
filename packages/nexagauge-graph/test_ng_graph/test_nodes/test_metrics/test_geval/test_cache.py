@@ -76,7 +76,7 @@ def test_build_geval_artifact_cache_key_stable() -> None:
         criteria="Be concise.", item_fields=["output"], model="gpt-4o-mini"
     )
     assert build_geval_artifact_cache_key(sig) != build_geval_artifact_cache_key(other)
-    assert build_geval_artifact_cache_key(sig).startswith("v2:geval_artifact:")
+    assert build_geval_artifact_cache_key(sig).startswith("v3:geval_artifact:")
 
 
 def test_roundtrip_via_cache_store(tmp_path) -> None:

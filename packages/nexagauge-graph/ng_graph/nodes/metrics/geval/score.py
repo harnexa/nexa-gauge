@@ -27,7 +27,7 @@ from ng_core.constants import (
     AVG_DEEPEVAL_OUTPUT_VERDICT,
     AVG_DEEPEVAL_PROMPT_TOKENS,
     GEVAL_METRIC_PASS_THRESHOLD,
-    USE_LOGPROBS_FORSCORE_WEIGHTING
+    USE_LOGPROBS_FORSCORE_WEIGHTING,
 )
 from ng_core.types import (
     CostEstimate,
@@ -44,18 +44,18 @@ from ng_graph.llm.gateway import get_llm
 from ng_graph.llm.pricing import cost_usd, get_node_pricing
 from ng_graph.log import get_node_logger
 from ng_graph.nodes.base import BaseMetricNode
-from ng_graph.nodes.metrics.parallel import run_parallel
 from ng_graph.nodes.metrics.geval.cache import (
     GEVAL_SCORE_PARSER_VERSION,
     GEVAL_SCORE_PROMPT_VERSION,
 )
 from ng_graph.nodes.metrics.geval.fields import FIELD_DISPLAY_NAMES, format_param_names
 from ng_graph.nodes.metrics.geval.weighted_score import calculate_weighted_summed_score
+from ng_graph.nodes.metrics.parallel import run_parallel
 from ng_graph.nodes.metrics.scoring import (
     ScoringSpec,
-    normalize_raw_score,
     build_scores_response_model,
-    verdict_from_score
+    normalize_raw_score,
+    verdict_from_score,
 )
 from pydantic import BaseModel
 
@@ -75,6 +75,7 @@ _USER_TEMPLATE = (
     "## Test case:\n"
     "{rendered_fields}"
 )
+
 
 @dataclass
 class _TokenUsage:
@@ -101,14 +102,14 @@ class GevalNode(BaseMetricNode):
     prompt_version = GEVAL_SCORE_PROMPT_VERSION
     parser_version = GEVAL_SCORE_PARSER_VERSION
 
-
-
     # Cost estimation uses the longest reasonable system prompt (likert + reasoning) so
     # token estimates don't under-count when the caller picks the verbose configuration.
     scoring_contract = ScoringSpec(mode=ScoringMode.SCALE_1_5, include_reasoning=True)
-    static_prompt_tokens: int = _count_tokens(
-        _BASE_GEVAL_SYSTEM_PROMPT
-    ) + _count_tokens(scoring_contract.contract) + template_static_tokens(_USER_TEMPLATE)
+    static_prompt_tokens: int = (
+        _count_tokens(_BASE_GEVAL_SYSTEM_PROMPT)
+        + _count_tokens(scoring_contract.contract)
+        + template_static_tokens(_USER_TEMPLATE)
+    )
 
     def __init__(
         self,
@@ -149,7 +150,7 @@ class GevalNode(BaseMetricNode):
         input: Optional[str],
         reference: Optional[str],
         context: Optional[str],
-        score_spec: ScoringSpec
+        score_spec: ScoringSpec,
     ) -> list[dict[str, str]]:
         steps_block = "\n".join(
             f"{i + 1}. {step.text.strip()}"
@@ -211,7 +212,7 @@ class GevalNode(BaseMetricNode):
         input: Optional[str],
         reference: Optional[str],
         context: Optional[str],
-        score_spec: ScoringSpec
+        score_spec: ScoringSpec,
     ) -> _EvaluationResult:
         """Run one GEval scoring call for a single resolved metric."""
         evaluation_steps = [
@@ -250,13 +251,13 @@ class GevalNode(BaseMetricNode):
             )
 
         response_model = build_scores_response_model(
-            model_prefix="GevalScore", 
-            mode_value=score_spec.mode.value, 
-            min_score=score_spec.score_min, 
+            model_prefix="GevalScore",
+            mode_value=score_spec.mode.value,
+            min_score=score_spec.score_min,
             max_score=score_spec.score_max,
-            include_reasoning=score_spec.include_reasoning
+            include_reasoning=score_spec.include_reasoning,
         )
-        
+
         llm = get_llm(
             "geval",
             response_model,
@@ -265,12 +266,7 @@ class GevalNode(BaseMetricNode):
         )
 
         messages = self._build_messages(
-            metric,
-            output,
-            input,
-            reference,
-            context,
-            score_spec=score_spec
+            metric, output, input, reference, context, score_spec=score_spec
         )
 
         response = llm.invoke_with_logprobs(messages)
@@ -306,10 +302,12 @@ class GevalNode(BaseMetricNode):
                 usage=usage,
                 cost=cost,
             )
-        avg_normalized_step_score = sum(normalize_raw_score(v, score_spec) for v in raw_scores)/len(raw_scores)
+        avg_normalized_step_score = sum(
+            normalize_raw_score(v, score_spec) for v in raw_scores
+        ) / len(raw_scores)
 
         logprobs_content = response.get("logprobs")
-        if  USE_LOGPROBS_FORSCORE_WEIGHTING and logprobs_content:
+        if USE_LOGPROBS_FORSCORE_WEIGHTING and logprobs_content:
             weighted = calculate_weighted_summed_score(
                 avg_normalized_step_score,
                 logprobs_content,
@@ -320,7 +318,9 @@ class GevalNode(BaseMetricNode):
             weighted = float(avg_normalized_step_score)
 
         passed = weighted >= GEVAL_METRIC_PASS_THRESHOLD
-        reasoning_text = str(getattr(parsed, "reasoning", "") or "") if score_spec.include_reasoning else ""
+        reasoning_text = (
+            str(getattr(parsed, "reasoning", "") or "") if score_spec.include_reasoning else ""
+        )
 
         result_entry: dict[str, Any] = {
             "passed": passed,

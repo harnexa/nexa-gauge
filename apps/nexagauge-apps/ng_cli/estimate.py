@@ -5,8 +5,6 @@ from pathlib import Path
 from typing import Optional
 
 import typer
-from rich.table import Table
-
 from adapters import create_dataset_adapter
 from ng_core.aliases import extend_aliases
 from ng_core.cache import CacheStore, NoOpCacheStore
@@ -15,7 +13,7 @@ from ng_core.extensions import get_transform, list_transforms, load_extension_fi
 from ng_core.types import CostEstimate
 from ng_graph.log import set_node_logging_enabled
 from ng_graph.runner import CachedNodeRunner
-
+from rich.table import Table
 
 from .util import (
     DEFAULT_FALLBACK_LLM,
@@ -24,7 +22,6 @@ from .util import (
     _case_progress,
     _collect_estimate_rows,
     _format_cost,
-    _scan_inputs_from_case,
     _is_node_eligible_for_inputs,
     _parse_field_overrides,
     _plan_nodes_for_target,
@@ -32,6 +29,7 @@ from .util import (
     _progress_total_from_bounds,
     _resolve_runtime_llm_overrides,
     _resolve_target_node,
+    _scan_inputs_from_case,
     _set_case_llm_overrides,
     console,
 )

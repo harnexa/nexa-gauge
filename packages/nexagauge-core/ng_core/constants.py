@@ -115,6 +115,11 @@ GROUNDING_METRIC_PASS_THRESHOLD: float = 0.6  # Atleast 60% of claims should be 
 RELEVANCE_METRIC_PASS_THRESHOLD: float = 0.6  # At least 60% of claims should be relevant
 GEVAL_METRIC_PASS_THRESHOLD: float = 0.6
 REDTEAM_METRIC_PASS_THRESHOLD: float = 0.6
+REFERENCE_ROUGE1_METRIC_PASS_THRESHOLD: float = 0.6
+REFERENCE_ROUGE2_METRIC_PASS_THRESHOLD: float = 0.6
+REFERENCE_ROUGEL_METRIC_PASS_THRESHOLD: float = 0.6
+REFERENCE_BLEU_METRIC_PASS_THRESHOLD: float = 0.6
+REFERENCE_METEOR_METRIC_PASS_THRESHOLD: float = 0.6
 
 
 # ── LLM ──────────────────────────────────────────────────────────────────────
