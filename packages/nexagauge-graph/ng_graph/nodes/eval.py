@@ -5,7 +5,7 @@ This module intentionally supports two layers:
 1. Per-case aggregation (``node_eval``)
    - Runs inside graph execution for one case.
    - Reads metric wrappers produced by metric nodes (grounding, relevance,
-     redteam, GEval, reference).
+     redteam, GEval, refmatch).
    - Emits normalized ``eval_summary.metric_rows`` attached to that case's
      state. This is lightweight and stateless across cases.
 
@@ -58,7 +58,8 @@ EVAL_METRIC_SPECS: dict[str, EvalMetricSpec] = {
     "grounding": EvalMetricSpec(state_key="grounding_metrics"),
     "geval": EvalMetricSpec(state_key="geval_metrics"),
     "relevance": EvalMetricSpec(state_key="relevance_metrics"),
-    "reference": EvalMetricSpec(state_key="reference_metrics"),
+    "refmatch": EvalMetricSpec(state_key="refmatch_metrics"),
+    "refalign": EvalMetricSpec(state_key="refalign_metrics"),
     "redteam": EvalMetricSpec(state_key="redteam_metrics"),
 }
 
@@ -70,7 +71,7 @@ class _AggregateStats:
     A bucket may represent:
     - total across all rows,
     - one source node (for example ``grounding``),
-    - one metric identity under a node (for example ``reference:rouge_l``).
+    - one metric identity under a node (for example ``refmatch:rouge_l``).
     """
 
     metrics: int = 0
@@ -311,7 +312,9 @@ def build_eval_summary_tables(summary: Mapping[str, Any]) -> list[Table]:
         return []
 
     cases_with_eval = int(summary.get("cases_with_eval") or 0)
-    ordered_nodes = [n for n in ("grounding", "geval", "relevance", "reference", "redteam")]
+    ordered_nodes = [
+        n for n in ("grounding", "geval", "relevance", "refmatch", "refalign", "redteam")
+    ]
     ordered_nodes.extend(sorted(n for n in by_node if n not in ordered_nodes))
 
     node_table = Table(

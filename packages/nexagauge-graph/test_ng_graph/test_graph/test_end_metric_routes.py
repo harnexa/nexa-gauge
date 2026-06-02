@@ -21,7 +21,8 @@ from ng_core.types import (
     MetricCategory,
     MetricResult,
     RedteamMetrics,
-    ReferenceMetrics,
+    RefalignMetrics,
+    RefmatchMetrics,
     RelevanceMetrics,
 )
 
@@ -34,7 +35,8 @@ def _empty_metric_groups() -> dict[str, None]:
         "relevance_metrics": None,
         "redteam_metrics": None,
         "geval_metrics": None,
-        "reference_metrics": None,
+        "refmatch_metrics": None,
+        "refalign_metrics": None,
     }
 
 
@@ -43,7 +45,8 @@ _GROUP_KEY_TO_WRAPPER: dict[str, type] = {
     "relevance_metrics": RelevanceMetrics,
     "redteam_metrics": RedteamMetrics,
     "geval_metrics": GevalMetrics,
-    "reference_metrics": ReferenceMetrics,
+    "refmatch_metrics": RefmatchMetrics,
+    "refalign_metrics": RefalignMetrics,
 }
 
 _GROUP_KEY_TO_SECTION: dict[str, str] = {
@@ -51,7 +54,8 @@ _GROUP_KEY_TO_SECTION: dict[str, str] = {
     "relevance_metrics": "relevance_metrics",
     "redteam_metrics": "redteam_metrics",
     "geval_metrics": "geval_metrics",
-    "reference_metrics": "reference_metrics",
+    "refmatch_metrics": "refmatch_metrics",
+    "refalign_metrics": "refalign_metrics",
 }
 
 
@@ -60,7 +64,8 @@ _GROUP_KEY_TO_SECTION: dict[str, str] = {
     [
         ("grounding", "grounding_metrics", "grounding", MetricCategory.ANSWER),
         ("relevance", "relevance_metrics", "answer_relevancy", MetricCategory.ANSWER),
-        ("reference", "reference_metrics", "rouge_l", MetricCategory.RETRIEVAL),
+        ("refmatch", "refmatch_metrics", "rouge_l", MetricCategory.RETRIEVAL),
+        ("refalign", "refalign_metrics", "refalign_f1", MetricCategory.ANSWER),
         ("geval", "geval_metrics", "geval_coherence", MetricCategory.ANSWER),
         ("redteam", "redteam_metrics", "vulnerability_prompt_injection", MetricCategory.ANSWER),
     ],
@@ -133,8 +138,12 @@ def test_report_for_eval_contains_all_metric_branches(
             metrics=[make_metric("geval_coherence", 0.7, MetricCategory.ANSWER)],
             cost=_ZERO_COST,
         ),
-        "reference_metrics": ReferenceMetrics(
+        "refmatch_metrics": RefmatchMetrics(
             metrics=[make_metric("rouge_l", 0.6, MetricCategory.RETRIEVAL)],
+            cost=_ZERO_COST,
+        ),
+        "refalign_metrics": RefalignMetrics(
+            metrics=[make_metric("refalign_f1", 0.6, MetricCategory.ANSWER)],
             cost=_ZERO_COST,
         ),
         "cost_estimate": None,
@@ -153,7 +162,8 @@ def test_report_for_eval_contains_all_metric_branches(
         "relevance_metrics",
         "redteam_metrics",
         "geval_metrics",
-        "reference_metrics",
+        "refmatch_metrics",
+        "refalign_metrics",
     ):
         assert section in report, f"Expected section '{section}' in report"
         assert isinstance(report[section]["metrics"], list)
@@ -189,8 +199,12 @@ def test_node_eval_collects_metric_rows_for_cli_aggregation(
             metrics=[make_metric("geval_coherence", 0.7, MetricCategory.ANSWER)],
             cost=_ZERO_COST,
         ),
-        "reference_metrics": ReferenceMetrics(
+        "refmatch_metrics": RefmatchMetrics(
             metrics=[make_metric("rouge_l", 0.6, MetricCategory.RETRIEVAL)],
+            cost=_ZERO_COST,
+        ),
+        "refalign_metrics": RefalignMetrics(
+            metrics=[make_metric("refalign_f1", 0.6, MetricCategory.ANSWER)],
             cost=_ZERO_COST,
         ),
     }
@@ -200,13 +214,14 @@ def test_node_eval_collects_metric_rows_for_cli_aggregation(
     rows = summary["metric_rows"]
 
     assert summary["schema_version"] == 1
-    assert len(rows) == 5
+    assert len(rows) == 6
     assert {row["source_node"] for row in rows} == {
         "grounding",
         "relevance",
         "redteam",
         "geval",
-        "reference",
+        "refmatch",
+        "refalign",
     }
     assert {row["metric_name"] for row in rows} == {
         "grounding",
@@ -214,6 +229,7 @@ def test_node_eval_collects_metric_rows_for_cli_aggregation(
         "vulnerability_prompt_injection",
         "geval_coherence",
         "rouge_l",
+        "refalign_f1",
     }
     assert all("verdict" in row for row in rows)
 

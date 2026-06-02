@@ -12,7 +12,7 @@ Primary distribution target: `pip install nexa-gauge`.
 
 ## What It Solves
 
-- Standardizes evaluation workflows across grounding, relevance, red-team, GEval, and reference metrics.
+- Standardizes evaluation workflows across grounding, relevance, red-team, GEval, lexical reference matching, and semantic reference alignment.
 - Reduces repeated LLM spend with node-level caching and route-aware cache keys.
 - Gives cost visibility before execution through estimate mode.
 - Produces structured JSON reports suitable for CI pipelines and downstream analytics.
@@ -24,6 +24,8 @@ Primary distribution target: `pip install nexa-gauge`.
 - Parallel metric fan-out for `eval` target.
 - Topology-driven report projection by `state_key` presence in `PIPELINE`.
 - Strategy-aware utility stages (`chunk`, `refiner`) with runtime selection (`--chunker`, `--refiner`, `--refiner-top-k`).
+- Reference-aware utility stages (`chunk_reference`, `refine_reference`) feed semantic `refalign`; lexical `refmatch` runs directly from `output` + `reference`.
+- Local embedding model configuration (`EMBEDDING_MODEL`) powers zero-cost semantic reference alignment unless `refalign.atomic_chunks` enables LLM-assisted unit extraction.
 - Per-node model routing (`LLM_{NODE}_MODEL`, fallback, temperature) plus runtime overrides.
 
 ## User Experience

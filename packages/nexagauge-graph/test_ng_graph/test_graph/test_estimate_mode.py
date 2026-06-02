@@ -174,7 +174,8 @@ def test_node_report_sets_cost_estimate_in_estimate_mode(graph_module) -> None:
         "relevance_metrics": None,
         "redteam_metrics": None,
         "geval_metrics": None,
-        "reference_metrics": None,
+        "refmatch_metrics": None,
+        "refalign_metrics": None,
         "cost_actual_usd": 0.0,
         "estimated_costs": {
             "claims": CostEstimate(cost=0.1, input_tokens=10.0, output_tokens=2.0),

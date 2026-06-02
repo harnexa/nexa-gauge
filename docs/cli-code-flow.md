@@ -7,7 +7,7 @@ Primary source files:
 - `apps/nexagauge-apps/ng_cli/run.py`
 - `apps/nexagauge-apps/ng_cli/estimate.py`
 - `apps/nexagauge-apps/ng_cli/cache.py`
-- `packages/nexagauge-graph/ng_graph/runner.py`
+- `packages/nexagauge-graph/ng_graph/runner/engine.py`
 
 ## Command Entry
 
@@ -70,7 +70,8 @@ Key responsibilities:
 - Expand target plan from topology prerequisites.
 - Read/write node-level cache entries.
 - Reuse `run` cache entries from `estimate` mode when route matches.
-- Execute metric nodes in parallel for `target=eval`.
+- Execute metric nodes in parallel for `target=eval` (`relevance`, `grounding`, `redteam`, `geval`, `refmatch`, `refalign`).
+- Run reference-side chunk/refine prerequisites for `refalign` when a case has `reference`.
 - Stream outcomes in submission order.
 
 Planning note:

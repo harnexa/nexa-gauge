@@ -23,7 +23,7 @@ Source of truth for node dependencies and input gating: `packages/nexagauge-grap
 
 ## Top-Down Pipeline Diagram
 
-- Built from `PIPELINE` in `topology.py`, with strategy containers for `chunk` and `refiner`.
+- Built from `PIPELINE` in `topology.py`, with strategy containers for output `chunk` and `refiner`.
 - Solid edges show primary graph flow.
 - Inner links inside containers show available strategies (one selected at runtime).
 
@@ -43,7 +43,7 @@ Edge labels encode the target node's `requires_*` input gates. Edges into `eval`
 flowchart TD
     scan[scan]
 
-    %% Strategy container: chunk (wide, short box)
+    %% Shared chunk strategy (handles both output and reference streams)
     subgraph chunk_box["chunk"]
       direction LR
       chunk_semchunk((semchunk))
@@ -51,7 +51,7 @@ flowchart TD
       chunk_semchunk --- chunk_more
     end
 
-    %% Strategy container: refiner (wide, short box)
+    %% Shared refiner strategy (handles both output and reference streams)
     subgraph refiner_box["refiner"]
       direction LR
       refiner_mmr((mmr))
@@ -63,30 +63,39 @@ flowchart TD
     %% Utility nodes (circles)
     claims((claims))
     geval_steps((geval_steps))
+    atomic_chunks(("atomic<br/>chunks"))
 
     %% Metric nodes (rounded rectangles)
     relevance(relevance)
     grounding(grounding)
     redteam(redteam)
     geval(geval)
-    reference(reference)
+    refmatch(refmatch)
+    refalign(refalign)
 
     %% Orchestration
     eval{{eval}}
     report([report])
 
-    %% Utility chain
-    scan -- "requires: output" --> chunk_box
-    chunk_box -- "requires: output" --> refiner_box
-    refiner_box -- "requires: output" --> claims
-    scan -- "requires: output + geval" --> geval_steps
+    %% Both streams feed into the shared chunk → refiner pipeline
+    scan -- "output" --> chunk_box
+    scan -- "reference" --> chunk_box
+    chunk_box --> refiner_box
+    scan -- "output + geval" --> geval_steps
+
+    %% Refiner output stream fans out to claims and refalign
+    refiner_box -- "output" --> claims
+    refiner_box -- "output" --> refalign
+    %% Refiner reference stream feeds refalign
+    refiner_box -- "reference" --> refalign
+    atomic_chunks -. "opt: LLM split" .-> refalign
 
     %% Metric fan-out
-    claims -- "requires: output + input" --> relevance
-    claims -- "requires: output + context" --> grounding
-    scan -- "requires: output" --> redteam
-    geval_steps -- "requires: output + geval" --> geval
-    scan -- "requires: output + reference" --> reference
+    claims -- "output + input" --> relevance
+    claims -- "output + context" --> grounding
+    geval_steps -- "output + geval" --> geval
+    scan -- "output" --> redteam
+    scan -- "output + reference" --> refmatch
 
     %% Join into eval
     chunk_box --> eval
@@ -97,15 +106,16 @@ flowchart TD
     grounding --> eval
     redteam --> eval
     geval --> eval
-    reference --> eval
+    refmatch --> eval
+    refalign --> eval
 
     %% Terminal
     eval --> report
 
     %% Node colors — muted mid-tone palette, hue-matched to NodeSpec.color in topology.py
-    style scan        fill:#7FC7D1,stroke:#3F7A82,color:#fff
-    style chunk_box   fill:#BBD3EE,stroke:#3F6A9C,color:#173B61,rx:10px,ry:10px,padding:4px
-    style refiner_box fill:#BFE3BF,stroke:#3F8A3F,color:#1B4C1B,rx:10px,ry:10px,padding:4px
+    style scan             fill:#7FC7D1,stroke:#3F7A82,color:#fff
+    style chunk_box        fill:#BBD3EE,stroke:#3F6A9C,color:#173B61,rx:10px,ry:10px,padding:4px
+    style refiner_box      fill:#BFE3BF,stroke:#3F8A3F,color:#1B4C1B,rx:10px,ry:10px,padding:4px
     style chunk_semchunk   fill:#A7C2E4,stroke:#3F6A9C,color:#173B61,stroke-width:1px
     style chunk_more       fill:#A7C2E4,stroke:#3F6A9C,color:#173B61,stroke-width:1px
     style refiner_mmr      fill:#A6D7A6,stroke:#3F8A3F,color:#1B4C1B,stroke-width:1px
@@ -113,21 +123,24 @@ flowchart TD
     style refiner_more     fill:#A6D7A6,stroke:#3F8A3F,color:#1B4C1B,stroke-width:1px
     classDef strategySmall font-size:9px,stroke-width:1px;
     class chunk_semchunk,chunk_more,refiner_mmr,refiner_rerank,refiner_more strategySmall
-    style claims      fill:#C07AA8,stroke:#7A4469,color:#fff
-    style geval_steps fill:#9FBF9F,stroke:#5F8A5F,color:#fff
-    style relevance   fill:#8FCF7F,stroke:#4F8A3F,color:#fff
-    style grounding   fill:#7FA8D8,stroke:#4F75A8,color:#fff
-    style redteam     fill:#D8847A,stroke:#9A4A42,color:#fff
-    style geval       fill:#A88FBF,stroke:#6F5A8A,color:#fff
-    style reference   fill:#CF7FBF,stroke:#8F4F82,color:#fff
-    style eval        fill:#E0C970,stroke:#A08F3F,color:#3A2F0F
-    style report      fill:#C9A85C,stroke:#8F7A3A,color:#fff
+    style claims           fill:#C07AA8,stroke:#7A4469,color:#fff
+    style geval_steps      fill:#9FBF9F,stroke:#5F8A5F,color:#fff
+    style atomic_chunks    fill:#E8C47A,stroke:#A08040,color:#3A2F0F
+    style relevance        fill:#8FCF7F,stroke:#4F8A3F,color:#fff
+    style grounding        fill:#7FA8D8,stroke:#4F75A8,color:#fff
+    style redteam          fill:#D8847A,stroke:#9A4A42,color:#fff
+    style geval            fill:#A88FBF,stroke:#6F5A8A,color:#fff
+    style refmatch         fill:#CF7FBF,stroke:#8F4F82,color:#fff
+    style refalign         fill:#B87FAF,stroke:#7A4F7A,color:#fff
+    style eval             fill:#E0C970,stroke:#A08F3F,color:#3A2F0F
+    style report           fill:#C9A85C,stroke:#8F7A3A,color:#fff
 ```
 
 ## Execution Rules
 
 - Dependencies and requirement labels are derived from `PIPELINE` node specs (direct-parent edges).
 - `chunk` and `refiner` are strategy families; one option is selected at runtime via CLI (`--chunker`, `--refiner`).
+- `chunk_reference` and `refine_reference` mirror the output chunk/refine path for semantic reference alignment.
 - `eval` aggregates metric branches plus utility prerequisites; `report` depends on `eval`.
 - The eligibility subgraph mirrors `scan`-produced presence flags that gate node execution.
 - At runtime, the CLI runner can append `report` for non-report targets; this diagram focuses on architecture dependency flow.
@@ -136,13 +149,13 @@ flowchart TD
 
 Input normalization (`scan`) maps common aliases into canonical `inputs` fields:
 
-- `case_id`, `output`, `input`, `context`, `reference`, `geval`, `redteam`
+- `case_id`, `output`, `input`, `context`, `reference`, `geval`, `redteam`, `refalign`
 
 Core runtime state includes:
 
 - control: `target_node`, `execution_mode`, `llm_overrides`
 - strategy control: `chunker`, `refiner`, `refiner_top_k`
-- artifacts: `output_chunk`, `output_refined_chunks`, `output_claims`, `geval_steps`, metric outputs
+- artifacts: `output_chunk`, `output_refined_chunks`, `reference_chunk`, `reference_refined_chunks`, `output_claims`, `geval_steps`, metric outputs
 - bookkeeping: `estimated_costs`, `node_model_usage`
 
 Report shape is topology-driven in `ng_graph.nodes.report`: sections are included by non-`None` `state_key` values from `PIPELINE`.

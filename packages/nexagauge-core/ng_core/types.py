@@ -244,6 +244,14 @@ class Redteam(BaseModel):
     include_reasoning: bool = False
 
 
+class Refalign(BaseModel):
+    """Per-case semantic reference-similarity config."""
+
+    atomic_chunks: bool = False
+    similarity_threshold: float = 0.6
+    refine_top_k: int | None = None
+
+
 class Inputs(BaseModel):
     """Per-case input bundle built by the scanner node.
 
@@ -263,6 +271,7 @@ class Inputs(BaseModel):
     grounding: Optional[Grounding] = None
     relevance: Optional[Relevance] = None
     redteam: Optional[Redteam] = None
+    refalign: Optional[Refalign] = None
 
     has_output: bool = False
     has_input: bool = False
@@ -387,8 +396,15 @@ class GevalMetrics(BaseModel):
     cost: CostEstimate | None = None
 
 
-class ReferenceMetrics(BaseModel):
-    """Output of the ``reference`` metric node."""
+class RefmatchMetrics(BaseModel):
+    """Output of the ``refmatch`` metric node."""
+
+    metrics: list[MetricResult]
+    cost: CostEstimate
+
+
+class RefalignMetrics(BaseModel):
+    """Output of the ``refalign`` metric node."""
 
     metrics: list[MetricResult]
     cost: CostEstimate
@@ -427,13 +443,16 @@ class EvalCase(TypedDict):
     # Pipeline artifacts — None until the corresponding node runs
     output_chunk: Optional[ChunkArtifacts]
     output_refined_chunks: Optional[ChunkArtifacts]
+    reference_chunk: Optional[ChunkArtifacts]
+    reference_refined_chunks: Optional[ChunkArtifacts]
     output_claims: Optional[ClaimArtifacts]
     grounding_metrics: Optional[GroundingMetrics]
     relevance_metrics: Optional[RelevanceMetrics]
     redteam_metrics: Optional[RedteamMetrics]
     geval_steps: Optional[GevalStepsArtifacts]
     geval_metrics: Optional[GevalMetrics]
-    reference_metrics: Optional[ReferenceMetrics]
+    refmatch_metrics: Optional[RefmatchMetrics]
+    refalign_metrics: Optional[RefalignMetrics]
     eval_summary: Optional[dict[str, Any]]
     report: Optional[dict[str, Any]]
     cost_estimate: Optional[CostEstimate]

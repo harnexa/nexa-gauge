@@ -1,5 +1,5 @@
 # Run smoke test:
-#   python -m ng_graph.nodes.metrics.reference
+#   python -m ng_graph.nodes.metrics.refmatch
 """
 Reference Metrics Node — ROUGE, BLEU, METEOR scores against reference.
 
@@ -23,7 +23,7 @@ from ng_core.types import (
     Item,
     MetricCategory,
     MetricResult,
-    ReferenceMetrics,
+    RefmatchMetrics,
 )
 from ng_graph.log import get_node_logger
 from ng_graph.nodes.base import BaseMetricNode
@@ -32,7 +32,7 @@ from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
 from nltk.translate.meteor_score import meteor_score
 from rouge_score import rouge_scorer
 
-log = get_node_logger("reference")
+log = get_node_logger("refmatch")
 _METEOR_LOCK = Lock()
 _REFERENCE_THRESHOLDS: dict[str, float] = {
     "rouge1": REFERENCE_ROUGE1_METRIC_PASS_THRESHOLD,
@@ -55,8 +55,8 @@ nltk.download("wordnet", quiet=True)
 nltk.download("omw-1.4", quiet=True)
 
 
-class ReferenceNode(BaseMetricNode):
-    node_name = "reference"
+class RefmatchNode(BaseMetricNode):
+    node_name = "refmatch"
     SYSTEM_PROMPT = ""  # No LLM — these are reference-based lexical metrics
     USER_PROMPT = ""
 
@@ -113,11 +113,11 @@ class ReferenceNode(BaseMetricNode):
         output: Item | str,
         reference: Item | str | None,
         enable_output_metrics: bool = True,
-    ) -> ReferenceMetrics:
+    ) -> RefmatchMetrics:
         """Compute ROUGE, BLEU, and METEOR scores against reference text."""
         zero_cost = CostEstimate(cost=0.0, input_tokens=None, output_tokens=None)
         if not enable_output_metrics:
-            return ReferenceMetrics(metrics=[], cost=zero_cost)
+            return RefmatchMetrics(metrics=[], cost=zero_cost)
 
         output_text = output.text if isinstance(output, Item) else (output or "")
         if isinstance(reference, Item):
@@ -127,13 +127,13 @@ class ReferenceNode(BaseMetricNode):
 
         if not reference_text.strip():
             log.info("No reference provided — skipping reference metrics")
-            return ReferenceMetrics(metrics=[], cost=zero_cost)
+            return RefmatchMetrics(metrics=[], cost=zero_cost)
 
         results: list[MetricResult] = []
         results.extend(self._compute_rouge(output_text, reference_text))
         results.append(self._compute_bleu(output_text, reference_text))
         results.append(self._compute_meteor(output_text, reference_text))
-        return ReferenceMetrics(
+        return RefmatchMetrics(
             metrics=results,
             cost=zero_cost,
         )

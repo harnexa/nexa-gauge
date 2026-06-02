@@ -43,7 +43,8 @@ Core evaluation coverage includes:
 - **Grounding** - checks whether generated claims are supported by supplied context.
 - **Red team scoring** - evaluates safety and risk behavior with configurable rubrics.
 - **GEval / LLM-as-a-judge** - scores outputs against explicit criteria or evaluation steps.
-- **Reference metrics** - computes overlap-based metrics against known reference answers.
+- **Reference matching** - computes lexical overlap metrics against known reference answers.
+- **Reference alignment** - computes embedding-based semantic similarity against known reference answers.
 
 ---
 
@@ -100,8 +101,8 @@ nexagauge run eval --input sample.json --limit 10 --output-dir ./report
 | Category | Nodes | Purpose |
 | --- | --- | --- |
 | Input and orchestration | `scan`, `eval`, `report` | Normalize records, aggregate metric branches, and project final reports. |
-| Utility | `chunk`, `refiner`, `claims`, `geval_steps` | Prepare generated text, select top-k chunks via configurable refinement, extract claims, and resolve GEval steps. |
-| Metrics | `relevance`, `grounding`, `redteam`, `geval`, `reference` | Score answer quality, evidence support, safety, rubric alignment, and reference overlap. |
+| Utility | `chunk`, `chunk_reference`, `refiner`, `refine_reference`, `claims`, `geval_steps` | Prepare generated and reference text, select top-k chunks via configurable refinement, extract claims, and resolve GEval steps. |
+| Metrics | `relevance`, `grounding`, `redteam`, `geval`, `refmatch`, `refalign` | Score answer quality, evidence support, safety, rubric alignment, lexical reference overlap, and semantic reference alignment. |
 
 Typical execution paths:
 
@@ -109,6 +110,8 @@ Typical execution paths:
 grounding: scan -> chunk -> refiner -> claims -> grounding
 relevance: scan -> chunk -> refiner -> claims -> relevance
 geval:     scan -> geval_steps -> geval
+refmatch: scan -> refmatch
+refalign: scan -> chunk/refiner + chunk_reference/refine_reference -> refalign
 eval:      full graph execution and aggregate metric summary
 ```
 
@@ -190,9 +193,10 @@ Canonical record fields include:
 | `output` | Required for all metric branches. |
 | `input` | Relevance and some GEval configurations. |
 | `context` | Grounding and context-aware GEval checks. |
-| `reference` | Reference metrics and reference-aware GEval checks. |
+| `reference` | Refmatch, refalign, and reference-aware GEval checks. |
 | `geval` | Rubric-driven GEval metrics. |
 | `redteam` | Custom safety and risk rubrics. |
+| `refalign` | Optional semantic reference-alignment config. |
 
 Common aliases such as `response`, `answer`, `output`, `completion`, `query`, `prompt`, `ground_truth`, and `label` are normalized during scanning.
 
@@ -208,7 +212,8 @@ Common aliases such as `response`, `answer`, `output`, `completion`, `query`, `p
 | `grounding` | Whether generated claims are supported by the provided context. |
 | `redteam` | Bias, toxicity, and custom risk behavior using rubrics. |
 | `geval` | Criteria-based LLM judging with generated or provided evaluation steps. |
-| `reference` | BLEU, METEOR, ROUGE-1, ROUGE-2, and ROUGE-L against reference answers. |
+| `refmatch` | BLEU, METEOR, ROUGE-1, ROUGE-2, and ROUGE-L against reference answers. |
+| `refalign` | Embedding-based precision, recall, F1, global similarity, and max pairwise similarity against reference answers. |
 
 GEval is split into two phases:
 
@@ -216,6 +221,21 @@ GEval is split into two phases:
 2. `geval` scores each case against those resolved steps and selected input fields.
 
 This design makes rubric-based evaluation repeatable and cache-friendly across datasets.
+
+Refmatch and refalign both require a `reference` field. `refmatch` runs directly on the answer text and is deterministic. `refalign` compares refined output chunks against refined reference chunks with local sentence-transformer embeddings; its pure embedding path has zero LLM cost. Per-record `refalign` config can enable LLM-assisted atomic unit extraction:
+
+```json
+{
+  "case_id": "demo",
+  "output": "Paris is France's capital and largest city.",
+  "reference": "Paris is the capital city of France.",
+  "refalign": {
+    "similarity_threshold": 0.8,
+    "refine_top_k": 3,
+    "atomic_chunks": false
+  }
+}
+```
 
 ### Per-node scoring knobs
 
@@ -305,7 +325,10 @@ Supported per-node overrides follow this pattern:
 LLM_CLAIMS_MODEL=openai/gpt-4o-mini
 LLM_CLAIMS_FALLBACK_MODEL=openai/gpt-4o
 LLM_GROUNDING_TEMPERATURE=0.0
+LLM_REFALIGN_MODEL=openai/gpt-4o-mini
 ```
+
+`refalign` uses `EMBEDDING_MODEL` for local semantic similarity. It only uses the configured judge model when a record sets `"refalign": {"atomic_chunks": true}`.
 
 Runtime overrides can also be passed through the CLI:
 

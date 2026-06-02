@@ -236,8 +236,8 @@ class CachedNodeRunner:
         --------------
         plan_ctx = _RunPlanContext(
             node_name='eval',
-            plan=('scan', 'chunk', 'claims', 'dedup', 'geval_steps', 'relevance', 'grounding', 'redteam', 'geval', 'reference', 'eval', 'report'),
-            plan_index={'scan': 0, 'chunk': 1, 'claims': 2, 'dedup': 3, 'geval_steps': 4, 'relevance': 5, 'grounding': 6, 'redteam': 7, 'geval': 8, 'reference': 9, 'eval': 10, 'report': 11},
+            plan=('scan', 'chunk', 'claims', 'dedup', 'geval_steps', 'relevance', 'grounding', 'redteam', 'geval', 'refmatch', 'eval', 'report'),
+            plan_index={'scan': 0, 'chunk': 1, 'claims': 2, 'dedup': 3, 'geval_steps': 4, 'relevance': 5, 'grounding': 6, 'redteam': 7, 'geval': 8, 'refmatch': 9, 'eval': 10, 'report': 11},
             direct_prereqs={
                 'scan': (),
                 'chunk': ('scan',),
@@ -248,12 +248,12 @@ class CachedNodeRunner:
                 'grounding': ('dedup',),
                 'redteam': ('scan',),
                 'geval': ('geval_steps',),
-                'reference': ('scan',),
-                'eval': ('chunk', 'claims', 'dedup', 'geval_steps', 'relevance', 'grounding', 'redteam', 'geval', 'reference'),
+                'refmatch': ('scan',),
+                'eval': ('chunk', 'claims', 'dedup', 'geval_steps', 'relevance', 'grounding', 'redteam', 'geval', 'refmatch'),
                 'report': ('eval',)
             },
             dependents={
-                'scan': ('chunk', 'geval_steps', 'redteam', 'reference'),
+                'scan': ('chunk', 'geval_steps', 'redteam', 'refmatch'),
                 'chunk': ('claims', 'eval'),
                 'claims': ('dedup', 'eval'),
                 'dedup': ('relevance', 'grounding', 'eval'),
@@ -262,7 +262,7 @@ class CachedNodeRunner:
                 'grounding': ('eval',),
                 'redteam': ('eval',),
                 'geval': ('eval',),
-                'reference': ('eval',),
+                'refmatch': ('eval',),
                 'eval': ('report',),
                 'report': ()
             }, plan_transitive_prereqs={
@@ -275,9 +275,9 @@ class CachedNodeRunner:
                 'grounding': ('scan', 'chunk', 'claims', 'dedup'),
                 'redteam': ('scan',),
                 'geval': ('scan', 'geval_steps'),
-                'reference': ('scan',),
-                'eval': ('scan', 'chunk', 'claims', 'dedup', 'geval_steps', 'relevance', 'grounding', 'redteam', 'geval', 'reference'),
-                'report': ('scan', 'chunk', 'claims', 'dedup', 'geval_steps', 'relevance', 'grounding', 'redteam', 'geval', 'reference', 'eval')
+                'refmatch': ('scan',),
+                'eval': ('scan', 'chunk', 'claims', 'dedup', 'geval_steps', 'relevance', 'grounding', 'redteam', 'geval', 'refmatch'),
+                'report': ('scan', 'chunk', 'claims', 'dedup', 'geval_steps', 'relevance', 'grounding', 'redteam', 'geval', 'refmatch', 'eval')
             }
         )
         """

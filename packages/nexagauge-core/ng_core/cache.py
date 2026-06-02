@@ -228,7 +228,9 @@ from ng_core.types import (
     MetricResult,
     Redteam,
     RedteamMetrics,
-    ReferenceMetrics,
+    Refalign,
+    RefalignMetrics,
+    RefmatchMetrics,
     Relevance,
     RelevanceMetrics,
     ScoringMode,
@@ -253,7 +255,8 @@ _FIELD_TYPE_MAP: dict[str, Any] = {
     "relevance_metrics": RelevanceMetrics,
     "redteam_metrics": RedteamMetrics,
     "geval_metrics": GevalMetrics,
-    "reference_metrics": ReferenceMetrics,
+    "refmatch_metrics": RefmatchMetrics,
+    "refalign_metrics": RefalignMetrics,
     "report": EvalReport,
     "geval": GevalConfig,
 }
@@ -263,7 +266,8 @@ _METRIC_GROUP_FIELDS = {
     "relevance_metrics",
     "redteam_metrics",
     "geval_metrics",
-    "reference_metrics",
+    "refmatch_metrics",
+    "refalign_metrics",
 }
 
 
@@ -281,9 +285,13 @@ class KVCacheEntry(TypedDict):
 class NodeCacheBackend(Protocol):
     """Minimal cache backend contract used by CachedNodeRunner."""
 
-    def has_key(self, cache_key: str) -> bool: ...
+    def has_key(self, cache_key: str) -> bool:
+        """Check an already-built opaque cache key such as ``v3:mode:node:case:route``."""
+        ...
 
-    def get_entry_by_key(self, cache_key: str) -> Optional[KVCacheEntry]: ...
+    def get_entry_by_key(self, cache_key: str) -> Optional[KVCacheEntry]:
+        """Load the envelope stored under an opaque cache key."""
+        ...
 
     def put_by_key(
         self,
@@ -291,16 +299,24 @@ class NodeCacheBackend(Protocol):
         node_name: str,
         node_output: dict[str, Any],
         metadata: Optional[dict[str, Any]] = None,
-    ) -> None: ...
+    ) -> None:
+        """Persist ``node_output`` and ``metadata`` under an opaque cache key."""
+        ...
 
 
 # ── Serialisation helpers ────────────────────────────────────────────────────
 
 
 def _serialize(node_output: dict[str, Any]) -> dict[str, Any]:
-    """Convert a node output dict to a JSON-serialisable form."""
+    """Convert a node output dict to JSON-serialisable values.
+
+    Cache keys used here are the ``node_output`` field names, for example
+    ``inputs``, ``raw_claims``, ``grounding_metrics``, ``estimated_costs``,
+    ``geval_artifact``, and any primitive passthrough keys emitted by nodes.
+    """
 
     def _to_jsonable(value: Any) -> Any:
+        """Recursively serialise values stored under ``node_output`` field keys."""
         if value is None:
             return None
         if isinstance(value, BaseModel):
@@ -318,7 +334,14 @@ def _serialize(node_output: dict[str, Any]) -> dict[str, Any]:
 
 
 def _deserialize(node_output_raw: dict[str, Any]) -> dict[str, Any]:
-    """Reconstruct typed objects from a deserialised JSON node output dict."""
+    """Reconstruct typed objects from a deserialised JSON node output dict.
+
+    Dispatch is keyed by ``node_output`` field name. Metric group keys in
+    ``_METRIC_GROUP_FIELDS`` become ``list[MetricResult]``; ``estimated_costs``
+    becomes ``dict[str, CostEstimate]``; ``report`` stays raw; keys listed in
+    ``_FIELD_TYPE_MAP`` become their registered Pydantic model type; all other
+    keys pass through unchanged.
+    """
     result: dict[str, Any] = {}
     for key, value in node_output_raw.items():
         if value is None:
@@ -356,6 +379,12 @@ NON_CACHEABLE_NODES: frozenset[str] = frozenset({"eval", "report"})
 
 
 def cache_read_allowed(*, execution_mode: str, node_name: str) -> bool:
+    """Return whether a node may read from cache for a mode/name key pair.
+
+    Policy keys used: ``execution_mode`` and ``node_name``. Nodes in
+    ``NON_CACHEABLE_NODES`` are denied for every mode; ``run`` and ``estimate``
+    are otherwise allowed to read.
+    """
     if node_name in NON_CACHEABLE_NODES:
         return False
     if execution_mode == "run":
@@ -366,6 +395,13 @@ def cache_read_allowed(*, execution_mode: str, node_name: str) -> bool:
 
 
 def cache_write_allowed(*, execution_mode: str, node_name: str) -> bool:
+    """Return whether a node may write to cache for a mode/name key pair.
+
+    Policy keys used: ``execution_mode`` and ``node_name``. Nodes in
+    ``NON_CACHEABLE_NODES`` are denied for every mode; ``run`` writes are
+    allowed; ``estimate`` writes are allowed only when ``node_name`` is in
+    ``ESTIMATE_CACHE_WRITE_NODES``.
+    """
     if node_name in NON_CACHEABLE_NODES:
         return False
     if execution_mode == "run":
@@ -382,7 +418,14 @@ def build_node_cache_key(
     execution_mode: str,
     node_route_fingerprint: str,
 ) -> str:
-    """Build opaque cache key for a single node execution output."""
+    """Build opaque cache key for a single node execution output.
+
+    Key format:
+    ``{CACHE_KEY_VERSION}:{execution_mode}:{node_name}:{case_fingerprint}:{node_route_fingerprint}``.
+    ``case_fingerprint`` is from ``compute_case_hash``; ``node_route_fingerprint``
+    is supplied by the graph runner and includes this node plus upstream route
+    dimensions.
+    """
     return (
         f"{CACHE_KEY_VERSION}:"
         f"{execution_mode}:"
@@ -402,12 +445,17 @@ def compute_case_hash(
     reference_files: Optional[list[str]] = None,
     grounding: Optional[Grounding] = None,
     relevance: Optional[Relevance] = None,
+    refalign: Optional[Refalign] = None,
 ) -> str:
     """Stable SHA-256 hash of the case's input content.
 
-    Changing output / input / reference / context, any LLM-judge metric
-    config (geval/grounding/relevance/redteam), or reference_files produces
-    a different hash and a cache miss for the affected case.
+    Cache key dimensions included: ``output``, ``input``, ``reference``,
+    ``context``, ``reference_files``, GEval metric keys (``name``,
+    ``item_fields``, ``criteria.text``, ``evaluation_steps[*].text``), Redteam
+    metric keys (``name``, ``item_fields``, ``rubric.goal``,
+    ``rubric.violations``, ``rubric.non_violations``), and non-default
+    scoring knobs for ``geval``, ``redteam``, ``grounding``, ``relevance``, and
+    ``refalign``.
 
     For grounding/relevance, the hash only changes when the config differs
     from the default (binary + reasoning off) so cases that never opt into
@@ -415,11 +463,13 @@ def compute_case_hash(
     """
 
     def _value(obj: Any, key: str, default: Any = None) -> Any:
+        """Read a named cache-dimension key from dict or object config shapes."""
         if isinstance(obj, dict):
             return obj.get(key, default)
         return getattr(obj, key, default)
 
     def _text(value: Any) -> str:
+        """Normalise text-ish cache key values, including ``{"text": ...}`` items."""
         if value is None:
             return ""
         if isinstance(value, dict):
@@ -429,18 +479,21 @@ def compute_case_hash(
         return str(value).strip()
 
     def _metric_steps_text(raw_steps: Any) -> str:
+        """Join ``evaluation_steps`` or rubric step keys into one stable string."""
         if not isinstance(raw_steps, list):
             return ""
         parts = [_text(step) for step in raw_steps]
         return "|".join([p for p in parts if p])
 
     def _metric_fields_text(metric: Any) -> str:
+        """Join the metric ``item_fields`` key into one stable field signature."""
         fields = _value(metric, "item_fields") or _value(metric, "item_fields") or []
         if not isinstance(fields, list):
             return ""
         return "|".join([_text(field) for field in fields if _text(field)])
 
     def _scoring_mode_text(value: Any) -> str:
+        """Normalise a ``scoring_mode`` key from enum or raw string form."""
         if hasattr(value, "value"):
             return _text(getattr(value, "value"))
         return _text(value)
@@ -459,6 +512,38 @@ def compute_case_hash(
         mode_value = getattr(mode, "value", mode)
         reasoning = bool(_value(config, "include_reasoning"))
         return mode_value == ScoringMode.BINARY_YES_NO.value and reasoning is False
+
+    def _is_default_refalign_config(config: Any) -> bool:
+        """Return True when refalign cache keys are all default-valued."""
+        if config is None:
+            return True
+        atomic_chunks = bool(_value(config, "atomic_chunks"))
+        threshold = _value(config, "similarity_threshold")
+        refine_top_k = _value(config, "refine_top_k")
+        try:
+            threshold_value = float(threshold)
+        except (TypeError, ValueError):
+            threshold_value = 0.6
+        return atomic_chunks is False and threshold_value == 0.6 and refine_top_k is None
+
+    def _refalign_text(config: Any) -> str:
+        """Build the refalign key fragment from ``atomic_chunks``/threshold/top-k."""
+        atomic_chunks = str(bool(_value(config, "atomic_chunks"))).lower()
+        threshold = _value(config, "similarity_threshold")
+        refine_top_k = _value(config, "refine_top_k")
+        try:
+            threshold_value = float(threshold)
+        except (TypeError, ValueError):
+            threshold_value = 0.6
+        top_k_value = ""
+        if refine_top_k is not None:
+            try:
+                parsed_top_k = int(refine_top_k)
+                if parsed_top_k > 0:
+                    top_k_value = str(parsed_top_k)
+            except (TypeError, ValueError):
+                top_k_value = ""
+        return f"{atomic_chunks}\x1f{round(threshold_value, 6)}\x1f{top_k_value}"
 
     geval_text = ""
     if geval is not None:
@@ -496,13 +581,14 @@ def compute_case_hash(
     # non-default knobs — keeps hashes stable for the common case (no block).
     grounding_text = "" if _is_default_judge_config(grounding) else _knobs_text(grounding)
     relevance_text = "" if _is_default_judge_config(relevance) else _knobs_text(relevance)
+    refalign_text = "" if _is_default_refalign_config(refalign) else _refalign_text(refalign)
 
     context_text = "|".join([str(c) for c in (context or []) if c is not None])
     reference_text = "|".join(sorted(reference_files or []))
     raw = (
         f"{output}\x00{input or ''}\x00{reference or ''}\x00"
         f"{context_text}\x00{geval_text}\x00{redteam_text}\x00"
-        f"{grounding_text}\x00{relevance_text}\x00{reference_text}"
+        f"{grounding_text}\x00{relevance_text}\x00{refalign_text}\x00{reference_text}"
     )
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
@@ -511,22 +597,45 @@ def compute_case_hash(
 
 
 class CacheStore:
-    """Filesystem-backed key-value store for node execution patches."""
+    """Filesystem-backed key-value store for opaque cache keys.
+
+    Entries are addressed by the full caller-built ``cache_key`` string, then
+    stored at ``kv/{sha256(cache_key)[:2]}/{sha256(cache_key)}.json``. The JSON
+    envelope keys are ``cache_key``, ``node_name``, ``created_at``,
+    ``node_output``, and ``metadata``.
+    """
 
     def __init__(self, cache_dir: str | Path | None = None) -> None:
+        """Initialise the store root from ``cache_dir``, env, or default cache dir.
+
+        Root selection keys: explicit ``cache_dir`` first,
+        ``NEXAGAUGE_CACHE_DIR`` second, then ``default_cache_dir()``.
+        """
         raw = cache_dir or os.getenv("NEXAGAUGE_CACHE_DIR") or default_cache_dir()
         self._root = Path(raw)
 
     def _kv_path(self, cache_key: str) -> Path:
+        """Return the filesystem path for one opaque ``cache_key``.
+
+        Filesystem keys used: SHA-256 of ``cache_key``; the first two digest
+        characters form the shard directory and the full digest forms the JSON
+        filename.
+        """
         digest = hashlib.sha256(cache_key.encode()).hexdigest()
         return self._root / "kv" / digest[:2] / f"{digest}.json"
 
     def has_key(self, cache_key: str) -> bool:
-        """Return True if an opaque-key cache entry exists."""
+        """Return True if the opaque ``cache_key`` maps to an existing JSON file."""
         return self._kv_path(cache_key).exists()
 
     def get_entry_by_key(self, cache_key: str) -> Optional[KVCacheEntry]:
-        """Load and deserialize a key-value cache envelope using an opaque key."""
+        """Load and deserialize the envelope addressed by ``cache_key``.
+
+        Envelope keys read: ``cache_key`` (must match the requested key),
+        ``node_name``, ``created_at``, ``node_output``, and optional
+        ``metadata``. The ``node_output`` subkeys are deserialised by
+        ``_deserialize``.
+        """
         p = self._kv_path(cache_key)
         if not p.exists():
             return None
@@ -551,7 +660,7 @@ class CacheStore:
             return None
 
     def get_by_key(self, cache_key: str) -> Optional[dict[str, Any]]:
-        """Load and deserialize node output using an opaque key."""
+        """Load only the ``node_output`` payload addressed by ``cache_key``."""
         entry = self.get_entry_by_key(cache_key)
         if entry is None:
             return None
@@ -565,6 +674,10 @@ class CacheStore:
         metadata: Optional[dict[str, Any]] = None,
     ) -> None:
         """Serialize and persist one opaque-key cache envelope.
+
+        Envelope keys written: ``cache_key``, ``node_name``, ``created_at``,
+        ``node_output``, and ``metadata``. The ``node_output`` subkeys are
+        serialised by ``_serialize``.
 
         Uses atomic rename to avoid torn writes under concurrent execution.
         """
@@ -586,16 +699,20 @@ class CacheStore:
 
 
 class NoOpCacheStore(CacheStore):
-    """Drop-in replacement that never reads or writes — used with --no-cache."""
+    """Drop-in replacement that ignores every opaque cache key under --no-cache."""
 
     def has_key(self, *args: Any, **kwargs: Any) -> bool:
+        """Return False for any supplied ``cache_key``."""
         return False
 
     def get_entry_by_key(self, *args: Any, **kwargs: Any) -> Optional[KVCacheEntry]:
+        """Return no envelope for any supplied ``cache_key``."""
         return None
 
     def get_by_key(self, *args: Any, **kwargs: Any) -> Optional[dict[str, Any]]:
+        """Return no ``node_output`` for any supplied ``cache_key``."""
         return None
 
     def put_by_key(self, *args: Any, **kwargs: Any) -> None:
+        """Ignore writes for any ``cache_key``/``node_output`` pair."""
         return

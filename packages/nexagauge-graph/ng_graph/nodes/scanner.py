@@ -21,6 +21,7 @@ from ng_core.types import (
     Redteam,
     RedteamMetricInput,
     RedteamRubric,
+    Refalign,
     Relevance,
     ScoringMode,
 )
@@ -53,6 +54,7 @@ def build_scan_record(record: Mapping[str, Any], *, idx: int = 0) -> dict[str, A
         "grounding": resolve_alias(record, "grounding"),
         "relevance": resolve_alias(record, "relevance"),
         "redteam": resolve_alias(record, "redteam"),
+        "refalign": resolve_alias(record, "refalign"),
     }
 
 
@@ -313,6 +315,42 @@ def _build_judge_only_config(raw: Any, factory):
     return factory(scoring_mode=scoring_mode, include_reasoning=include_reasoning)
 
 
+def _build_refalign(raw_refalign: Any) -> Refalign | None:
+    if raw_refalign is None:
+        return None
+    if hasattr(raw_refalign, "model_dump"):
+        raw_refalign = raw_refalign.model_dump()
+    if not isinstance(raw_refalign, dict):
+        return None
+    defaults = Refalign()
+    atomic_chunks = _normalize_bool(
+        raw_refalign.get("atomic_chunks"),
+        default=defaults.atomic_chunks,
+    )
+    raw_threshold = raw_refalign.get("similarity_threshold")
+    similarity_threshold = defaults.similarity_threshold
+    if raw_threshold is not None:
+        try:
+            similarity_threshold = float(raw_threshold)
+        except (TypeError, ValueError):
+            similarity_threshold = defaults.similarity_threshold
+    similarity_threshold = max(0.0, min(1.0, similarity_threshold))
+    raw_refine_top_k = raw_refalign.get("refine_top_k")
+    refine_top_k = defaults.refine_top_k
+    if raw_refine_top_k is not None:
+        try:
+            parsed = int(raw_refine_top_k)
+            if parsed > 0:
+                refine_top_k = parsed
+        except (TypeError, ValueError):
+            refine_top_k = None
+    return Refalign(
+        atomic_chunks=atomic_chunks,
+        similarity_threshold=similarity_threshold,
+        refine_top_k=refine_top_k,
+    )
+
+
 def _build_inputs(record: Mapping[str, Any], *, idx: int = 0) -> Inputs:
     del idx
     case_id = _normalize_text(record.get("case_id"))
@@ -325,6 +363,7 @@ def _build_inputs(record: Mapping[str, Any], *, idx: int = 0) -> Inputs:
     relevance = _build_judge_only_config(record.get("relevance"), Relevance)
     geval = _build_geval(record.get("geval"))
     redteam = _build_redteam(record.get("redteam"))
+    refalign = _build_refalign(record.get("refalign"))
 
     return Inputs(
         case_id=case_id,
@@ -346,6 +385,7 @@ def _build_inputs(record: Mapping[str, Any], *, idx: int = 0) -> Inputs:
         grounding=grounding,
         relevance=relevance,
         redteam=redteam,
+        refalign=refalign,
         has_output=bool(output_text),
         has_input=bool(input_text),
         has_reference=bool(reference_text),

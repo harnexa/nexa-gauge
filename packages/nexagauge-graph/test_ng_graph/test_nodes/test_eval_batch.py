@@ -23,7 +23,7 @@ def test_eval_batch_collector_groups_by_node_and_metric() -> None:
                             "weight": 1.0,
                         },
                         {
-                            "source_node": "reference",
+                            "source_node": "refmatch",
                             "metric_name": "rouge_l",
                             "score": None,
                             "verdict": None,
@@ -71,8 +71,8 @@ def test_eval_batch_collector_groups_by_node_and_metric() -> None:
     assert summary["by_node"]["grounding"]["verdict_total"] == 2
 
     assert summary["by_metric"]["grounding"]["grounding"]["metrics"] == 2
-    assert summary["by_metric"]["reference"]["rouge_l"]["errors"] == 1
-    assert summary["by_metric"]["reference"]["rouge_l"]["verdict_total"] == 0
+    assert summary["by_metric"]["refmatch"]["rouge_l"]["errors"] == 1
+    assert summary["by_metric"]["refmatch"]["rouge_l"]["verdict_total"] == 0
 
 
 def test_build_eval_summary_tables_returns_node_and_metric_tables() -> None:
