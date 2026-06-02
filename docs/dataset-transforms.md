@@ -40,11 +40,11 @@ def hotpot_qa(record: dict) -> dict:
 The contract:
 
 - **Input:** one raw record dict (whatever the adapter yields).
-- **Output:** a dict with any subset of `case_id`, `input`, `output`, `context`, `reference`. Keys not listed are ignored.
+- **Output:** a dict with any subset of `case_id`, `input`, `output`, `context`, `reference`, `geval`, `redteam`, `refalign`. Keys not listed are ignored.
 - **Pure and threadsafe.** No I/O, no shared mutable state.
 - **Errors** raise as `InputParseError` with the record index, so they show up in the CLI error path uniformly.
 
-`geval` and `redteam` are nexa-gauge metric configs (not dataset data) — don't try to reshape them via transforms.
+`geval`, `redteam`, and `refalign` are nexa-gauge metric configs, not dataset data. Include them only when your transform is intentionally attaching per-case metric configuration.
 
 ## Run it
 

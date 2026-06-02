@@ -28,6 +28,7 @@ INPUT_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "context": ("context", "contexts", "documents"),
     "geval": ("geval",),
     "redteam": ("redteam",),
+    "refalign": ("refalign",),
 }
 
 

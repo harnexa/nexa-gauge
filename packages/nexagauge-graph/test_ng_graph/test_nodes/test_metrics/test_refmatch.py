@@ -1,15 +1,15 @@
 # Debug commands:
-# uv run pytest -s packages/nexagauge-graph/test_ng_graph/test_nodes/test_reference.py
-# uv run pytest -s packages/nexagauge-graph/test_ng_graph/test_nodes/test_reference.py::test_run_returns_reference_metrics_for_item_inputs
-# uv run pytest -s -k "reference" packages/nexagauge-graph/test_ng_graph/test_nodes/test_reference.py
+# uv run pytest -s packages/nexagauge-graph/test_ng_graph/test_nodes/test_metrics/test_refmatch.py
+# uv run pytest -s packages/nexagauge-graph/test_ng_graph/test_nodes/test_metrics/test_refmatch.py::test_run_returns_refmatch_metrics_for_item_inputs
+# uv run pytest -s -k "refmatch" packages/nexagauge-graph/test_ng_graph/test_nodes/test_metrics/test_refmatch.py
 
 from ng_core.types import Item, MetricCategory
-from ng_graph.nodes.metrics import reference as reference_module
-from ng_graph.nodes.metrics.reference import ReferenceNode
+from ng_graph.nodes.metrics import refmatch as refmatch_module
+from ng_graph.nodes.metrics.refmatch import RefmatchNode
 
 
-def test_run_returns_reference_metrics_for_item_inputs() -> None:
-    node = ReferenceNode()
+def test_run_returns_refmatch_metrics_for_item_inputs() -> None:
+    node = RefmatchNode()
 
     result = node.run(
         output=Item(text="Paris is the capital of France.", tokens=7),
@@ -29,7 +29,7 @@ def test_run_returns_reference_metrics_for_item_inputs() -> None:
 
 
 def test_run_accepts_string_inputs() -> None:
-    node = ReferenceNode()
+    node = RefmatchNode()
 
     result = node.run(
         output="The sky is blue.",
@@ -43,7 +43,7 @@ def test_run_accepts_string_inputs() -> None:
 
 
 def test_run_skips_when_disabled_or_reference_missing() -> None:
-    node = ReferenceNode()
+    node = RefmatchNode()
 
     disabled = node.run(output="answer", reference="reference", enable_output_metrics=False)
     assert disabled.metrics == []
@@ -59,7 +59,7 @@ def test_run_skips_when_disabled_or_reference_missing() -> None:
 
 
 def test_estimate_returns_zero_cost() -> None:
-    node = ReferenceNode()
+    node = RefmatchNode()
 
     cost = node.estimate(input_tokens=100.0, output_tokens=50.0)
     assert cost.cost == 0.0
@@ -68,16 +68,16 @@ def test_estimate_returns_zero_cost() -> None:
 
 
 def test_run_meteor_falls_back_when_wordnet_path_errors(monkeypatch) -> None:
-    node = ReferenceNode()
+    node = RefmatchNode()
 
     def _fake_meteor_score(references, hypothesis, **kwargs):
         del references, hypothesis
         if "wordnet" not in kwargs:
             raise AttributeError("'NoneType' object has no attribute 'close'")
-        assert isinstance(kwargs["wordnet"], reference_module._NoWordNet)
+        assert isinstance(kwargs["wordnet"], refmatch_module._NoWordNet)
         return 0.1234
 
-    monkeypatch.setattr(reference_module, "meteor_score", _fake_meteor_score)
+    monkeypatch.setattr(refmatch_module, "meteor_score", _fake_meteor_score)
 
     result = node.run(
         output="Paris is the capital of France.",

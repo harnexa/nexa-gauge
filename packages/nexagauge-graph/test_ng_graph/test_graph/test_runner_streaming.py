@@ -77,10 +77,15 @@ def _install_fake_pipeline_nodes(monkeypatch: pytest.MonkeyPatch) -> None:
             return {"geval_marker": None}
         return {"geval_marker": "run-geval"}
 
-    def _reference(state: dict) -> dict:
+    def _refmatch(state: dict) -> dict:
         if state.get("execution_mode") == "estimate":
-            return {"reference_marker": None}
-        return {"reference_marker": "run-reference"}
+            return {"refmatch_marker": None}
+        return {"refmatch_marker": "run-refmatch"}
+
+    def _refalign(state: dict) -> dict:
+        if state.get("execution_mode") == "estimate":
+            return {"refalign_marker": None}
+        return {"refalign_marker": "run-refalign"}
 
     def _eval(_state: dict) -> dict:
         return {"eval_marker": "eval"}
@@ -97,7 +102,8 @@ def _install_fake_pipeline_nodes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(runner_module.NODE_FNS, "relevance", _relevance)
     monkeypatch.setitem(runner_module.NODE_FNS, "redteam", _redteam)
     monkeypatch.setitem(runner_module.NODE_FNS, "geval", _geval)
-    monkeypatch.setitem(runner_module.NODE_FNS, "reference", _reference)
+    monkeypatch.setitem(runner_module.NODE_FNS, "refmatch", _refmatch)
+    monkeypatch.setitem(runner_module.NODE_FNS, "refalign", _refalign)
     monkeypatch.setitem(runner_module.NODE_FNS, "eval", _eval)
     monkeypatch.setitem(runner_module.NODE_FNS, "report", _report)
 
@@ -203,7 +209,7 @@ def test_report_target_parallelizes_independent_branches(monkeypatch) -> None:
     monkeypatch.setitem(runner_module.NODE_FNS, "grounding", _mk_node("grounding", 0.05))
     monkeypatch.setitem(runner_module.NODE_FNS, "redteam", _mk_node("redteam", 0.03))
     monkeypatch.setitem(runner_module.NODE_FNS, "geval", _mk_node("geval", 0.03))
-    monkeypatch.setitem(runner_module.NODE_FNS, "reference", _mk_node("reference", 0.03))
+    monkeypatch.setitem(runner_module.NODE_FNS, "refmatch", _mk_node("refmatch", 0.03))
     monkeypatch.setitem(runner_module.NODE_FNS, "eval", _mk_node("eval", 0.0))
     monkeypatch.setitem(runner_module.NODE_FNS, "report", _mk_node("report", 0.0))
 
@@ -216,16 +222,27 @@ def test_report_target_parallelizes_independent_branches(monkeypatch) -> None:
     )
 
     assert "redteam" in result.executed_nodes
-    assert "reference" in result.executed_nodes
+    assert "refmatch" in result.executed_nodes
     assert timestamps["redteam_start"] < timestamps["refiner_end"]
-    assert timestamps["reference_start"] < timestamps["refiner_end"]
+    assert timestamps["refmatch_start"] < timestamps["refiner_end"]
 
 
 def test_dependent_snapshot_includes_unmerged_prereq_outputs(monkeypatch) -> None:
     observed: dict[str, str | None] = {"geval_seen_steps": None}
 
     def _scan(_state: dict) -> dict:
-        return {"inputs": object()}
+        inputs_stub = type(
+            "InputsStub",
+            (),
+            {
+                "has_output": True,
+                "has_input": False,
+                "has_context": False,
+                "has_geval": False,
+                "has_reference": False,
+            },
+        )()
+        return {"inputs": inputs_stub}
 
     def _chunk(_state: dict) -> dict:
         # Keep chunk slower than geval_steps so ``geval`` is scheduled before
@@ -256,8 +273,11 @@ def test_dependent_snapshot_includes_unmerged_prereq_outputs(monkeypatch) -> Non
     def _redteam(_state: dict) -> dict:
         return {"redteam_marker": "redteam"}
 
-    def _reference(_state: dict) -> dict:
-        return {"reference_marker": "reference"}
+    def _refmatch(_state: dict) -> dict:
+        return {"refmatch_marker": "refmatch"}
+
+    def _refalign(_state: dict) -> dict:
+        return {"refalign_marker": "refalign"}
 
     def _eval(_state: dict) -> dict:
         return {"eval_marker": "eval"}
@@ -274,7 +294,8 @@ def test_dependent_snapshot_includes_unmerged_prereq_outputs(monkeypatch) -> Non
     monkeypatch.setitem(runner_module.NODE_FNS, "grounding", _grounding)
     monkeypatch.setitem(runner_module.NODE_FNS, "relevance", _relevance)
     monkeypatch.setitem(runner_module.NODE_FNS, "redteam", _redteam)
-    monkeypatch.setitem(runner_module.NODE_FNS, "reference", _reference)
+    monkeypatch.setitem(runner_module.NODE_FNS, "refmatch", _refmatch)
+    monkeypatch.setitem(runner_module.NODE_FNS, "refalign", _refalign)
     monkeypatch.setitem(runner_module.NODE_FNS, "eval", _eval)
     monkeypatch.setitem(runner_module.NODE_FNS, "report", _report)
 
@@ -448,11 +469,19 @@ def test_eval_estimate_mode_merges_parallel_metric_estimated_costs(monkeypatch) 
             "estimated_costs": {"geval": CostEstimate(cost=0.44, input_tokens=6, output_tokens=2)},
         }
 
-    def _reference(_state: dict) -> dict:
+    def _refmatch(_state: dict) -> dict:
         return {
-            "reference_metrics": "estimated-reference",
+            "refmatch_metrics": "estimated-refmatch",
             "estimated_costs": {
-                "reference": CostEstimate(cost=0.0, input_tokens=0, output_tokens=0)
+                "refmatch": CostEstimate(cost=0.0, input_tokens=0, output_tokens=0)
+            },
+        }
+
+    def _refalign(_state: dict) -> dict:
+        return {
+            "refalign_metrics": "estimated-refalign",
+            "estimated_costs": {
+                "refalign": CostEstimate(cost=0.0, input_tokens=0, output_tokens=0)
             },
         }
 
@@ -465,7 +494,8 @@ def test_eval_estimate_mode_merges_parallel_metric_estimated_costs(monkeypatch) 
     monkeypatch.setitem(runner_module.NODE_FNS, "grounding", _grounding)
     monkeypatch.setitem(runner_module.NODE_FNS, "redteam", _redteam)
     monkeypatch.setitem(runner_module.NODE_FNS, "geval", _geval)
-    monkeypatch.setitem(runner_module.NODE_FNS, "reference", _reference)
+    monkeypatch.setitem(runner_module.NODE_FNS, "refmatch", _refmatch)
+    monkeypatch.setitem(runner_module.NODE_FNS, "refalign", _refalign)
     monkeypatch.setitem(runner_module.NODE_FNS, "eval", _ok)
     monkeypatch.setitem(runner_module.NODE_FNS, "report", _ok)
 
@@ -474,7 +504,9 @@ def test_eval_estimate_mode_merges_parallel_metric_estimated_costs(monkeypatch) 
     result = runner.run_case(case=case, node_name="eval", execution_mode="estimate", force=True)
 
     costs = result.final_state.get("estimated_costs", {})
-    assert set(["relevance", "grounding", "redteam", "geval", "reference"]).issubset(set(costs))
+    assert set(["relevance", "grounding", "redteam", "geval", "refmatch", "refalign"]).issubset(
+        set(costs)
+    )
     assert costs["relevance"].cost == 0.11
     assert costs["grounding"].cost == 0.22
     assert costs["redteam"].cost == 0.33
@@ -716,7 +748,7 @@ def test_run_cases_iter_updates_eval_collector_in_parallel(monkeypatch) -> None:
                         "weight": 1.0,
                     },
                     {
-                        "source_node": "reference",
+                        "source_node": "refmatch",
                         "metric_name": "rouge_l",
                         "score": base + 0.1,
                         "error": None,
@@ -752,8 +784,8 @@ def test_run_cases_iter_updates_eval_collector_in_parallel(monkeypatch) -> None:
     assert summary["cases_with_eval"] == 3
     assert summary["total"]["metrics"] == 6
     assert summary["by_node"]["grounding"]["metrics"] == 3
-    assert summary["by_node"]["reference"]["metrics"] == 3
-    assert summary["by_metric"]["reference"]["rouge_l"]["avg_score"] == pytest.approx(0.8)
+    assert summary["by_node"]["refmatch"]["metrics"] == 3
+    assert summary["by_metric"]["refmatch"]["rouge_l"]["avg_score"] == pytest.approx(0.8)
 
 
 def test_run_cases_iter_singleflight_coalesces_duplicate_step_cache_keys(

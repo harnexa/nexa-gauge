@@ -23,7 +23,7 @@ Source of truth for node dependencies and input gating: `packages/nexagauge-grap
 
 ## Top-Down Pipeline Diagram
 
-- Built from `PIPELINE` in `topology.py`, with strategy containers for `chunk` and `refiner`.
+- Built from `PIPELINE` in `topology.py`, with strategy containers for output `chunk` and `refiner`.
 - Solid edges show primary graph flow.
 - Inner links inside containers show available strategies (one selected at runtime).
 
@@ -63,13 +63,16 @@ flowchart TD
     %% Utility nodes (circles)
     claims((claims))
     geval_steps((geval_steps))
+    chunk_reference((chunk_reference))
+    refine_reference((refine_reference))
 
     %% Metric nodes (rounded rectangles)
     relevance(relevance)
     grounding(grounding)
     redteam(redteam)
     geval(geval)
-    reference(reference)
+    refmatch(refmatch)
+    refalign(refalign)
 
     %% Orchestration
     eval{{eval}}
@@ -80,24 +83,31 @@ flowchart TD
     chunk_box -- "requires: output" --> refiner_box
     refiner_box -- "requires: output" --> claims
     scan -- "requires: output + geval" --> geval_steps
+    scan -- "requires: reference" --> chunk_reference
+    chunk_reference -- "requires: reference" --> refine_reference
 
     %% Metric fan-out
     claims -- "requires: output + input" --> relevance
     claims -- "requires: output + context" --> grounding
     scan -- "requires: output" --> redteam
     geval_steps -- "requires: output + geval" --> geval
-    scan -- "requires: output + reference" --> reference
+    scan -- "requires: output + reference" --> refmatch
+    refiner_box -- "requires: output + reference" --> refalign
+    refine_reference -- "requires: output + reference" --> refalign
 
     %% Join into eval
     chunk_box --> eval
     refiner_box --> eval
     claims --> eval
     geval_steps --> eval
+    chunk_reference --> eval
+    refine_reference --> eval
     relevance --> eval
     grounding --> eval
     redteam --> eval
     geval --> eval
-    reference --> eval
+    refmatch --> eval
+    refalign --> eval
 
     %% Terminal
     eval --> report
@@ -115,11 +125,14 @@ flowchart TD
     class chunk_semchunk,chunk_more,refiner_mmr,refiner_rerank,refiner_more strategySmall
     style claims      fill:#C07AA8,stroke:#7A4469,color:#fff
     style geval_steps fill:#9FBF9F,stroke:#5F8A5F,color:#fff
+    style chunk_reference  fill:#BBD3EE,stroke:#3F6A9C,color:#173B61
+    style refine_reference fill:#BFE3BF,stroke:#3F8A3F,color:#1B4C1B
     style relevance   fill:#8FCF7F,stroke:#4F8A3F,color:#fff
     style grounding   fill:#7FA8D8,stroke:#4F75A8,color:#fff
     style redteam     fill:#D8847A,stroke:#9A4A42,color:#fff
     style geval       fill:#A88FBF,stroke:#6F5A8A,color:#fff
-    style reference   fill:#CF7FBF,stroke:#8F4F82,color:#fff
+    style refmatch    fill:#CF7FBF,stroke:#8F4F82,color:#fff
+    style refalign    fill:#DA70D6,stroke:#8F4F82,color:#fff
     style eval        fill:#E0C970,stroke:#A08F3F,color:#3A2F0F
     style report      fill:#C9A85C,stroke:#8F7A3A,color:#fff
 ```
@@ -128,6 +141,7 @@ flowchart TD
 
 - Dependencies and requirement labels are derived from `PIPELINE` node specs (direct-parent edges).
 - `chunk` and `refiner` are strategy families; one option is selected at runtime via CLI (`--chunker`, `--refiner`).
+- `chunk_reference` and `refine_reference` mirror the output chunk/refine path for semantic reference alignment.
 - `eval` aggregates metric branches plus utility prerequisites; `report` depends on `eval`.
 - The eligibility subgraph mirrors `scan`-produced presence flags that gate node execution.
 - At runtime, the CLI runner can append `report` for non-report targets; this diagram focuses on architecture dependency flow.
@@ -136,13 +150,13 @@ flowchart TD
 
 Input normalization (`scan`) maps common aliases into canonical `inputs` fields:
 
-- `case_id`, `output`, `input`, `context`, `reference`, `geval`, `redteam`
+- `case_id`, `output`, `input`, `context`, `reference`, `geval`, `redteam`, `refalign`
 
 Core runtime state includes:
 
 - control: `target_node`, `execution_mode`, `llm_overrides`
 - strategy control: `chunker`, `refiner`, `refiner_top_k`
-- artifacts: `output_chunk`, `output_refined_chunks`, `output_claims`, `geval_steps`, metric outputs
+- artifacts: `output_chunk`, `output_refined_chunks`, `reference_chunk`, `reference_refined_chunks`, `output_claims`, `geval_steps`, metric outputs
 - bookkeeping: `estimated_costs`, `node_model_usage`
 
 Report shape is topology-driven in `ng_graph.nodes.report`: sections are included by non-`None` `state_key` values from `PIPELINE`.

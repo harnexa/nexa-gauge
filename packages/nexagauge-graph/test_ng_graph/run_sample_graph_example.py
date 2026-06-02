@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[3]
 SAMPLE_PATH = ROOT / "sample.json"
 
 
-METRIC_SECTIONS = ("grounding", "relevance", "redteam", "geval", "reference")
+METRIC_SECTIONS = ("grounding", "relevance", "redteam", "geval", "refmatch", "refalign")
 
 
 def _print_report(report: dict[str, Any], title: str) -> None:
@@ -137,9 +137,9 @@ def _run_mocked_graph_eval() -> None:
             ]
         }
 
-    def fake_reference(_state: dict[str, Any]) -> dict[str, Any]:
+    def fake_refmatch(_state: dict[str, Any]) -> dict[str, Any]:
         return {
-            "reference_metrics": [
+            "refmatch_metrics": [
                 MetricResult(name="rouge_l", category=MetricCategory.RETRIEVAL, score=0.73)
             ]
         }
@@ -156,7 +156,7 @@ def _run_mocked_graph_eval() -> None:
     graph.node_grounding = fake_grounding
     graph.node_redteam = fake_redteam
     graph.node_geval = fake_geval
-    graph.node_reference = fake_reference
+    graph.node_refmatch = fake_refmatch
     graph.node_eval = fake_eval
 
     app = graph.build_graph().compile()

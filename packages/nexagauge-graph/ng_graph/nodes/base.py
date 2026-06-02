@@ -26,8 +26,9 @@ from ng_core.types import (
     GevalStepsResolved,
     GroundingMetrics,
     RedteamMetrics,
-    ReferenceMetrics,
+    RefalignMetrics,
     RefinerArtifacts,
+    RefmatchMetrics,
     RelevanceMetrics,
 )
 
@@ -41,7 +42,8 @@ NodeEstimate = [
     GevalStepsResolved,
     GevalStepsArtifacts,
     GevalMetrics,
-    ReferenceMetrics,
+    RefmatchMetrics,
+    RefalignMetrics,
 ]
 
 

@@ -103,6 +103,7 @@ def _compute_case_fingerprint(case: dict[str, Any]) -> str:
     redteam_cfg = _input_field(inputs, "redteam")
     grounding_cfg = _input_field(inputs, "grounding")
     relevance_cfg = _input_field(inputs, "relevance")
+    refalign_cfg = _input_field(inputs, "refalign")
     context_text = _item_text(context_item)
     return compute_case_hash(
         output=_item_text(output_item),
@@ -112,6 +113,7 @@ def _compute_case_fingerprint(case: dict[str, Any]) -> str:
         redteam=redteam_cfg,
         grounding=grounding_cfg,
         relevance=relevance_cfg,
+        refalign=refalign_cfg,
         context=[context_text] if context_text else [],
         reference_files=_case_value(case, "reference_files") or [],
     )

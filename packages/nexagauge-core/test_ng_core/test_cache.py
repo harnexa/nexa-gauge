@@ -8,7 +8,7 @@ from ng_core.cache import (
     cache_write_allowed,
     compute_case_hash,
 )
-from ng_core.types import GevalConfig, GevalMetricSpec, ScoringMode
+from ng_core.types import GevalConfig, GevalMetricSpec, Refalign, ScoringMode
 
 
 def _kv_path(tmp_path, cache_key: str):
@@ -192,6 +192,42 @@ def test_compute_case_hash_changes_when_grounding_or_relevance_knobs_change() ->
     assert h_default != h_grounding_scale
     assert h_default != h_relevance_reasoning
     assert h_grounding_scale != h_relevance_reasoning
+
+
+def test_compute_case_hash_changes_when_refalign_knobs_change() -> None:
+    h_default = compute_case_hash(output="ans", input="q", reference="gt")
+    h_default_explicit = compute_case_hash(
+        output="ans",
+        input="q",
+        reference="gt",
+        refalign=Refalign(),
+    )
+    assert h_default == h_default_explicit
+
+    h_atomic = compute_case_hash(
+        output="ans",
+        input="q",
+        reference="gt",
+        refalign=Refalign(atomic_chunks=True),
+    )
+    h_threshold = compute_case_hash(
+        output="ans",
+        input="q",
+        reference="gt",
+        refalign=Refalign(similarity_threshold=0.75),
+    )
+    h_refine_top_k = compute_case_hash(
+        output="ans",
+        input="q",
+        reference="gt",
+        refalign=Refalign(refine_top_k=2),
+    )
+    assert h_default != h_atomic
+    assert h_default != h_threshold
+    assert h_default != h_refine_top_k
+    assert h_atomic != h_threshold
+    assert h_atomic != h_refine_top_k
+    assert h_threshold != h_refine_top_k
 
 
 def test_cache_get_returns_none_for_corrupt_json(tmp_path) -> None:

@@ -15,7 +15,8 @@ from ng_core.types import (
     GevalStepsArtifacts,
     GroundingMetrics,
     RedteamMetrics,
-    ReferenceMetrics,
+    RefalignMetrics,
+    RefmatchMetrics,
     RelevanceMetrics,
     ScoringMode,
 )
@@ -27,7 +28,8 @@ from .nodes.chunk_extractor import ChunkExtractorNode
 from .nodes.metrics.geval import GevalNode, GevalStepsNode
 from .nodes.metrics.grounding import GroundingNode
 from .nodes.metrics.redteam import RedteamNode
-from .nodes.metrics.reference import ReferenceNode
+from .nodes.metrics.refalign import RefalignNode
+from .nodes.metrics.refmatch import RefmatchNode
 from .nodes.metrics.relevance import RelevanceNode
 from .nodes.refiner import RefinerNode
 from .nodes.scanner import scan as scan_record
@@ -287,6 +289,61 @@ def node_output_chunk(state: EvalCase) -> dict[str, Any]:
     return {out_key: chunk_artifact}
 
 
+def node_reference_chunk(state: EvalCase) -> dict[str, Any]:
+    """Split reference text into chunks for reference-side semantic alignment."""
+    skip = _skip_if_ineligible(state, "chunk_reference")
+    if skip is not None:
+        return skip
+
+    chunker = str(state["chunker"])
+    if chunker != "semchunk":
+        raise ValueError(
+            f"Unsupported chunker strategy '{chunker}'. Supported strategies: semchunk."
+        )
+
+    inputs = state["inputs"]
+    estimate_mode = _is_estimate_mode(state)
+    out_key = _node_spec("chunk_reference").state_key or "reference_chunk"
+    if not out_key:
+        raise ValueError(f"node: Chunk Reference out_key: {out_key} should be reference_chunk")
+
+    if inputs.reference is None:
+        return {out_key: None}
+
+    node = ChunkExtractorNode(chunk_size=OUTPUT_CHUNK_SIZE_TOKENS)
+    if estimate_mode:
+        chunk_artifact = node.run(item=inputs.reference)
+        return {
+            out_key: chunk_artifact,
+            "estimated_costs": _record_estimated_cost(
+                state, "chunk_reference", chunk_artifact.cost
+            ),
+        }
+
+    chunk_artifact: ChunkArtifacts = node.run(item=inputs.reference)
+    return {out_key: chunk_artifact}
+
+
+def _select_refined_chunks(
+    *,
+    chunks_list: list[Chunk],
+    strategy: str,
+    top_k: int,
+) -> ChunkArtifacts:
+    node = RefinerNode(
+        strategy=strategy,
+        top_k=top_k,
+    )
+    refiner_result = node.run(items=[c.item for c in chunks_list])
+    selected_indices = set(refiner_result.indices)
+    chunks: list[Chunk] = []
+    for idx, chunk in enumerate(chunks_list):
+        if idx in selected_indices:
+            chunks.append(chunk)
+    refine_cost = CostEstimate(cost=0.0, input_tokens=None, output_tokens=None)
+    return ChunkArtifacts(chunks=chunks, cost=refine_cost)
+
+
 def node_output_refiner(state: EvalCase) -> dict[str, Any]:
     """Select a refined top-k subset of chunks from the chunk artifact stream.
 
@@ -319,11 +376,7 @@ def node_output_refiner(state: EvalCase) -> dict[str, Any]:
     if not estimate_mode and not chunks_list:
         return {out_key: None}
 
-    refiner_top_k = state["refiner_top_k"]
-    node = RefinerNode(
-        strategy=str(state["refiner"]),
-        top_k=int(refiner_top_k),
-    )
+    refiner_top_k = int(state["refiner_top_k"])
     if estimate_mode:
         empty = _empty_artifact("chunks")
         return {
@@ -331,16 +384,61 @@ def node_output_refiner(state: EvalCase) -> dict[str, Any]:
             "estimated_costs": _record_estimated_cost(state, "refiner", empty.cost),
         }
 
-    refiner_result = node.run(items=[c.item for c in chunks_list])
-    selected_indices = set(refiner_result.indices)
+    return {
+        out_key: _select_refined_chunks(
+            chunks_list=chunks_list,
+            strategy=str(state["refiner"]),
+            top_k=refiner_top_k,
+        )
+    }
 
-    chunks: list[Chunk] = []
-    for idx, chunk in enumerate(chunks_list):
-        if idx in selected_indices:
-            chunks.append(chunk)
 
-    refine_cost = CostEstimate(cost=0.0, input_tokens=None, output_tokens=None)
-    return {out_key: ChunkArtifacts(chunks=chunks, cost=refine_cost)}
+def node_reference_refiner(state: EvalCase) -> dict[str, Any]:
+    """Select reference chunks for refalign; pass-through unless refine_top_k is set."""
+    skip = _skip_if_ineligible(state, "refine_reference")
+    if skip is not None:
+        return skip
+
+    spec = _node_spec("refine_reference")
+    estimate_mode = _is_estimate_mode(state)
+    in_kind = spec.artifact_in_kind
+    if in_kind == "none":
+        raise ValueError(
+            "Topology contract error: 'refine_reference' must declare artifact_in_kind."
+        )
+
+    out_key = spec.state_key
+    if not out_key:
+        raise ValueError(
+            f"node: Refine Reference out_key: {out_key} should be reference_refined_chunks"
+        )
+
+    artifact = _upstream_artifact(state, "refine_reference", in_kind)
+    chunks_list = artifact.chunks if artifact else []
+    if not estimate_mode and not chunks_list:
+        return {out_key: None}
+
+    if estimate_mode:
+        empty = _empty_artifact("chunks")
+        return {
+            out_key: empty,
+            "estimated_costs": _record_estimated_cost(state, "refine_reference", empty.cost),
+        }
+
+    inputs = state["inputs"]
+    refalign_cfg = inputs.refalign if inputs is not None else None
+    refine_top_k = getattr(refalign_cfg, "refine_top_k", None)
+    if refine_top_k is None:
+        passthrough_cost = CostEstimate(cost=0.0, input_tokens=None, output_tokens=None)
+        return {out_key: ChunkArtifacts(chunks=list(chunks_list), cost=passthrough_cost)}
+
+    return {
+        out_key: _select_refined_chunks(
+            chunks_list=chunks_list,
+            strategy=str(state["refiner"]),
+            top_k=int(refine_top_k),
+        )
+    }
 
 
 def node_output_claims(state: EvalCase) -> dict[str, Any]:
@@ -671,8 +769,8 @@ def node_geval(state: EvalCase) -> dict[str, Any]:
     }
 
 
-def node_reference(state: EvalCase) -> dict[str, Any]:
-    """Compute reference-based quality metrics against target answers.
+def node_refmatch(state: EvalCase) -> dict[str, Any]:
+    """Compute reference-based lexical metrics against target answers.
 
     Why needed:
     - Measures answer quality where a reference answer is available.
@@ -680,26 +778,26 @@ def node_reference(state: EvalCase) -> dict[str, Any]:
     Major points:
     - Uses output + reference inputs directly.
     - Skips when reference is absent.
-    - Returns typed ``ReferenceMetrics``; estimate mode emits cost placeholder.
+    - Returns typed ``RefmatchMetrics``; estimate mode emits cost placeholder.
     """
-    skip = _skip_if_ineligible(state, "reference")
+    skip = _skip_if_ineligible(state, "refmatch")
     if skip is not None:
         return skip
 
-    spec = _node_spec("reference")
+    spec = _node_spec("refmatch")
     inputs = state["inputs"]
     estimate_mode = _is_estimate_mode(state)
-    out_key = spec.state_key or "reference_metrics"
+    out_key = spec.state_key or "refmatch_metrics"
 
     if not out_key:
-        raise ValueError(f"node: Reference out_key: {out_key} should be reference_metrics")
+        raise ValueError(f"node: Refmatch out_key: {out_key} should be refmatch_metrics")
 
-    node = ReferenceNode()
+    node = RefmatchNode()
     if estimate_mode:
         estimated_cost = node.estimate(input_tokens=0.0, output_tokens=0.0)
         return {
-            out_key: ReferenceMetrics(metrics=[], cost=estimated_cost),
-            "estimated_costs": _record_estimated_cost(state, "reference", estimated_cost),
+            out_key: RefmatchMetrics(metrics=[], cost=estimated_cost),
+            "estimated_costs": _record_estimated_cost(state, "refmatch", estimated_cost),
         }
 
     results = node.run(
@@ -708,6 +806,49 @@ def node_reference(state: EvalCase) -> dict[str, Any]:
         enable_output_metrics=True,
     )
     return {out_key: results}
+
+
+def node_refalign(state: EvalCase) -> dict[str, Any]:
+    """Compute semantic reference-similarity metrics against target answers."""
+    skip = _skip_if_ineligible(state, "refalign")
+    if skip is not None:
+        return skip
+
+    spec = _node_spec("refalign")
+    inputs = state["inputs"]
+    estimate_mode = _is_estimate_mode(state)
+    out_key = spec.state_key or "refalign_metrics"
+    if not out_key:
+        raise ValueError(f"node: Refalign out_key: {out_key} should be refalign_metrics")
+
+    llm_overrides = state.get("llm_overrides")
+    model = get_judge_model("refalign", cfg.LLM_MODEL, llm_overrides=llm_overrides)
+    node = RefalignNode(judge_model=model, llm_overrides=llm_overrides)
+
+    output_chunk_artifact = state.get("output_refined_chunks")
+    output_chunks = output_chunk_artifact.chunks if output_chunk_artifact else []
+    reference_chunk_artifact = state.get("reference_refined_chunks")
+    reference_chunks = reference_chunk_artifact.chunks if reference_chunk_artifact else []
+
+    if estimate_mode:
+        estimated_cost = node.estimate(inputs=inputs)
+        return {
+            out_key: RefalignMetrics(metrics=[], cost=estimated_cost),
+            "estimated_costs": _record_estimated_cost(state, "refalign", estimated_cost),
+            "node_model_usage": _record_node_model_usage(state, "refalign", node),
+        }
+
+    results = node.run(
+        output=inputs.output,
+        reference=inputs.reference,
+        output_chunks=output_chunks,
+        reference_chunks=reference_chunks,
+        refalign=inputs.refalign,
+    )
+    return {
+        out_key: results,
+        "node_model_usage": _record_node_model_usage(state, "refalign", node),
+    }
 
 
 def node_eval(state: EvalCase) -> dict[str, Any]:

@@ -241,6 +241,27 @@ def test_scan_grounding_and_relevance_default_to_none_when_absent() -> None:
     assert inputs.relevance is None
 
 
+def test_scan_refalign_block_parses_defaults_and_custom_values() -> None:
+    default_inputs = scan({"output": "A", "reference": "B", "refalign": {}}, idx=0)["inputs"]
+    assert default_inputs.refalign is not None
+    assert default_inputs.refalign.atomic_chunks is False
+    assert default_inputs.refalign.similarity_threshold == 0.6
+    assert default_inputs.refalign.refine_top_k is None
+
+    custom_inputs = scan(
+        {
+            "output": "A",
+            "reference": "B",
+            "refalign": {"atomic_chunks": True, "similarity_threshold": 0.73, "refine_top_k": 3},
+        },
+        idx=0,
+    )["inputs"]
+    assert custom_inputs.refalign is not None
+    assert custom_inputs.refalign.atomic_chunks is True
+    assert custom_inputs.refalign.similarity_threshold == pytest.approx(0.73)
+    assert custom_inputs.refalign.refine_top_k == 3
+
+
 def test_scan_grounding_block_with_empty_dict_uses_defaults() -> None:
     """Empty `{}` for the block opts the case in but falls back to defaults."""
     record = {"output": "Answer", "grounding": {}}
