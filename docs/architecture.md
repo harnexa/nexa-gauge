@@ -43,7 +43,7 @@ Edge labels encode the target node's `requires_*` input gates. Edges into `eval`
 flowchart TD
     scan[scan]
 
-    %% Strategy container: chunk (wide, short box)
+    %% Shared chunk strategy (handles both output and reference streams)
     subgraph chunk_box["chunk"]
       direction LR
       chunk_semchunk((semchunk))
@@ -51,7 +51,7 @@ flowchart TD
       chunk_semchunk --- chunk_more
     end
 
-    %% Strategy container: refiner (wide, short box)
+    %% Shared refiner strategy (handles both output and reference streams)
     subgraph refiner_box["refiner"]
       direction LR
       refiner_mmr((mmr))
@@ -63,8 +63,7 @@ flowchart TD
     %% Utility nodes (circles)
     claims((claims))
     geval_steps((geval_steps))
-    chunk_reference((chunk_reference))
-    refine_reference((refine_reference))
+    atomic_chunks(("atomic<br/>chunks"))
 
     %% Metric nodes (rounded rectangles)
     relevance(relevance)
@@ -78,30 +77,31 @@ flowchart TD
     eval{{eval}}
     report([report])
 
-    %% Utility chain
-    scan -- "requires: output" --> chunk_box
-    chunk_box -- "requires: output" --> refiner_box
-    refiner_box -- "requires: output" --> claims
-    scan -- "requires: output + geval" --> geval_steps
-    scan -- "requires: reference" --> chunk_reference
-    chunk_reference -- "requires: reference" --> refine_reference
+    %% Both streams feed into the shared chunk → refiner pipeline
+    scan -- "output" --> chunk_box
+    scan -- "reference" --> chunk_box
+    chunk_box --> refiner_box
+    scan -- "output + geval" --> geval_steps
+
+    %% Refiner output stream fans out to claims and refalign
+    refiner_box -- "output" --> claims
+    refiner_box -- "output" --> refalign
+    %% Refiner reference stream feeds refalign
+    refiner_box -- "reference" --> refalign
+    atomic_chunks -. "opt: LLM split" .-> refalign
 
     %% Metric fan-out
-    claims -- "requires: output + input" --> relevance
-    claims -- "requires: output + context" --> grounding
-    scan -- "requires: output" --> redteam
-    geval_steps -- "requires: output + geval" --> geval
-    scan -- "requires: output + reference" --> refmatch
-    refiner_box -- "requires: output + reference" --> refalign
-    refine_reference -- "requires: output + reference" --> refalign
+    claims -- "output + input" --> relevance
+    claims -- "output + context" --> grounding
+    geval_steps -- "output + geval" --> geval
+    scan -- "output" --> redteam
+    scan -- "output + reference" --> refmatch
 
     %% Join into eval
     chunk_box --> eval
     refiner_box --> eval
     claims --> eval
     geval_steps --> eval
-    chunk_reference --> eval
-    refine_reference --> eval
     relevance --> eval
     grounding --> eval
     redteam --> eval
@@ -113,9 +113,9 @@ flowchart TD
     eval --> report
 
     %% Node colors — muted mid-tone palette, hue-matched to NodeSpec.color in topology.py
-    style scan        fill:#7FC7D1,stroke:#3F7A82,color:#fff
-    style chunk_box   fill:#BBD3EE,stroke:#3F6A9C,color:#173B61,rx:10px,ry:10px,padding:4px
-    style refiner_box fill:#BFE3BF,stroke:#3F8A3F,color:#1B4C1B,rx:10px,ry:10px,padding:4px
+    style scan             fill:#7FC7D1,stroke:#3F7A82,color:#fff
+    style chunk_box        fill:#BBD3EE,stroke:#3F6A9C,color:#173B61,rx:10px,ry:10px,padding:4px
+    style refiner_box      fill:#BFE3BF,stroke:#3F8A3F,color:#1B4C1B,rx:10px,ry:10px,padding:4px
     style chunk_semchunk   fill:#A7C2E4,stroke:#3F6A9C,color:#173B61,stroke-width:1px
     style chunk_more       fill:#A7C2E4,stroke:#3F6A9C,color:#173B61,stroke-width:1px
     style refiner_mmr      fill:#A6D7A6,stroke:#3F8A3F,color:#1B4C1B,stroke-width:1px
@@ -123,18 +123,17 @@ flowchart TD
     style refiner_more     fill:#A6D7A6,stroke:#3F8A3F,color:#1B4C1B,stroke-width:1px
     classDef strategySmall font-size:9px,stroke-width:1px;
     class chunk_semchunk,chunk_more,refiner_mmr,refiner_rerank,refiner_more strategySmall
-    style claims      fill:#C07AA8,stroke:#7A4469,color:#fff
-    style geval_steps fill:#9FBF9F,stroke:#5F8A5F,color:#fff
-    style chunk_reference  fill:#BBD3EE,stroke:#3F6A9C,color:#173B61
-    style refine_reference fill:#BFE3BF,stroke:#3F8A3F,color:#1B4C1B
-    style relevance   fill:#8FCF7F,stroke:#4F8A3F,color:#fff
-    style grounding   fill:#7FA8D8,stroke:#4F75A8,color:#fff
-    style redteam     fill:#D8847A,stroke:#9A4A42,color:#fff
-    style geval       fill:#A88FBF,stroke:#6F5A8A,color:#fff
-    style refmatch    fill:#CF7FBF,stroke:#8F4F82,color:#fff
-    style refalign    fill:#DA70D6,stroke:#8F4F82,color:#fff
-    style eval        fill:#E0C970,stroke:#A08F3F,color:#3A2F0F
-    style report      fill:#C9A85C,stroke:#8F7A3A,color:#fff
+    style claims           fill:#C07AA8,stroke:#7A4469,color:#fff
+    style geval_steps      fill:#9FBF9F,stroke:#5F8A5F,color:#fff
+    style atomic_chunks    fill:#E8C47A,stroke:#A08040,color:#3A2F0F
+    style relevance        fill:#8FCF7F,stroke:#4F8A3F,color:#fff
+    style grounding        fill:#7FA8D8,stroke:#4F75A8,color:#fff
+    style redteam          fill:#D8847A,stroke:#9A4A42,color:#fff
+    style geval            fill:#A88FBF,stroke:#6F5A8A,color:#fff
+    style refmatch         fill:#CF7FBF,stroke:#8F4F82,color:#fff
+    style refalign         fill:#B87FAF,stroke:#7A4F7A,color:#fff
+    style eval             fill:#E0C970,stroke:#A08F3F,color:#3A2F0F
+    style report           fill:#C9A85C,stroke:#8F7A3A,color:#fff
 ```
 
 ## Execution Rules
