@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.18](https://github.com/harnexa/nexa-gauge/compare/v0.1.17...v0.1.18) (2026-06-02)
+
+
+### Features
+
+* add refalign node and rename reference to refmatch ([#63](https://github.com/harnexa/nexa-gauge/issues/63)) ([7cad9ef](https://github.com/harnexa/nexa-gauge/commit/7cad9ef55bb9c5c51d1474074d249e4d20c302a5))
+
 ## [0.1.17](https://github.com/harnexa/nexa-gauge/compare/v0.1.16...v0.1.17) (2026-05-30)
 
 
