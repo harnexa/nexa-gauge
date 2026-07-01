@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Mapping, Optional
 
 from ng_core.config import config as cfg
-from ng_core.constants import AVG_CLAIM_INPUT_TOKENS, DEFAULT_JUDGE_MODEL
+from ng_core.constants import AVG_CLAIM_INPUT_TOKENS, AVG_CLAIMS_PER_CHUNK, DEFAULT_JUDGE_MODEL
 from ng_core.types import Chunk, Claim, ClaimArtifacts, CostEstimate, Item
 from ng_core.utils import _count_tokens, template_static_tokens
 from ng_graph.llm.gateway import get_llm
@@ -26,15 +26,16 @@ class ClaimExtractorNode(BaseNode):
     node_name = "claims"
     SYSTEM_PROMPT = "You are a precise claim extractor."
     USER_PROMPT = (
-        "Given the following text chunk, extract the single most important atomic, verifiable factual claim it makes.\n\n"
+        f"Given the following text chunk, extract the {AVG_CLAIMS_PER_CHUNK} most important atomic, verifiable factual claims it makes.\n\n"
         "Rules:\n"
-        "- The claim must be a single declarative sentence asserting exactly one fact.\n"
-        "- The claim must be verifiable — avoid opinions, conjecture, and meta-commentary.\n"
-        "- Choose the claim that best represents the core assertion of the chunk.\n"
-        "- Assign a confidence score (0.0–1.0) based on how clearly the claim is stated.\n\n"
+        "- Each claim must be a single declarative sentence asserting exactly one fact.\n"
+        "- Each claim must be verifiable — avoid opinions, conjecture, and meta-commentary.\n"
+        "- Choose the claims that best represent the core assertions of the chunk.\n"
+        "- Assign a confidence score (0.0–1.0) for each claim based on how clearly it is stated.\n"
+        f"- If the chunk contains fewer than {AVG_CLAIMS_PER_CHUNK} verifiable claims, return only what is present.\n\n"
         "Text chunk:\n{chunk_text}\n\n"
-        "Return a JSON object with a 'claims' array containing exactly one claim "
-        "and a 'confidences' array containing exactly one score."
+        f"Return a JSON object with a 'claims' array containing up to {AVG_CLAIMS_PER_CHUNK} claims "
+        f"and a 'confidences' array containing the same number of scores."
     )
     static_prompt_tokens: int = _count_tokens(SYSTEM_PROMPT) + template_static_tokens(USER_PROMPT)
 
@@ -122,7 +123,7 @@ class ClaimExtractorNode(BaseNode):
         self._reset_model_usage()
 
         tokens = sum(c.item.tokens for c in chunks if c.item and c.item.text.strip())
-        output_tokens = len(chunks) * AVG_CLAIM_INPUT_TOKENS
+        output_tokens = len(chunks) * AVG_CLAIM_INPUT_TOKENS * AVG_CLAIMS_PER_CHUNK
 
         input_tokens = self.static_prompt_tokens + tokens
         pricing = get_node_pricing(

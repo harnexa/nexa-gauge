@@ -36,10 +36,6 @@ OUTPUT_CHUNK_SIZE_TOKENS: int = 100
 # Minimum token count required before a chunk is eligible for splitting.
 CHUNK_MIN_TOKENS_FOR_SPLIT: int = 100
 
-# Heuristic: average number of verifiable claims expected per chunk.
-# Used by the scanner to estimate claim_count before any LLM calls.
-CLAIMS_PER_CHUNK: int = 1
-
 # ── Cost Estimation ──────────────────────────────────────────────────────────
 
 # Average token count used to simulate a single judge LLM call for pricing.
@@ -57,7 +53,7 @@ COST_FALLBACK_PER_CALL_USD: float = 0.0003
 
 # Average tokens in a single extracted claim text.
 AVG_CLAIM_INPUT_TOKENS: int = 25 + 12  # 25 claims token, and 12 structured LLM output tokens
-AVG_CLAIMS_PER_CHUNK: int = 2  # Average number of claims extracted per chunk
+AVG_CLAIMS_PER_CHUNK: int = 3  # Average number of claims extracted per chunk
 
 # Average output tokens for a single boolean verdict (grounding): "true"/"false".
 AVG_CLAIM_OUTPUT_TOKENS_BOOLEAN_VERDICT: int = 7
@@ -123,7 +119,7 @@ REFERENCE_METEOR_METRIC_PASS_THRESHOLD: float = 0.6
 REFALIGN_SIMILARITY_THRESHOLD: float = 0.8
 REFALIGN_PRECISION_METRIC_PASS_THRESHOLD: float = 0.6
 REFALIGN_RECALL_METRIC_PASS_THRESHOLD: float = 0.6
-REFALIGN_F1_METRIC_PASS_THRESHOLD: float = 0.7
+REFALIGN_F1_METRIC_PASS_THRESHOLD: float = 0.6
 REFALIGN_GLOBAL_SIMILARITY_METRIC_PASS_THRESHOLD: float = 0.6
 
 
