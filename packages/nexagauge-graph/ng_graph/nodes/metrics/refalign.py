@@ -1,15 +1,27 @@
-"""Semantic reference-similarity metric node.
+"""Semantic reference-alignment metric node.
 
 Computes embedding-based similarity between model output and reference answer.
 
-Outputs four metric rows using the shared MetricResult contract:
+Outputs metric rows using the shared MetricResult contract:
 - ``refalign_precision``
 - ``refalign_recall``
 - ``refalign_f1``
 - ``refalign_global_similarity``
+- ``refalign_score``
 
-Optional atomic extraction (LLM-assisted) can split coarse chunks into smaller
-atomic units before similarity scoring.
+There are two coverage modes:
+
+- ``atomic_chunks=False``: compare upstream chunks or sentence-fallback units.
+  Precision/recall/F1 are coarse chunk-coverage scores. Matching is many-to-one
+  so repeated or overlapping chunks can share a reference chunk, preserving the
+  original non-atomic behavior.
+- ``atomic_chunks=True``: first split both sides into smaller factual units with
+  an LLM, then compare those units. Precision/recall/F1 are atomic claim-coverage
+  scores. Matching is one-to-one so each claim can support at most one claim on
+  the other side.
+
+``refalign_global_similarity`` is always the simple full-text embedding cosine
+similarity between the raw output text and raw reference text.
 """
 
 from __future__ import annotations
@@ -112,6 +124,180 @@ def _cosine_matrix(output_embeddings: np.ndarray, reference_embeddings: np.ndarr
         np.linalg.norm(reference_embeddings, axis=1, keepdims=True) + 1e-9
     )
     return out_norm @ ref_norm.T
+
+
+def _many_to_one_alignment(
+    matrix: np.ndarray,
+    output_units: list[str],
+    reference_units: list[str],
+    similarity_threshold: float,
+) -> dict[str, Any]:
+    """Align each output unit to its best reference unit, allowing reuse.
+
+    This is the original RefAlign coverage behavior. Every output unit is judged
+    independently: if its best reference similarity clears the threshold, that
+    output is counted as supported. Separately, each reference unit is counted as
+    covered if any output unit clears the threshold against it.
+
+    Example:
+    - references: ``["A", "B"]``
+    - outputs: ``["A1", "A2", "B1"]``
+    - all three outputs clear the threshold against one of the two references
+
+    Result: ``supported_output=3`` and ``covered_reference=2``. This is useful
+    for loose support checks, but it allows several output units to reuse the
+    same reference unit.
+    """
+    matched_pairs: list[dict[str, Any]] = []
+    extra_output_chunks: list[dict[str, Any]] = []
+    for out_idx, out_unit in enumerate(output_units):
+        row = matrix[out_idx] if matrix.shape[1] else np.asarray([])
+        ref_idx = int(np.argmax(row)) if row.size else -1
+        best = float(row[ref_idx]) if row.size else 0.0
+        if best >= similarity_threshold:
+            matched_pairs.append(
+                _matched_pair(out_idx, ref_idx, best, output_units, reference_units)
+            )
+        else:
+            extra_output_chunks.append(_extra_output(out_idx, out_unit, best))
+
+    missed_reference_chunks = [
+        _missed_reference(
+            ref_idx, ref_unit, float(np.max(matrix[:, ref_idx])) if matrix.shape[0] else 0.0
+        )
+        for ref_idx, ref_unit in enumerate(reference_units)
+        if (float(np.max(matrix[:, ref_idx])) if matrix.shape[0] else 0.0) < similarity_threshold
+    ]
+    return _alignment_payload(
+        supported_output=len(matched_pairs),
+        covered_reference=len(reference_units) - len(missed_reference_chunks),
+        matched_pairs=matched_pairs,
+        extra_output_chunks=extra_output_chunks,
+        missed_reference_chunks=missed_reference_chunks,
+    )
+
+
+def _one_to_one_alignment(
+    matrix: np.ndarray,
+    output_units: list[str],
+    reference_units: list[str],
+    similarity_threshold: float,
+) -> dict[str, Any]:
+    """Align output and reference units with one use per side.
+
+    This is stricter than many-to-one alignment. It keeps only threshold-clearing
+    pairs and finds a maximum-cardinality bipartite match, so each output unit
+    and each reference unit appears at most once. Candidate references are tried
+    from highest to lowest similarity for stable, readable pair choices.
+
+    Example:
+    - references: ``["A"]``
+    - outputs: ``["A restated", "A repeated"]``
+    - both outputs clear the threshold against the same reference
+
+    Result: one matched pair, ``supported_output=1`` and
+    ``covered_reference=1``. Precision becomes ``1 / 2`` because the repeated
+    output claim cannot reuse the only reference claim.
+    """
+    ranked_refs = [
+        [
+            int(ref_idx)
+            for ref_idx in np.argsort(matrix[out_idx])[::-1]
+            if float(matrix[out_idx, ref_idx]) >= similarity_threshold
+        ]
+        for out_idx in range(matrix.shape[0])
+    ]
+    output_for_ref: dict[int, int] = {}
+
+    def assign(out_idx: int, seen_refs: set[int]) -> bool:
+        for ref_idx in ranked_refs[out_idx]:
+            if ref_idx in seen_refs:
+                continue
+            seen_refs.add(ref_idx)
+            if ref_idx not in output_for_ref or assign(output_for_ref[ref_idx], seen_refs):
+                output_for_ref[ref_idx] = out_idx
+                return True
+        return False
+
+    for out_idx in range(len(ranked_refs)):
+        assign(out_idx, set())
+
+    used_outputs = set(output_for_ref.values())
+    used_references = set(output_for_ref)
+    matched_pairs = [
+        _matched_pair(
+            out_idx, ref_idx, float(matrix[out_idx, ref_idx]), output_units, reference_units
+        )
+        for ref_idx, out_idx in sorted(output_for_ref.items(), key=lambda item: item[1])
+    ]
+    extra_output_chunks = [
+        _extra_output(out_idx, out_unit, float(np.max(matrix[out_idx])) if matrix.shape[1] else 0.0)
+        for out_idx, out_unit in enumerate(output_units)
+        if out_idx not in used_outputs
+    ]
+    missed_reference_chunks = [
+        _missed_reference(
+            ref_idx, ref_unit, float(np.max(matrix[:, ref_idx])) if matrix.shape[0] else 0.0
+        )
+        for ref_idx, ref_unit in enumerate(reference_units)
+        if ref_idx not in used_references
+    ]
+    return _alignment_payload(
+        supported_output=len(matched_pairs),
+        covered_reference=len(matched_pairs),
+        matched_pairs=matched_pairs,
+        extra_output_chunks=extra_output_chunks,
+        missed_reference_chunks=missed_reference_chunks,
+    )
+
+
+def _matched_pair(
+    out_idx: int,
+    ref_idx: int,
+    similarity: float,
+    output_units: list[str],
+    reference_units: list[str],
+) -> dict[str, Any]:
+    return {
+        "output_index": out_idx,
+        "reference_index": ref_idx,
+        "similarity": round(similarity, 4),
+        "output_text": output_units[out_idx],
+        "reference_text": reference_units[ref_idx],
+    }
+
+
+def _extra_output(out_idx: int, output_text: str, best_similarity: float) -> dict[str, Any]:
+    return {
+        "output_index": out_idx,
+        "output_text": output_text,
+        "best_similarity": round(best_similarity, 4),
+    }
+
+
+def _missed_reference(ref_idx: int, reference_text: str, best_similarity: float) -> dict[str, Any]:
+    return {
+        "reference_index": ref_idx,
+        "reference_text": reference_text,
+        "best_similarity": round(best_similarity, 4),
+    }
+
+
+def _alignment_payload(
+    *,
+    supported_output: int,
+    covered_reference: int,
+    matched_pairs: list[dict[str, Any]],
+    extra_output_chunks: list[dict[str, Any]],
+    missed_reference_chunks: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "supported_output": supported_output,
+        "covered_reference": covered_reference,
+        "matched_pairs": matched_pairs,
+        "extra_output_chunks": extra_output_chunks,
+        "missed_reference_chunks": missed_reference_chunks,
+    }
 
 
 class RefalignNode(BaseMetricNode):
@@ -287,61 +473,14 @@ class RefalignNode(BaseMetricNode):
         matrix = _cosine_matrix(output_embeddings, reference_embeddings)
         max_similarity = round(float(np.max(matrix)) if matrix.size else 0.0, 5)
 
-        supported_output = 0
-        covered_reference = 0
-        matched_pairs: list[dict[str, Any]] = []
-        extra_output_chunks: list[dict[str, Any]] = []
-
-        for out_idx, out_unit in enumerate(output_units):
-            if matrix.shape[1] == 0:
-                extra_output_chunks.append(
-                    {
-                        "output_index": out_idx,
-                        "output_text": out_unit,
-                        "best_similarity": 0.0,
-                    }
-                )
-                continue
-
-            row = matrix[out_idx]
-            ref_idx = int(np.argmax(row))
-            best_similarity = float(row[ref_idx])
-            if best_similarity >= similarity_threshold:
-                supported_output += 1
-                matched_pairs.append(
-                    {
-                        "output_index": out_idx,
-                        "reference_index": ref_idx,
-                        "similarity": round(best_similarity, 4),
-                        "output_text": out_unit,
-                        "reference_text": reference_units[ref_idx],
-                    }
-                )
-            else:
-                extra_output_chunks.append(
-                    {
-                        "output_index": out_idx,
-                        "output_text": out_unit,
-                        "best_similarity": round(best_similarity, 4),
-                    }
-                )
-
-        missed_reference_chunks: list[dict[str, Any]] = []
-        for ref_idx, ref_unit in enumerate(reference_units):
-            if matrix.shape[0] > 0:
-                best_output_similarity = float(np.max(matrix[:, ref_idx]))
-            else:
-                best_output_similarity = 0.0
-            if best_output_similarity >= similarity_threshold:
-                covered_reference += 1
-            else:
-                missed_reference_chunks.append(
-                    {
-                        "reference_index": ref_idx,
-                        "reference_text": ref_unit,
-                        "best_similarity": round(best_output_similarity, 4),
-                    }
-                )
+        alignment_strategy = "one_to_one" if atomic_chunks else "many_to_one"
+        alignment = (
+            _one_to_one_alignment(matrix, output_units, reference_units, similarity_threshold)
+            if atomic_chunks
+            else _many_to_one_alignment(matrix, output_units, reference_units, similarity_threshold)
+        )
+        supported_output = int(alignment["supported_output"])
+        covered_reference = int(alignment["covered_reference"])
 
         precision = round((supported_output / len(output_units)) if output_units else 0.0, 5)
         recall = round((covered_reference / len(reference_units)) if reference_units else 0.0, 5)
@@ -351,6 +490,7 @@ class RefalignNode(BaseMetricNode):
 
         shared_payload: dict[str, Any] = {
             "atomic_chunks": atomic_chunks,
+            "alignment_strategy": alignment_strategy,
             "similarity_threshold": round(similarity_threshold, 4),
             "counts": {
                 "supported_output_chunks": supported_output,
@@ -358,9 +498,9 @@ class RefalignNode(BaseMetricNode):
                 "covered_reference_chunks": covered_reference,
                 "reference_chunks": len(reference_units),
             },
-            "matched_pairs": matched_pairs,
-            "missed_reference_chunks": missed_reference_chunks,
-            "extra_output_chunks": extra_output_chunks,
+            "matched_pairs": alignment["matched_pairs"],
+            "missed_reference_chunks": alignment["missed_reference_chunks"],
+            "extra_output_chunks": alignment["extra_output_chunks"],
         }
 
         return [
@@ -434,6 +574,13 @@ class RefalignNode(BaseMetricNode):
         4. Embed full texts for ``global_similarity``.
         5. Embed unit lists and build cosine similarity matrix.
         6. Derive coverage stats:
+           - ``atomic_chunks=False``: chunk/sentence-level coverage with
+             many-to-one matching. A coarse output chunk is supported when its
+             best reference chunk clears the threshold. A reference chunk is
+             covered when any output chunk clears the threshold against it.
+           - ``atomic_chunks=True``: atomic claim-level coverage with one-to-one
+             matching. Each extracted output claim and reference claim can be
+             used in at most one matched pair.
            - precision (supported output units / output units),
            - recall (covered reference units / reference units),
            - f1 (harmonic mean),

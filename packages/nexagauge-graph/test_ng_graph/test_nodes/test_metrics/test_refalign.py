@@ -122,6 +122,49 @@ def test_run_atomic_chunks_uses_llm_extraction(monkeypatch: pytest.MonkeyPatch) 
     assert result.cost.output_tokens == 20.0
 
 
+def test_atomic_chunks_use_one_to_one_matching(monkeypatch: pytest.MonkeyPatch) -> None:
+    vectors = {
+        "Revenue grew. Sales increased.": [1.0, 0.0],
+        "Revenue grew.": [1.0, 0.0],
+        "Sales increased.": [1.0, 0.0],
+    }
+    monkeypatch.setattr(refalign_module, "_get_embedding_model", lambda: _FakeEmbedModel(vectors))
+
+    class FakeLLM:
+        def invoke(self, messages):
+            side = messages[1]["content"].splitlines()[0]
+            units = (
+                ["Revenue grew.", "Sales increased."]
+                if side == "Side: output"
+                else ["Revenue grew."]
+            )
+            return {
+                "parsed": SimpleNamespace(units=units),
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+                "model": "openai/gpt-4o-mini",
+            }
+
+    monkeypatch.setattr(refalign_module, "get_llm", lambda *_a, **_kw: FakeLLM())
+
+    node = RefalignNode(judge_model="openai/gpt-4o-mini")
+    result = node.run(
+        output=Item(text="Revenue grew. Sales increased.", tokens=4),
+        reference=Item(text="Revenue grew.", tokens=2),
+        refalign=Refalign(atomic_chunks=True),
+    )
+
+    by_name = {m.name: m for m in result.metrics}
+    payload = by_name["refalign_score"].result[0]
+
+    assert by_name["refalign_precision"].score == 0.5
+    assert by_name["refalign_recall"].score == 1.0
+    assert by_name["refalign_f1"].score == 0.6667
+    assert payload["alignment_strategy"] == "one_to_one"
+    assert payload["counts"]["supported_output_chunks"] == 1
+    assert payload["counts"]["covered_reference_chunks"] == 1
+    assert len(payload["extra_output_chunks"]) == 1
+
+
 def test_run_skips_when_reference_missing() -> None:
     node = RefalignNode(judge_model="openai/gpt-4o-mini")
     result = node.run(output="Answer", reference=None)
