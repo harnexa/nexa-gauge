@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.19](https://github.com/harnexa/nexa-gauge/compare/v0.1.18...v0.1.19) (2026-07-06)
+
+
+### Features
+
+* multi-claim extraction and one-to-one refalign alignment ([#70](https://github.com/harnexa/nexa-gauge/issues/70)) ([f5ae429](https://github.com/harnexa/nexa-gauge/commit/f5ae42971d1daec77b70251386bde086b3685835))
+
 ## [0.1.18](https://github.com/harnexa/nexa-gauge/compare/v0.1.17...v0.1.18) (2026-06-02)
 
 
