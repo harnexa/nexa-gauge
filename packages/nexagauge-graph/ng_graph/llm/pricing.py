@@ -5,7 +5,7 @@ Provides a curated MODEL_PRICING dict mapping model names → ModelPricing.
 Lookup order in get_model_pricing():
   1. Our registry (exact provider/model match)
   2. Our registry (bare-model compatibility fallback)
-  3. tokencost library (covers many more models, kept up-to-date by LiteLLM)
+  3. llm-prices (tokencost-compatible API; prices read from provider pages)
   4. Flat-rate fallback derived from COST_FALLBACK_PER_CALL_USD
 
 To add a new model or update a price: edit MODEL_PRICING below.
@@ -16,7 +16,7 @@ published API pricing pages.
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional
 
-import tokencost
+from llm_prices.compat import tokencost
 from ng_core.constants import (
     COST_AVG_JUDGE_TOKENS,
     COST_FALLBACK_PER_CALL_USD,
@@ -54,13 +54,14 @@ MODEL_PRICING: dict[str, ModelPricing] = {
     "openai/o1": ModelPricing(input_per_1k=0.015000, output_per_1k=0.060000),
     "openai/o1-mini": ModelPricing(input_per_1k=0.001100, output_per_1k=0.004400),
     # ── Anthropic ─────────────────────────────────────────────────────────────
-    "anthropic/claude-opus-4-6": ModelPricing(input_per_1k=0.015000, output_per_1k=0.075000),
+    # - https://platform.claude.com/docs/en/about-claude/pricing
+    "anthropic/claude-opus-4-6": ModelPricing(input_per_1k=0.005000, output_per_1k=0.025000),
     "anthropic/claude-sonnet-4-6": ModelPricing(input_per_1k=0.003000, output_per_1k=0.015000),
     "anthropic/claude-3-5-sonnet-20241022": ModelPricing(
         input_per_1k=0.003000, output_per_1k=0.015000
     ),
     "anthropic/claude-3-5-haiku-20241022": ModelPricing(
-        input_per_1k=0.001000, output_per_1k=0.005000
+        input_per_1k=0.000800, output_per_1k=0.004000
     ),
     "anthropic/claude-3-haiku-20240307": ModelPricing(
         input_per_1k=0.000250, output_per_1k=0.001250
@@ -93,7 +94,7 @@ def get_model_pricing(model: str, *, api_base: Optional[str] = None) -> ModelPri
     Lookup order:
       1. MODEL_PRICING exact key match (provider/model)
       2. MODEL_PRICING bare-name compatibility match
-      3. tokencost (LiteLLM-maintained pricing tables)
+      3. llm-prices (tokencost-compatible API)
       4. _FALLBACK_PRICING (conservative constant)
 
     Args:
@@ -120,13 +121,13 @@ def get_model_pricing(model: str, *, api_base: Optional[str] = None) -> ModelPri
     if preferred_key in MODEL_PRICING:
         return MODEL_PRICING[preferred_key]
 
-    # tokencost fallback — calculate per-1k rates from a 1k-token dummy call
+    # llm-prices fallback — calculate per-1k rates from a 1k-token dummy call
     try:
         inp = float(tokencost.calculate_cost_by_tokens(1000, model, "input"))
         out = float(tokencost.calculate_cost_by_tokens(1000, model, "output"))
         return ModelPricing(input_per_1k=inp, output_per_1k=out)
     except Exception:
-        # tokencost lacks a pricing entry for this model (e.g. private deployment) — use fallback.
+        # llm-prices lacks a pricing entry for this model (e.g. private deployment) — use fallback.
         return _FALLBACK_PRICING
 
 
