@@ -43,3 +43,15 @@ def test_get_node_pricing_uses_node_api_base(monkeypatch: pytest.MonkeyPatch) ->
     pricing = get_node_pricing(node_name="grounding", model="openai/gpt-4o-mini")
     assert pricing.input_per_1k == 0.0
     assert pricing.output_per_1k == 0.0
+
+
+def test_get_model_pricing_claude_opus_4_6_list_price() -> None:
+    pricing = get_model_pricing("anthropic/claude-opus-4-6")
+    assert pricing.input_per_1k == 0.005000
+    assert pricing.output_per_1k == 0.025000
+
+
+def test_get_model_pricing_unlisted_model_uses_llm_prices() -> None:
+    pricing = get_model_pricing("gpt-5.4")
+    assert pricing.input_per_1k == pytest.approx(0.0025)
+    assert pricing.output_per_1k == pytest.approx(0.015)

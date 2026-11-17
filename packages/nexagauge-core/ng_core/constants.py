@@ -42,7 +42,7 @@ CHUNK_MIN_TOKENS_FOR_SPLIT: int = 100
 # This covers the claim-verification prompt + expected response length.
 COST_AVG_JUDGE_TOKENS: int = 250
 
-# Conservative per-call cost fallback used when tokencost cannot price the
+# Conservative per-call cost fallback used when llm-prices cannot price the
 # chosen model (e.g. a private deployment).
 COST_FALLBACK_PER_CALL_USD: float = 0.0003
 
